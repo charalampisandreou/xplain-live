@@ -144,3 +144,19 @@ class GenConfig:
     vmax_outfield_ms: tuple[float, float] = (8.6, 10.5)
     top_speed_cap_ms: float = 10.5
     sprints_per90: tuple[float, float, float, float] = (0.5, 25.0, 30.0, 38.0)
+
+
+@dataclass(frozen=True)
+class AnalyticsConfig:
+    """Thresholds for turning xP into display labels.
+
+    All values are provisional: tune them from the observed xP distribution.
+    """
+
+    # difficulty = round(100 * (1 - xP)); band lower bounds (provisional, tune from the xP distribution)
+    band_moderate_from: int = 20
+    band_hard_from: int = 40
+    band_exceptional_from: int = 60
+    # outlier flags (provisional, tune from the xP distribution)
+    surprise_success_max_xp: float = 0.35   # completed although xP <= this
+    surprise_failure_min_xp: float = 0.92   # failed although xP >= this

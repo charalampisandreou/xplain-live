@@ -47,6 +47,19 @@ This writes `data/match_seed42.jsonl` (one event per line) and `data/match_seed4
 Generated files are not committed. Run the command from the repo root with the venv active and
 `src` on the path (for example `$env:PYTHONPATH = "src"`).
 
+## Run the API and replay
+
+```powershell
+$env:PYTHONPATH = "src"
+python -m xplain.generator --seed 42 --out data/match_seed42.jsonl
+uvicorn xplain.api:app --port 8000
+# in a second terminal (same venv and PYTHONPATH):
+python -m xplain.replay --file data/match_seed42.jsonl --url http://127.0.0.1:8000 --speed 0
+```
+
+xP is situational pass difficulty (completion probability from start-of-pass information only),
+not pass quality; the difficulty band and outlier thresholds are provisional.
+
 ## Attribution
 
 - The pass-completion model (xPass) was trained on the [StatsBomb Open Data](https://github.com/statsbomb/open-data)
