@@ -30,6 +30,11 @@ _To be written once the end-to-end demo works. It will lead with measured result
 - The pass-completion model (xPass) was trained on the [StatsBomb Open Data](https://github.com/statsbomb/open-data)
   under its user agreement. Source repo: [xPass-Project](https://github.com/charalampisandreou/xPass-Project).
   StatsBomb credit is required wherever the model or its derived analysis is shown.
+- **Model training data:** the xPass model was trained on StatsBomb Open Data
+  (3,961 matches across more than 20 competitions). 418 of those matches
+  (about 10.6%) are real Premier League matches from the 2003/04 and 2015/16
+  seasons. The demo and all generated matches use synthetic data only; no real
+  match data is used at run time or redistributed.
 - The model is used behind a pluggable scoring interface, so it can be replaced without changing
   the rest of the system.
 - Fictional clubs and players in the generator are invented and unrelated to real people or clubs.
