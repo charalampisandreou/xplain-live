@@ -1,0 +1,333 @@
+{
+  "source": "StatsBomb open data",
+  "data_dir": "statsbomb_free (StatsBomb open data, local copy)",
+  "units": "StatsBomb pitch units (120 x 80), same frame as the generator",
+  "regularisation": "none (LogisticRegression C=np.inf, scikit-learn 1.9.0)",
+  "summary": {
+    "matches": 3961,
+    "skipped_files": [],
+    "passes": 3836550,
+    "completion_rate": 0.7751657087748107,
+    "mean_length": 21.187582310043076,
+    "mean_length_completed": 19.311222555724953,
+    "mean_length_failed": 27.6567455811197,
+    "share_high": 0.21782460804629158,
+    "share_low": 0.1338345649085767,
+    "share_under_pressure": 0.1561035305156977,
+    "share_final_third": 0.22541684586412272,
+    "passes_per_match": 968.5811663721282,
+    "feature_counts": {
+      "under_pressure": 598899,
+      "is_high": 835695,
+      "is_low": 513463,
+      "kick_off": 19173,
+      "throw_in": 184391,
+      "goal_kick": 65052,
+      "free_kick": 106662,
+      "corner": 38799,
+      "keeper": 25342
+    },
+    "restart_completion_rates": {
+      "kick_off": 0.9956709956709957,
+      "throw_in": 0.8231909366509211,
+      "goal_kick": 0.6118797269876407,
+      "free_kick": 0.6895426674917028,
+      "corner": 0.43954741101574785,
+      "keeper": 0.6876331781232736
+    }
+  },
+  "real_buckets": {
+    "height": {
+      "ground": {
+        "n": 2487392,
+        "rate": 0.905938830711042
+      },
+      "low": {
+        "n": 513463,
+        "rate": 0.6921978798861846
+      },
+      "high": {
+        "n": 835695,
+        "rate": 0.43690461232866057
+      }
+    },
+    "restart": {
+      "kick_off": {
+        "n": 19173,
+        "rate": 0.9956709956709957
+      },
+      "throw_in": {
+        "n": 184391,
+        "rate": 0.8231909366509211
+      },
+      "goal_kick": {
+        "n": 65052,
+        "rate": 0.6118797269876407
+      },
+      "free_kick": {
+        "n": 106662,
+        "rate": 0.6895426674917028
+      },
+      "corner": {
+        "n": 38799,
+        "rate": 0.43954741101574785
+      },
+      "keeper": {
+        "n": 25342,
+        "rate": 0.6876331781232736
+      },
+      "none": {
+        "n": 3397131,
+        "rate": 0.7816157222079455
+      }
+    },
+    "length": {
+      "0-10": {
+        "n": 738286,
+        "rate": 0.74648036126921
+      },
+      "10-20": {
+        "n": 1525215,
+        "rate": 0.8754385447297595
+      },
+      "20-30": {
+        "n": 806564,
+        "rate": 0.8180107220257785
+      },
+      "30-45": {
+        "n": 471310,
+        "rate": 0.6485476650187775
+      },
+      "45+": {
+        "n": 295175,
+        "rate": 0.4138866773947658
+      }
+    },
+    "start_x": {
+      "0-30": {
+        "n": 695242,
+        "rate": 0.7322975309316756
+      },
+      "30-60": {
+        "n": 1357541,
+        "rate": 0.8219891701245119
+      },
+      "60-90": {
+        "n": 1254018,
+        "rate": 0.8091064083609645
+      },
+      "90-120": {
+        "n": 529749,
+        "rate": 0.6310913281572972
+      }
+    },
+    "under_pressure": {
+      "0": {
+        "n": 3237651,
+        "rate": 0.7891838867129286
+      },
+      "1": {
+        "n": 598899,
+        "rate": 0.6993833684811629
+      }
+    }
+  },
+  "hand_set": {
+    "intercept": 2.9,
+    "length": -0.045,
+    "forward_gain": -0.03,
+    "under_pressure": -0.55,
+    "is_high": -0.35,
+    "is_low": -0.25,
+    "kick_off": 1.5,
+    "throw_in": 0.3,
+    "goal_kick": 0.0,
+    "free_kick": 0.5,
+    "corner": -0.5,
+    "keeper": 0.5,
+    "start_x": 0.0,
+    "dist_to_goal": 0.0,
+    "angle_to_goal": 0.0
+  },
+  "variant_A_all": {
+    "features": [
+      "length",
+      "forward_gain",
+      "under_pressure",
+      "is_high",
+      "is_low",
+      "kick_off",
+      "throw_in",
+      "goal_kick",
+      "free_kick",
+      "corner",
+      "keeper"
+    ],
+    "coefficients": {
+      "intercept": 2.010395725212799,
+      "length": 0.04912659428038597,
+      "forward_gain": -0.06814997939657971,
+      "under_pressure": -0.45116890768853146,
+      "is_high": -2.305592189191435,
+      "is_low": -1.5426717360863706,
+      "kick_off": 2.937671762464554,
+      "throw_in": 1.2580762708116477,
+      "goal_kick": 0.874665782297492,
+      "free_kick": 0.24526312074517326,
+      "corner": -2.150309945977505,
+      "keeper": 0.9102470814458348
+    },
+    "mean_predicted": 0.7751657122911942,
+    "log_loss": 0.40109103829839887
+  },
+  "variant_B_start_only": {
+    "features": [
+      "under_pressure",
+      "is_high",
+      "is_low",
+      "kick_off",
+      "throw_in",
+      "goal_kick",
+      "free_kick",
+      "corner",
+      "keeper"
+    ],
+    "coefficients": {
+      "intercept": 2.3327870658234273,
+      "under_pressure": -0.44261315315260774,
+      "is_high": -2.6175346419342365,
+      "is_low": -1.6489218848649994,
+      "kick_off": 3.1431496374694055,
+      "throw_in": 1.2896613961881744,
+      "goal_kick": 0.045977458297221975,
+      "free_kick": 0.05057310472158583,
+      "corner": -0.4157830303614828,
+      "keeper": 0.236260288871213
+    },
+    "mean_predicted": 0.7751657107365314,
+    "log_loss": 0.42445420665453276
+  },
+  "variant_C_all_plus_location": {
+    "features": [
+      "length",
+      "forward_gain",
+      "under_pressure",
+      "is_high",
+      "is_low",
+      "kick_off",
+      "throw_in",
+      "goal_kick",
+      "free_kick",
+      "corner",
+      "keeper",
+      "start_x",
+      "dist_to_goal",
+      "angle_to_goal"
+    ],
+    "coefficients": {
+      "intercept": 9.19253049967413,
+      "length": 0.05739002098691217,
+      "forward_gain": -0.09155111001884693,
+      "under_pressure": -0.47374989669253126,
+      "is_high": -2.2561095134767797,
+      "is_low": -1.508756911006601,
+      "kick_off": 2.4770828455031553,
+      "throw_in": 1.8168457834053486,
+      "goal_kick": 0.48443693981610986,
+      "free_kick": 0.39962437974912024,
+      "corner": -0.09589046669359896,
+      "keeper": 0.5090772467637947,
+      "start_x": -0.06327893463185216,
+      "dist_to_goal": -0.049560515980781934,
+      "angle_to_goal": 0.004257590358625558
+    },
+    "mean_predicted": 0.7751657079817793,
+    "log_loss": 0.3819339769830444
+  },
+  "variant_C2_sign_constrained": {
+    "features": [
+      "length",
+      "forward_gain",
+      "under_pressure",
+      "is_high",
+      "is_low",
+      "kick_off",
+      "throw_in",
+      "goal_kick",
+      "free_kick",
+      "corner",
+      "keeper",
+      "start_x",
+      "dist_to_goal",
+      "angle_to_goal"
+    ],
+    "coefficients": {
+      "intercept": 8.995142881058152,
+      "length": 0.0,
+      "forward_gain": -0.04941641775087878,
+      "under_pressure": -0.582106158832512,
+      "is_high": -1.9263973538879242,
+      "is_low": -1.4990270776555636,
+      "kick_off": 2.530104400386081,
+      "throw_in": 1.574769362485714,
+      "goal_kick": 0.7635850240658353,
+      "free_kick": 0.6409483113222498,
+      "corner": 0.8578595891166015,
+      "keeper": 0.7454726500128963,
+      "start_x": -0.056458807638845546,
+      "dist_to_goal": -0.043823355521295265,
+      "angle_to_goal": 0.004208916960449917
+    },
+    "mean_predicted": 0.7751657101584887,
+    "log_loss": 0.3954308055635889,
+    "constrained_nonpositive": [
+      "length",
+      "forward_gain",
+      "under_pressure",
+      "is_high",
+      "is_low"
+    ],
+    "active_bounds": [
+      "length"
+    ]
+  },
+  "variant_D_start_only_location": {
+    "features": [
+      "under_pressure",
+      "is_high",
+      "is_low",
+      "kick_off",
+      "throw_in",
+      "goal_kick",
+      "free_kick",
+      "corner",
+      "keeper",
+      "start_x",
+      "dist_to_goal",
+      "angle_to_goal"
+    ],
+    "coefficients": {
+      "intercept": 7.630244317111666,
+      "under_pressure": -0.4309668166704687,
+      "is_high": -2.6786581090360255,
+      "is_low": -1.6239319550126796,
+      "kick_off": 2.9159671392032576,
+      "throw_in": 1.7581084958096724,
+      "goal_kick": -0.3533832893827109,
+      "free_kick": 0.029139540268528497,
+      "corner": 1.2566564049011517,
+      "keeper": -0.13522270139993184,
+      "start_x": -0.044305859565106596,
+      "dist_to_goal": -0.04014271989420718,
+      "angle_to_goal": 0.013032090906572402
+    },
+    "mean_predicted": 0.7751657098053032,
+    "log_loss": 0.4176124155903718,
+    "constrained_nonpositive": [
+      "under_pressure",
+      "is_high",
+      "is_low"
+    ],
+    "active_bounds": []
+  }
+}

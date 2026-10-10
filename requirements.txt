@@ -2,6 +2,7 @@
 # (xPass-Project, commit bc29660, tested with Python 3.13.14) or the .joblib may not load.
 xgboost==3.3.0
 scikit-learn==1.9.0
+scipy==1.18.1          # direct import in scripts/fit_outcome_weights.py (C2 fit)
 joblib==1.5.3
 pandas==3.0.3
 numpy==2.3.4

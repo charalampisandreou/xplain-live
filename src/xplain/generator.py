@@ -429,6 +429,10 @@ class _Match:
             + cfg.w_high * (height == PassHeight.HIGH)
             + cfg.w_low * (height == PassHeight.LOW)
             + self._restart_bonus()
+            # optional start-location terms, appended last so 0.0 weights leave the logit bit-identical
+            + cfg.w_start_x * sx
+            + cfg.w_dist_goal * math.hypot(PITCH_LENGTH - sx, GOAL_Y - sy)
+            + cfg.w_angle_goal * math.atan2(GOAL_Y - sy, PITCH_LENGTH - sx)  # = features.angle_to_goal
         )
         completed = bool(rng.random() < _sigmoid(logit))
 

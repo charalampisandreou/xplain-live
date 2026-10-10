@@ -39,8 +39,8 @@ def test_different_seeds_differ(tmp_path, match42):
 def test_truth_file_location_and_content(match42):
     events_path, truth_path, _, truth = match42
     assert truth_path.name == "match_seed42.truth.json"
-    assert truth["seed"] == 42 and truth["generator_version"] == "0.1.0"
-    assert truth["config"]["intercept"] == pytest.approx(2.9)
+    assert truth["seed"] == 42 and truth["generator_version"] == "0.1.1"
+    assert truth["config"]["intercept"] == pytest.approx(9.19253)
     assert len(truth["players"]) == 22
     assert all(isinstance(p["pass_skill"], float) for p in truth["players"])
 
