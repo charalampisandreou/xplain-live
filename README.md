@@ -1,4 +1,4 @@
-# xplain_live
+# xplain-live
 
 Expectation versus outcome, live. A studio copilot for the Microsoft
 "Inside the Game" hackathon: it ingests synthetic match events, compares what a trained model
@@ -15,8 +15,9 @@ _To be written once the end-to-end demo works. It will lead with measured result
 ## Honest limits
 
 - **Synthetic data only.** All matches are produced by a seeded generator with fictional clubs
-  and players. No real match data is used at run time or redistributed. The xPass model itself
-  was trained partly on real English top-flight matches (see Attribution).
+  and players. No real match data is used at run time or redistributed. The xPass model was
+  trained on StatsBomb open data, part of which is real English top-flight matches, and the
+  generator's outcome weights were estimated from the same data (see Attribution).
 - **xP is situational pass difficulty.** It is computed from start-of-pass information only
   (location, pass height, body part, play pattern, pressure). It does not know the intended
   target, so it does not say whether a particular pass was a good choice.
@@ -26,6 +27,22 @@ _To be written once the end-to-end demo works. It will lead with measured result
 - **"Progressive" and "difficulty" are defined from available fields.** No claims that need
   freeze-frame data (e.g. line-breaking passes) are made.
 
+## Known simplifications
+
+Measured with `scripts/compare_variants.py` on generated matches:
+
+- On 40 generated matches (seeds 1-40), mean xP and actual completion agree within 0.4-1.4
+  percentage points.
+- xP's predictions are more spread out than the generated outcomes (calibration slope about
+  0.62). Passes that xP rates below 0.4 complete 22-27 points more often than predicted.
+- The generated pass mix differs from real football (seeds 1-20 against StatsBomb open data):
+  mean pass length 16.2 vs 21.2, high passes 10.9% vs 21.8%, under pressure 20.2% vs 15.6%.
+  Goal kicks, throw-ins and passes of 45+ complete more often than in real data.
+- xP measures situational pass difficulty and does not know the pass target.
+- Difficulty bands and outlier thresholds are provisional.
+- The model's real-world quality is its hold-out result (ROC AUC 0.8328, log-loss 0.4007,
+  Brier 0.1266), not the reliability numbers on synthetic passes.
+
 ## Synthetic data
 
 `src/xplain/generator.py` produces full matches from a seed: two fictional clubs (4-4-2, invented
@@ -33,10 +50,13 @@ names), passes, pressure, tackles, shots, possession changes and periodic player
 the 120 x 80 StatsBomb pitch with every event in its own team's attacking frame. The same seed
 always gives a byte-identical file.
 
-- **Outcomes are independent of the xP model.** Pass completion comes from a hand-set logistic
-  mechanism (hidden player skill, length, forward gain, pressure, height, restart bonus) defined
-  in `src/xplain/config.py`. The generator never imports or loads the model, and only the
-  mechanism's intercept was adjusted, to get a realistic overall completion rate.
+- **Outcomes are independent of the xP model.** Pass completion comes from a logistic rule
+  (length, forward gain, pressure, height, restart type, start location). Its weights were
+  computed by fitting a logistic regression to real passes: 3,836,550 passes from StatsBomb open
+  data, each labelled completed or not (`scripts/fit_outcome_weights.py`, results in
+  `reports/outcome_fit.json`). The fitted values are in `src/xplain/config.py`. The player skill
+  term is synthetic, and the pass mix (length, height, pressure, flow of play) is hand-designed.
+  The generator never imports or loads the xP model.
 - **Hidden skill stays hidden.** Each player's latent pass skill is written only to a separate
   `<name>.truth.json` file, never to the events file.
 
@@ -71,6 +91,17 @@ not pass quality; the difficulty band and outlier thresholds are provisional.
   (about 10.6%) are real Premier League matches from the 2003/04 and 2015/16
   seasons. The demo and all generated matches use synthetic data only; no real
   match data is used at run time or redistributed.
+- **Generator outcome weights:** the weights of the generator's pass-completion rule were
+  computed with a logistic regression on real passes from StatsBomb Open Data (same source:
+  3,961 matches, 3,836,550 passes). Only aggregate results are stored
+  (`reports/outcome_fit.json`); no real events are stored in this repository. To rerun the fit
+  you need a local copy of the StatsBomb open-data event files, passed as an argument (the data
+  is not included):
+
+  ```powershell
+  python scripts/fit_outcome_weights.py --data-dir <path to the StatsBomb event JSON files>
+  python scripts/compare_variants.py
+  ```
 - The model is used behind a pluggable scoring interface, so it can be replaced without changing
   the rest of the system.
 - Fictional clubs and players in the generator are invented and unrelated to real people or clubs.
