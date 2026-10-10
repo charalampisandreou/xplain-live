@@ -1,0 +1,28 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+.env
+.DS_Store
+Thumbs.db
+.vscode/
+
+# Generated matches and local data (regenerate with the seeded generator)
+data/
+*.jsonl
+
+# Model artifacts are NOT committed (too large for GitHub, see models/README.md).
+# Only the feature list stays tracked.
+*.joblib
+!models/xpass/feature_list.json
+*.csv
+*.parquet
+*.pkl
+*.onnx
+
+# Old pip freeze kept locally for reference
+requirements-freeze-old.txt
+
+# Local assistant instructions (not published)
+CLAUDE.md

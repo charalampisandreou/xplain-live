@@ -1,0 +1,17 @@
+# Python 3.13. Model-loading pins must match the xPass training environment
+# (xPass-Project, commit bc29660, tested with Python 3.13.14) or the .joblib may not load.
+xgboost==3.3.0
+scikit-learn==1.9.0
+joblib==1.5.3
+pandas==3.0.3
+numpy==2.3.4
+shap==0.52.0
+
+# Service and validation (resolved 2026-10-10)
+fastapi==0.143.0
+uvicorn==0.54.0
+pydantic==2.14.0
+
+# Azure AI Foundry client (AzureCliCredential, no API keys)
+openai==3.26.1
+azure-identity==1.26.0
