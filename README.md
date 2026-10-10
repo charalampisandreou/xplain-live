@@ -15,7 +15,8 @@ _To be written once the end-to-end demo works. It will lead with measured result
 ## Honest limits
 
 - **Synthetic data only.** All matches are produced by a seeded generator with fictional clubs
-  and players. No real Premier League data is used or redistributed.
+  and players. No real match data is used at run time or redistributed. The xPass model itself
+  was trained partly on real English top-flight matches (see Attribution).
 - **xP is situational pass difficulty.** It is computed from start-of-pass information only
   (location, pass height, body part, play pattern, pressure). It does not know the intended
   target, so it does not say whether a particular pass was a good choice.
