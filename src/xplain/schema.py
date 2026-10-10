@@ -121,6 +121,14 @@ class PressureEvent(EventBase):
     pressed_player_id: str
 
 
+class PlayerInfo(_Strict):
+    player_id: str
+    name: str
+    position: Literal["GK", "DEF", "MID", "FWD"]
+    shirt_number: Annotated[int, Field(ge=1, le=99)]
+    team_id: str
+
+
 class MatchMetaEvent(EventBase):
     type: Literal["match_meta"] = "match_meta"
     home_team_id: str
@@ -129,9 +137,26 @@ class MatchMetaEvent(EventBase):
     away_name: str
     seed: int
     generator_version: str
+    players: Annotated[list[PlayerInfo], Field(min_length=22, max_length=22)]
+
+
+class PlayerLoadEvent(EventBase):
+    """Physical load so far in the match. All three values are cumulative or running maxima."""
+
+    type: Literal["player_load"] = "player_load"
+    player_id: str
+    distance_m: Annotated[float, Field(ge=0.0)]
+    top_speed_ms: Annotated[float, Field(ge=0.0, le=12.0)]
+    sprint_count: Annotated[int, Field(ge=0)]
 
 
 Event = Annotated[
-    PassEvent | ShotEvent | TackleEvent | PossessionChangeEvent | PressureEvent | MatchMetaEvent,
+    PassEvent
+    | ShotEvent
+    | TackleEvent
+    | PossessionChangeEvent
+    | PressureEvent
+    | MatchMetaEvent
+    | PlayerLoadEvent,
     Field(discriminator="type"),
 ]

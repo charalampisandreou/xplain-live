@@ -25,6 +25,28 @@ _To be written once the end-to-end demo works. It will lead with measured result
 - **"Progressive" and "difficulty" are defined from available fields.** No claims that need
   freeze-frame data (e.g. line-breaking passes) are made.
 
+## Synthetic data
+
+`src/xplain/generator.py` produces full matches from a seed: two fictional clubs (4-4-2, invented
+names), passes, pressure, tackles, shots, possession changes and periodic player-load events, on
+the 120 x 80 StatsBomb pitch with every event in its own team's attacking frame. The same seed
+always gives a byte-identical file.
+
+- **Outcomes are independent of the xP model.** Pass completion comes from a hand-set logistic
+  mechanism (hidden player skill, length, forward gain, pressure, height, restart bonus) defined
+  in `src/xplain/config.py`. The generator never imports or loads the model, and only the
+  mechanism's intercept was adjusted, to get a realistic overall completion rate.
+- **Hidden skill stays hidden.** Each player's latent pass skill is written only to a separate
+  `<name>.truth.json` file, never to the events file.
+
+```powershell
+python -m xplain.generator --seed 42 --out data/match_seed42.jsonl
+```
+
+This writes `data/match_seed42.jsonl` (one event per line) and `data/match_seed42.truth.json`.
+Generated files are not committed. Run the command from the repo root with the venv active and
+`src` on the path (for example `$env:PYTHONPATH = "src"`).
+
 ## Attribution
 
 - The pass-completion model (xPass) was trained on the [StatsBomb Open Data](https://github.com/statsbomb/open-data)
