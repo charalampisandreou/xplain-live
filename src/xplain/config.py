@@ -190,5 +190,24 @@ class AnalyticsConfig:
     # outlier flags (provisional, tune from the xP distribution)
     surprise_success_max_xp: float = 0.35   # completed although xP <= this
     surprise_failure_min_xp: float = 0.92   # failed although xP >= this
-    # card-stage cap: moments kept per outlier kind (provisional, a display choice, not a measured value)
-    highlights_per_kind: int = 5
+    # commentary ranking size K, per kind AND per half: the running top K of each kind in each half
+    # is commentated (provisional). Chosen from the calibration over 10 seeds: K = 3 gives about 25
+    # commentaries per match with full coverage of the top 3 per kind per half.
+    highlights_per_kind: int = 3
+    # commentary floor: always commentated, whatever the ranking (provisional)
+    commentary_floor_success_max_xp: float = 0.25   # completed although xP <= this
+    commentary_floor_failure_min_xp: float = 0.96   # failed although xP >= this
+
+    def __post_init__(self) -> None:
+        if self.commentary_floor_success_max_xp > self.surprise_success_max_xp:
+            raise ValueError(
+                f"commentary_floor_success_max_xp ({self.commentary_floor_success_max_xp}) must be <= "
+                f"surprise_success_max_xp ({self.surprise_success_max_xp})"
+            )
+        if self.commentary_floor_failure_min_xp < self.surprise_failure_min_xp:
+            raise ValueError(
+                f"commentary_floor_failure_min_xp ({self.commentary_floor_failure_min_xp}) must be >= "
+                f"surprise_failure_min_xp ({self.surprise_failure_min_xp})"
+            )
+        if self.highlights_per_kind < 0:
+            raise ValueError(f"highlights_per_kind must be >= 0, got {self.highlights_per_kind}")

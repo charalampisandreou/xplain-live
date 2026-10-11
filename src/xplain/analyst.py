@@ -1,5 +1,5 @@
 """
-Analyst: turns scored passes into Moments and picks which ones get a card. Deterministic, no I/O.
+Analyst: turns scored passes into Moments and ranks them. Deterministic, no I/O.
 
 Difficulty, band, delta and the outlier flag come from analytics.py; this module only packages
 them. Highlights are ranked per kind (surprise_success and surprise_failure are never ranked in
@@ -110,6 +110,11 @@ def select_highlights(moments: Sequence[Moment], per_kind: int) -> dict[Outlier,
         kind: sorted((m for m in moments if m.kind == kind), key=lambda m: (-m.significance, m.seq))[:per_kind]
         for kind in OUTLIER_KINDS
     }
+
+
+def select_half_highlights(moments: Sequence[Moment], per_kind: int) -> dict[int, dict[Outlier, list[Moment]]]:
+    """select_highlights within each half: {1: {kind: top per_kind}, 2: {...}}. Both periods are always keys."""
+    return {period: select_highlights([m for m in moments if m.period == period], per_kind) for period in (1, 2)}
 
 
 def qualifies_live(moment: Moment, earlier: Sequence[Moment], per_kind: int) -> bool:

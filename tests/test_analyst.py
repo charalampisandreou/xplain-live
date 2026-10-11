@@ -4,7 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from xplain import analytics
-from xplain.analyst import build_moment, qualifies_live, select_highlights
+from xplain.analyst import build_moment, qualifies_live, select_half_highlights, select_highlights
 from xplain.config import AnalyticsConfig
 from xplain.contracts import Moment
 from xplain.schema import BodyPart, PassDetails, PassEvent, PassHeight, PassInputs, PlayPattern
@@ -64,7 +64,7 @@ def test_uses_analytics_for_difficulty_and_band():
 
 
 def test_cfg_is_respected():
-    cfg = AnalyticsConfig(surprise_success_max_xp=0.1)
+    cfg = AnalyticsConfig(surprise_success_max_xp=0.1, commentary_floor_success_max_xp=0.05)
     assert build_moment(make_event(completed=True), 0.2, "test-model", cfg=cfg) is None
     assert build_moment(make_event(completed=True), 0.2, "test-model") is not None
 
@@ -194,3 +194,15 @@ def test_qualifies_live_early_then_crowded_out():
     # stronger moments of the other kind do not crowd it out
     other_kind = [moment(3, 0.01, True), moment(4, 0.02, True)]
     assert qualifies_live(candidate, other_kind, per_kind=2)
+
+
+def test_select_half_highlights_ranks_each_half_separately():
+    first = [moment(1, 0.99, False, period=1), moment(2, 0.93, False, period=1), moment(3, 0.10, True, period=1)]
+    second = [moment(4, 0.95, False, period=2, t=3000.0), moment(5, 0.30, True, period=2, t=3100.0)]
+    top = select_half_highlights(first + second, per_kind=1)
+    assert set(top) == {1, 2}
+    assert [m.seq for m in top[1]["surprise_failure"]] == [1]
+    assert [m.seq for m in top[2]["surprise_failure"]] == [4]  # 0.99 in the first half does not count
+    assert [m.seq for m in top[2]["surprise_success"]] == [5]
+    assert top[1] == select_highlights(first, 1) and top[2] == select_highlights(second, 1)
+    assert select_half_highlights([], 3) == {p: {"surprise_success": [], "surprise_failure": []} for p in (1, 2)}
