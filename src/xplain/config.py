@@ -190,3 +190,5 @@ class AnalyticsConfig:
     # outlier flags (provisional, tune from the xP distribution)
     surprise_success_max_xp: float = 0.35   # completed although xP <= this
     surprise_failure_min_xp: float = 0.92   # failed although xP >= this
+    # card-stage cap: moments kept per outlier kind (provisional, a display choice, not a measured value)
+    highlights_per_kind: int = 5
