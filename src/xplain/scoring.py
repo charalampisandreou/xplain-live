@@ -19,6 +19,8 @@ from typing import Protocol
 
 import joblib
 import numpy as np
+import xgboost as xgb
+from sklearn.calibration import CalibratedClassifierCV
 
 from .features import FEATURE_ORDER, FeatureOrderError, build_features, validate_feature_order
 from .schema import BodyPart, PassHeight, PassInputs, PlayPattern
@@ -79,6 +81,21 @@ class XPassScorer:
         if not np.all(np.isfinite(probs)) or np.any((probs < 0.0) | (probs > 1.0)):
             raise ValueError(f"Model {self.model_version} returned probabilities outside [0, 1]: {probs}")
         return [ScoreResult(expected_probability=float(p)) for p in probs]
+
+    @property
+    def boosters(self) -> tuple[xgb.Booster, ...]:
+        """The XGBoost booster of each calibration fold, for explanations (SHAP). Read-only."""
+        if not isinstance(self._model, CalibratedClassifierCV):
+            raise ModelLoadError(
+                f"Model {self.model_version} is a {type(self._model).__name__}, not a CalibratedClassifierCV"
+            )
+        estimators = [pair.estimator for pair in self._model.calibrated_classifiers_]
+        if not estimators or not all(isinstance(e, xgb.XGBClassifier) for e in estimators):
+            raise ModelLoadError(
+                f"Model {self.model_version} is not calibrated over XGBClassifier fold models: "
+                f"{[type(e).__name__ for e in estimators]}"
+            )
+        return tuple(e.get_booster() for e in estimators)
 
 
 def _model_timestamp(path: Path) -> datetime:
