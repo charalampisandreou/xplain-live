@@ -5,7 +5,10 @@ Expectation versus outcome, live. A studio copilot for the Microsoft
 expected with what happened, explains the gap, and emits timed, machine-readable
 overlay cards that a graphics system can render alongside the match.
 
-> Status: work in progress (spine only: schema, feature builder, generator, `/score`, replay).
+> Status: work in progress. Built: the synthetic match generator, the xPass scoring API (`/score`),
+> replay, and an offline deterministic analysis pipeline (outlier moments, SHAP-based drivers,
+> per-half commentary gate, half reports, timeline, pass marks). Not built yet: the LLM agents
+> (narration, personalization), the live overlay UI and the Azure deployment.
 > Results, demo and deployment sections are filled in as they are measured.
 
 ## What it does
@@ -40,6 +43,13 @@ Measured with `scripts/compare_variants.py` on generated matches:
   Goal kicks, throw-ins and passes of 45+ complete more often than in real data.
 - xP measures situational pass difficulty and does not know the pass target.
 - Difficulty bands and outlier thresholds are provisional.
+- The match clock keeps counting across half-time, so second-half minutes are too high by the
+  first-half stoppage time (1 to 4 minutes in the generator settings); in seed 42, late passes
+  show as minutes 92 to 97.
+- Pitch-position labels use editorial thresholds (thirds of the pitch length, 0.85 of the length
+  for "close to the opposition goal", 0.15 / 0.325 of the width) and never say left or right.
+- The commentary settings (top 3 per kind per half, floor 0.25 / 0.96) were chosen from a
+  calibration over 10 generated matches and are provisional.
 - The model's real-world quality is its hold-out result (ROC AUC 0.8328, log-loss 0.4007,
   Brier 0.1266), not the reliability numbers on synthetic passes.
 
@@ -80,6 +90,46 @@ python -m xplain.replay --file data/match_seed42.jsonl --url http://127.0.0.1:80
 
 xP is situational pass difficulty (completion probability from start-of-pass information only),
 not pass quality; the difficulty band and outlier thresholds are provisional.
+
+## Run the pipeline
+
+Set the path once per terminal: `export PYTHONPATH=src` in Git Bash, or `$env:PYTHONPATH = "src"`
+in PowerShell. Then, from the repo root with the venv active:
+
+```bash
+python -m xplain.generator --seed 7 --out data/match_seed7.jsonl
+python -m xplain.pipeline --file data/match_seed7.jsonl
+python -m pytest -q
+```
+
+The pipeline prints a summary line and the half-time and full-time reports. Optional flags:
+
+| Flag | What it does |
+|---|---|
+| `--seed N` | Seed used to generate `--file` when the file does not exist (default 42) |
+| `--full` | Also print every moment (Moment, Explanation, commentary flag) as indented JSON |
+| `--timeline` | Print the timeline of commentated moments at the end of the match |
+| `--as-of-minute N` | Print the timeline as it stood at match minute N |
+| `--player PLAYER_ID` | Print that player's pass summary and passes (up to `--as-of-minute` if given) |
+| `--out PATH` | Write one JSON line per moment, plus `*_reports` and `*_marks` files next to it |
+| `--marks-out PATH` | Write one JSON line per pass (every pass, not only outliers) |
+
+This path is deterministic and offline: it makes no LLM or Azure calls, and the same seed gives
+byte-identical JSON.
+
+## How moments are chosen
+
+- An **outlier** is a pass that was a surprise: a completed pass with xP <= 0.35, or a failed pass
+  with xP >= 0.92 (provisional thresholds).
+- Every outlier gets a hover card; only some get commentary.
+- Commentary goes to moments that enter the running **top 3 of their kind within their half**, or
+  that clear an always-commentate floor (success xP <= 0.25, failure xP >= 0.96). Successes and
+  failures are ranked separately, and the ranking resets at half-time. The half-time and
+  full-time reports are the final top 3 per kind per half.
+- This is a **live** ranking: an early mild moment can be commentated and later displaced, and a
+  stronger one that arrives later can miss the cut. The timeline keeps every commentated moment.
+- Each moment carries SHAP-based drivers computed with XGBoost's built-in TreeSHAP; they explain
+  the model's raw score in log-odds, not percentage points of xP.
 
 ## Attribution
 

@@ -6,7 +6,6 @@ scipy==1.18.1          # direct import in scripts/fit_outcome_weights.py (C2 fit
 joblib==1.5.3
 pandas==3.0.3
 numpy==2.3.4
-shap==0.52.0
 
 # Service and validation (resolved 2026-10-10)
 fastapi==0.143.0
