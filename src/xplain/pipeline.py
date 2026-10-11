@@ -4,6 +4,7 @@ outlier pass out. Deterministic code only: the Analyst and the Explainer, no LLM
 
     python -m xplain.pipeline --file data/match_seed42.jsonl [--seed 42] [--full] [--timeline]
                               [--as-of-minute N] [--out data/moments_seed42.jsonl]
+                              [--marks-out data/marks_seed42.jsonl] [--player PLAYER_ID]
 
 Every outlier gets a hover card; only some are commentated. The commentary gate (qualifies_live)
 passes a moment when
@@ -15,6 +16,9 @@ Later moments never change an earlier flag.
 Reports: first_half and second_half hold the final top K of each kind in that period. Every report
 moment was commentated live: a moment in the top K of a set is in the top K of any earlier subset
 that contains it.
+
+Pass marks: a light record of EVERY pass (geometry, xP, delta = PVA, difficulty, band, outlier
+link), for pass vectors, hover details and per-player pass maps.
 
 Timeline: every commentated moment so far, with its current place in the ranking of its kind and
 half. Displaced and floor-only moments stay on the timeline with in_ranking False.
@@ -31,12 +35,15 @@ from pathlib import Path
 from pydantic import TypeAdapter
 
 from . import analytics, generator
-from .analyst import OUTLIER_KINDS, build_moment, qualifies_live, select_half_highlights
+from .analyst import OUTLIER_KINDS, build_moment, match_minute, qualifies_live, select_half_highlights
 from .config import AnalyticsConfig
 from .contracts import (
     Explanation,
     Moment,
     MomentBundle,
+    PassGeometry,
+    PassMark,
+    PlayerSummary,
     QualifiedBy,
     Report,
     TimelineItem,
@@ -96,28 +103,117 @@ def commentary_reasons(moment: Moment, earlier: Sequence[Moment], cfg: Analytics
     return tuple(reasons)
 
 
+class _ScoredMatch:
+    """Every pass scored once, in seq order, with its Moment when it is an outlier. Shared by bundles and marks."""
+
+    def __init__(self, events: Sequence, scorer: XPassScorer, cfg: AnalyticsConfig):
+        passes = sorted((e for e in events if isinstance(e, PassEvent)), key=lambda e: e.seq)
+        results = scorer.score([p.inputs for p in passes])
+        self.players, self.teams = names_from_meta(events)
+        self.scored: list[tuple[PassEvent, float, Moment | None]] = []
+        for event, result in zip(passes, results, strict=True):
+            moment = build_moment(event, result.expected_probability, scorer.model_version, cfg=cfg,
+                                  player_names=self.players, team_names=self.teams)
+            self.scored.append((event, result.expected_probability, moment))
+        self.cfg, self.scorer = cfg, scorer
+
+    def bundles(self) -> list[MomentBundle]:
+        """Run the commentary gate on earlier moments only and explain every Moment; in seq order."""
+        pairs: list[tuple[PassEvent, Moment]] = []
+        reasons: list[tuple[QualifiedBy, ...]] = []
+        for event, _, moment in self.scored:
+            if moment is None:
+                continue
+            reasons.append(commentary_reasons(moment, [m for _, m in pairs], self.cfg))
+            pairs.append((event, moment))
+        explanations = ShapExplainer(self.scorer.boosters).explain_many(pairs)
+        return [
+            MomentBundle(moment=moment, explanation=explanation, qualifies_live=bool(why), qualified_by=why)
+            for (_, moment), explanation, why in zip(pairs, explanations, reasons, strict=True)
+        ]
+
+    def marks(self) -> list[PassMark]:
+        """One PassMark per pass, in seq order, linked to its Moment when it is an outlier."""
+        return [build_pass_mark(event, xp, moment, self.cfg, self.players, self.teams)
+                for event, xp, moment in self.scored]
+
+
+def build_pass_mark(event: PassEvent, xp: float, moment: Moment | None, cfg: AnalyticsConfig,
+                    player_names: dict[str, str], team_names: dict[str, str]) -> PassMark:
+    """The light record of one scored pass; difficulty, band and delta come from analytics.py."""
+    completed = event.details.completed
+    d = analytics.difficulty(xp)
+    return PassMark(
+        event_id=event.event_id,
+        seq=event.seq,
+        t=event.t,
+        minute=match_minute(event.t),
+        period=event.period,
+        team_id=event.team_id,
+        team_name=team_names.get(event.team_id),
+        player_id=event.player_id,
+        player_name=player_names.get(event.player_id) if event.player_id is not None else None,
+        pass_geometry=PassGeometry(
+            start_x=event.inputs.start_x, start_y=event.inputs.start_y,
+            end_x=event.details.end_x, end_y=event.details.end_y,
+            length=event.details.length, ball_speed_ms=event.details.ball_speed_ms,
+        ),
+        completed=completed,
+        xp=xp,
+        delta=analytics.delta(completed, xp),
+        difficulty=d,
+        band=analytics.difficulty_band(d, cfg),
+        outlier=moment.kind if moment is not None else None,
+        moment_id=moment.moment_id if moment is not None else None,
+    )
+
+
+def analyse_match(events: Sequence, scorer: XPassScorer,
+                  cfg: AnalyticsConfig = analytics.DEFAULT) -> tuple[list[MomentBundle], list[PassMark]]:
+    """Bundles (outliers) and marks (every pass) from a single scoring of the passes."""
+    match = _ScoredMatch(events, scorer, cfg)
+    return match.bundles(), match.marks()
+
+
 def process_match(events: Sequence, scorer: XPassScorer,
                   cfg: AnalyticsConfig = analytics.DEFAULT) -> list[MomentBundle]:
     """Score every pass, build Moments, run the commentary gate on earlier moments only, explain; in seq order."""
-    passes = sorted((e for e in events if isinstance(e, PassEvent)), key=lambda e: e.seq)
-    results = scorer.score([p.inputs for p in passes])
-    players, teams = names_from_meta(events)
+    return _ScoredMatch(events, scorer, cfg).bundles()
 
-    pairs: list[tuple[PassEvent, Moment]] = []
-    reasons: list[tuple[QualifiedBy, ...]] = []
-    for event, result in zip(passes, results, strict=True):
-        moment = build_moment(event, result.expected_probability, scorer.model_version, cfg=cfg,
-                              player_names=players, team_names=teams)
-        if moment is None:
-            continue
-        reasons.append(commentary_reasons(moment, [m for _, m in pairs], cfg))
-        pairs.append((event, moment))
 
-    explanations = ShapExplainer(scorer.boosters).explain_many(pairs)
-    return [
-        MomentBundle(moment=moment, explanation=explanation, qualifies_live=bool(why), qualified_by=why)
-        for (_, moment), explanation, why in zip(pairs, explanations, reasons, strict=True)
-    ]
+def pass_marks(events: Sequence, scorer: XPassScorer, cfg: AnalyticsConfig = analytics.DEFAULT) -> list[PassMark]:
+    """One PassMark per PassEvent, in seq order, with the outlier link for passes that become Moments. No SHAP."""
+    return _ScoredMatch(events, scorer, cfg).marks()
+
+
+def player_pass_map(marks: Sequence[PassMark], player_id: str, as_of_t: float | None = None) -> list[PassMark]:
+    """The player's passes with t <= as_of_t (all when None), in seq order. Passes without a player never match."""
+    if player_id is None:
+        return []
+    limit = math.inf if as_of_t is None else as_of_t
+    return sorted((m for m in marks if m.player_id == player_id and m.t <= limit), key=lambda m: m.seq)
+
+
+def player_summary(marks: Sequence[PassMark], player_id: str, as_of_t: float | None = None) -> PlayerSummary | None:
+    """Counts, completion rate, mean xP and PVA of the player's passes so far; None when there are none."""
+    own = player_pass_map(marks, player_id, as_of_t)
+    if not own:
+        return None
+    n = len(own)
+    done = sum(m.completed for m in own)
+    pva = sum(m.delta for m in own)
+    return PlayerSummary(
+        player_id=player_id,
+        player_name=own[0].player_name,
+        team_id=own[0].team_id,
+        passes=n,
+        completed=done,
+        completion_rate=done / n,
+        mean_xp=sum(m.xp for m in own) / n,
+        pva_total=pva,
+        pva_per_pass=pva / n,
+        outliers=sum(m.outlier is not None for m in own),
+    )
 
 
 def summary_line(model_version: str, n_passes: int, bundles: Sequence[MomentBundle]) -> str:
@@ -211,6 +307,34 @@ def reports_path(out: Path) -> Path:
     return out.with_name(f"{out.stem}_reports{out.suffix}")
 
 
+def marks_path(out: Path) -> Path:
+    """The marks file next to the bundles file: moments.jsonl -> moments_marks.jsonl."""
+    return out.with_name(f"{out.stem}_marks{out.suffix}")
+
+
+def player_line(s: PlayerSummary) -> str:
+    """One line for a player's summary."""
+    return (f"player {s.player_id} ({s.player_name or '-'}, {s.team_id}): {s.passes} passes, {s.completed} completed "
+            f"({s.completion_rate:.3f}), mean xP {s.mean_xp:.3f}, PVA {s.pva_total:+.3f} ({s.pva_per_pass:+.4f} per pass), "
+            f"{s.outliers} outliers")
+
+
+def player_table(marks: Sequence[PassMark]) -> list[str]:
+    """A player's passes as table rows: minute | start -> end | xP | delta | completed | outlier."""
+    rows = ["minute | start -> end                 | xP    | delta  | completed | outlier"]
+    for m in marks:
+        g = m.pass_geometry
+        vector = f"({g.start_x:5.1f}, {g.start_y:4.1f}) -> ({g.end_x:5.1f}, {g.end_y:4.1f})"
+        rows.append(f"{m.minute:<6} | {vector:<28} | {m.xp:.3f} | {m.delta:+.3f} | {m.completed!s:<9} | {m.outlier or '-'}")
+    return rows
+
+
+def write_jsonl(path: Path, items: Sequence) -> None:
+    """One compact JSON line per pydantic model."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("".join(i.model_dump_json() + "\n" for i in items), encoding="utf-8")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Moments, explanations, per-half reports and timeline for a match.")
     parser.add_argument("--file", type=Path, required=True)
@@ -218,7 +342,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--full", action="store_true", help="also print every bundle as indented JSON")
     parser.add_argument("--timeline", action="store_true", help="print the timeline at the end of the match")
     parser.add_argument("--as-of-minute", type=int, metavar="N", help="print the timeline as it stood at match minute N")
-    parser.add_argument("--out", type=Path, help="write one compact JSON line per bundle, and the reports to *_reports")
+    parser.add_argument("--out", type=Path,
+                        help="write one compact JSON line per bundle, the reports to *_reports and the pass marks to *_marks")
+    parser.add_argument("--marks-out", type=Path, help="write one compact JSON line per pass (PassMark)")
+    parser.add_argument("--player", metavar="PLAYER_ID", help="print the player's summary and passes (up to --as-of-minute)")
     args = parser.parse_args(argv)
     if args.as_of_minute is not None and args.as_of_minute < 0:
         parser.error("--as-of-minute must be >= 0")
@@ -228,7 +355,7 @@ def main(argv: list[str] | None = None) -> int:
     cfg = analytics.DEFAULT
     events = load_events(args.file)
     scorer = XPassScorer(*find_default_model())
-    bundles = process_match(events, scorer, cfg)
+    bundles, marks = analyse_match(events, scorer, cfg)
     match_reports = reports(bundles, cfg.highlights_per_kind)
 
     n_passes = sum(isinstance(e, PassEvent) for e in events)
@@ -243,12 +370,22 @@ def main(argv: list[str] | None = None) -> int:
     if args.as_of_minute is not None:
         print(f"timeline at minute {args.as_of_minute}")
         print("\n".join(timeline_table(timeline(bundles, cfg.highlights_per_kind, minute_to_t(args.as_of_minute)))))
+    if args.player is not None:
+        as_of = minute_to_t(args.as_of_minute) if args.as_of_minute is not None else None
+        summary = player_summary(marks, args.player, as_of)
+        print(player_line(summary) if summary else f"player {args.player}: no passes")
+        print("\n".join(player_table(player_pass_map(marks, args.player, as_of))))
     if args.out:
         args.out.parent.mkdir(parents=True, exist_ok=True)
         args.out.write_text("".join(b.model_dump_json() + "\n" for b in bundles), encoding="utf-8")
         reports_path(args.out).write_text("".join(r.model_dump_json() + "\n" for r in match_reports), encoding="utf-8")
+        write_jsonl(marks_path(args.out), marks)
         print(f"wrote {len(bundles)} bundles to {args.out} and {len(match_reports)} reports to "
               f"{reports_path(args.out)}", file=sys.stderr)
+        print(f"wrote {len(marks)} pass marks to {marks_path(args.out)}", file=sys.stderr)
+    if args.marks_out:
+        write_jsonl(args.marks_out, marks)
+        print(f"wrote {len(marks)} pass marks to {args.marks_out}", file=sys.stderr)
     return 0
 
 

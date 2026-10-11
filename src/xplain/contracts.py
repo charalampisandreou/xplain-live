@@ -166,3 +166,49 @@ class TimelineItem(_Strict):
                              f"rank={self.rank})")
         return self
 
+
+class PassMark(_Strict):
+    """Light record of ONE pass (every pass, not only outliers), for pass vectors, hover details and pass maps.
+
+    Values are raw and unrounded; rounding is the UI's job. No SHAP and no evidence.
+    """
+
+    event_id: str
+    seq: Annotated[int, Field(ge=0)]
+    t: Annotated[float, Field(ge=0.0)]
+    minute: Annotated[int, Field(ge=1)]   # floor(t / 60) + 1, same convention as Moment
+    period: Literal[1, 2]
+    team_id: str
+    team_name: str | None = None
+    player_id: str | None = None
+    player_name: str | None = None
+    pass_geometry: PassGeometry
+    completed: bool
+    xp: Probability
+    delta: Annotated[float, Field(ge=-1.0, le=1.0)]  # outcome - xP (1 completed, 0 failed): the pass's PVA
+    difficulty: Annotated[int, Field(ge=0, le=100)]
+    band: Band
+    outlier: Outlier | None = None   # the outlier kind, when the pass is an outlier
+    moment_id: str | None = None     # the Moment's id, when the pass is an outlier
+
+    @model_validator(mode="after")
+    def _check_outlier_link(self) -> PassMark:
+        if (self.outlier is None) != (self.moment_id is None):
+            raise ValueError(f"outlier and moment_id must both be set or both be None "
+                             f"(outlier={self.outlier}, moment_id={self.moment_id})")
+        return self
+
+
+class PlayerSummary(_Strict):
+    """One player's passing so far: counts, completion, mean xP and PVA (sum of outcome - xP)."""
+
+    player_id: str
+    player_name: str | None = None
+    team_id: str
+    passes: Annotated[int, Field(ge=1)]
+    completed: Annotated[int, Field(ge=0)]
+    completion_rate: Probability
+    mean_xp: Probability
+    pva_total: float              # sum of delta over the player's passes
+    pva_per_pass: float           # pva_total / passes
+    outliers: Annotated[int, Field(ge=0)]   # how many of the player's passes are outliers
