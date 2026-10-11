@@ -11,9 +11,9 @@ Same strict style as schema.py: unknown fields are rejected and instances are im
 """
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from typing import Annotated, Literal, get_args
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .analytics import Band, Outlier
 from .schema import X, Y
@@ -91,3 +91,78 @@ class Explanation(_Strict):
     rest: float            # sum of the shap of every unit that is not a driver
     evidence: dict[str, bool | int | float | str]
     model_version: str
+
+
+QualifiedBy = Literal["ranking", "threshold"]
+QUALIFIED_BY_ORDER: tuple[str, ...] = get_args(QualifiedBy)
+REPORT_PERIOD: dict[str, int] = {"first_half": 1, "second_half": 2}
+
+
+class MomentBundle(_Strict):
+    """A Moment, its Explanation, and whether (and why) it was commentated when it happened.
+
+    qualified_by: "ranking" when the moment entered the running top K of its kind in its half
+    (counting only earlier moments of the same period), "threshold" when it cleared the
+    commentary floor. Ordered ("ranking", "threshold"); empty when not commentated.
+    """
+
+    moment: Moment
+    explanation: Explanation
+    qualifies_live: bool
+    qualified_by: tuple[QualifiedBy, ...]
+
+    @model_validator(mode="after")
+    def _check_qualified(self) -> MomentBundle:
+        expected = tuple(r for r in QUALIFIED_BY_ORDER if r in self.qualified_by)
+        if self.qualified_by != expected:
+            raise ValueError(f"qualified_by must be unique and ordered {QUALIFIED_BY_ORDER}, got {self.qualified_by}")
+        if self.qualifies_live != bool(self.qualified_by):
+            raise ValueError(f"qualifies_live ({self.qualifies_live}) must equal bool(qualified_by) ({self.qualified_by})")
+        return self
+
+
+class Report(_Strict):
+    """Final ranking of one half: the top K MomentBundles of each kind among that half's moments.
+
+    Both kinds are always keys (an empty list when there are none). Each list is sorted by
+    (-significance, seq) and holds only moments of the report's period; the cap K
+    (highlights_per_kind) is applied by the pipeline.
+    """
+
+    scope: Literal["first_half", "second_half"]
+    highlights: dict[Outlier, list[MomentBundle]]
+
+    @model_validator(mode="after")
+    def _check_highlights(self) -> Report:
+        if set(self.highlights) != set(get_args(Outlier)):
+            raise ValueError(f"highlights must have exactly the keys {get_args(Outlier)}, got {list(self.highlights)}")
+        period = REPORT_PERIOD[self.scope]
+        for kind, bundles in self.highlights.items():
+            if any(b.moment.kind != kind for b in bundles):
+                raise ValueError(f"highlights[{kind!r}] holds a moment of another kind")
+            if any(b.moment.period != period for b in bundles):
+                raise ValueError(f"{self.scope} report holds a moment outside period {period}")
+            keys = [(-b.moment.significance, b.moment.seq) for b in bundles]
+            if keys != sorted(keys):
+                raise ValueError(f"highlights[{kind!r}] is not sorted by (-significance, seq)")
+        return self
+
+
+class TimelineItem(_Strict):
+    """A commentated moment and where it stands, at a given time, in the ranking of its kind and half.
+
+    rank is its 1-based place among all moments of its kind and period so far; it is None exactly
+    when the moment is outside the top K (in_ranking False): displaced, or commentated via the floor only.
+    """
+
+    bundle: MomentBundle
+    in_ranking: bool
+    rank: Annotated[int, Field(ge=1)] | None
+
+    @model_validator(mode="after")
+    def _check_rank(self) -> TimelineItem:
+        if (self.rank is None) == self.in_ranking:
+            raise ValueError(f"rank must be set exactly when in_ranking is True (in_ranking={self.in_ranking}, "
+                             f"rank={self.rank})")
+        return self
+

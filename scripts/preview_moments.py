@@ -16,34 +16,18 @@ import sys
 from collections import Counter
 from pathlib import Path
 
-from pydantic import TypeAdapter
-
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT / "src") not in sys.path:
     sys.path.insert(0, str(ROOT / "src"))
 
-from xplain import generator  # noqa: E402
 from xplain.analyst import OUTLIER_KINDS, build_moment, select_highlights  # noqa: E402
 from xplain.contracts import Explanation, Moment  # noqa: E402
 from xplain.explainer import ShapExplainer  # noqa: E402
-from xplain.schema import Event, MatchMetaEvent, PassEvent  # noqa: E402
+from xplain.pipeline import additivity_error, ensure_match_file, load_events, names_from_meta  # noqa: E402
+from xplain.schema import PassEvent  # noqa: E402
 from xplain.scoring import XPassScorer, find_default_model  # noqa: E402
 
 DEFAULT_FILE = ROOT / "data" / "match_seed42.jsonl"
-_EVENT = TypeAdapter(Event)
-
-
-def load_events(path: Path) -> list:
-    """Read a match JSONL file into schema events."""
-    return [_EVENT.validate_json(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
-
-
-def names_from_meta(events: list) -> tuple[dict[str, str], dict[str, str]]:
-    """Player and team names from the match_meta event, as (player_id -> name, team_id -> name)."""
-    meta = next(e for e in events if isinstance(e, MatchMetaEvent))
-    players = {p.player_id: p.name for p in meta.players}
-    teams = {meta.home_team_id: meta.home_name, meta.away_team_id: meta.away_name}
-    return players, teams
 
 
 def build_all_moments(events: list, scorer: XPassScorer) -> tuple[int, list[Moment]]:
@@ -66,18 +50,11 @@ def explain_all(events: list, moments: list[Moment], scorer: XPassScorer) -> dic
     return {x.moment_id: x for x in explanations}
 
 
-def additivity_error(x: Explanation) -> float:
-    """How far baseline + the three driver shap values + rest is from the raw score."""
-    return abs(x.baseline + sum(d.shap for d in x.drivers) + x.rest - x.raw_score)
-
-
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Preview Analyst Moments for one match.")
     parser.add_argument("--file", type=Path, default=DEFAULT_FILE)
     args = parser.parse_args(argv)
-    if not args.file.is_file():
-        print(f"{args.file} not found, generating it with seed 42", file=sys.stderr)
-        generator.main(["--seed", "42", "--out", str(args.file)])
+    ensure_match_file(args.file)
 
     events = load_events(args.file)
     scorer = XPassScorer(*find_default_model())
