@@ -16,9 +16,14 @@ Outlier = Literal["surprise_success", "surprise_failure"]
 DEFAULT = AnalyticsConfig()
 
 
+def percent(x: float) -> int:
+    """A probability as a whole percent, the one rounding rule for every displayed percent: round(100 * x)."""
+    return round(100 * x)
+
+
 def difficulty(xp: float) -> int:
     """0 (certain to be completed) to 100 (certain to fail): round(100 * (1 - xP))."""
-    return min(max(round(100 * (1.0 - xp)), 0), 100)
+    return min(max(percent(1.0 - xp), 0), 100)
 
 
 def difficulty_band(d: int, cfg: AnalyticsConfig = DEFAULT) -> Band:
