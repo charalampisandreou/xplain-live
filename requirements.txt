@@ -15,3 +15,7 @@ pydantic==2.14.0
 # Azure AI Foundry client (AzureCliCredential, no API keys)
 openai==3.26.1
 azure-identity==1.26.0
+
+# Agent Framework (resolved 2026-10-12)
+agent-framework-core==1.21.0
+agent-framework-openai==1.16.0

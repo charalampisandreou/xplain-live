@@ -26,3 +26,6 @@ requirements-freeze-old.txt
 
 # Local assistant instructions (not published)
 CLAUDE.md
+
+# Local spikes (not published)
+scratch/
