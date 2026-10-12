@@ -7,22 +7,17 @@ one list), by significance = |delta|, ties broken by the earlier seq.
 """
 from __future__ import annotations
 
-import math
 from collections.abc import Mapping, Sequence
 from typing import get_args
 
 from . import analytics
 from .analytics import Outlier
+from .clock import match_clock
 from .config import AnalyticsConfig
 from .contracts import Moment, PassGeometry
 from .schema import PassEvent
 
 OUTLIER_KINDS: tuple[Outlier, ...] = get_args(Outlier)
-
-
-def match_minute(t: float) -> int:
-    """Match minute as shown on a clock: 0-59.99 s is minute 1. Uses t as given (it runs on across halftime)."""
-    return math.floor(t / 60.0) + 1
 
 
 def build_evidence(event_id: str, facts: Mapping[str, bool | int | float | str | None]) -> dict[str, bool | int | float | str]:
@@ -38,8 +33,12 @@ def build_moment(
     cfg: AnalyticsConfig = analytics.DEFAULT,
     player_names: Mapping[str, str] | None = None,
     team_names: Mapping[str, str] | None = None,
+    second_half_start: float | None = None,
 ) -> Moment | None:
-    """Package a scored pass as a Moment, or return None when it is not an outlier."""
+    """Package a scored pass as a Moment, or return None when it is not an outlier.
+
+    second_half_start (t of the second-half kick-off, clock.second_half_start) is needed for period-2 passes.
+    """
     if not 0.0 <= xp <= 1.0:
         raise ValueError(f"xp must be in [0, 1], got {xp!r} for event {event.event_id}")
     completed = event.details.completed
@@ -50,7 +49,7 @@ def build_moment(
     d = analytics.difficulty(xp)
     band = analytics.difficulty_band(d, cfg)
     dlt = analytics.delta(completed, xp)
-    minute = match_minute(event.t)
+    clock = match_clock(event.t, event.period, second_half_start)
     player_name = (player_names or {}).get(event.player_id) if event.player_id is not None else None
     team_name = (team_names or {}).get(event.team_id)
     geometry = PassGeometry(
@@ -67,7 +66,9 @@ def build_moment(
         "difficulty": d,
         "difficulty_band": band,
         "completed": completed,
-        "minute": minute,
+        "minute": clock.minute,
+        "minute_added": clock.added,
+        "minute_label": clock.label,
         "length": geometry.length,
         "ball_speed_ms": geometry.ball_speed_ms,
         "start_x": geometry.start_x,
@@ -84,7 +85,9 @@ def build_moment(
         match_id=event.match_id,
         seq=event.seq,
         t=event.t,
-        minute=minute,
+        minute=clock.minute,
+        minute_added=clock.added,
+        minute_label=clock.label,
         period=event.period,
         team_id=event.team_id,
         team_name=team_name,

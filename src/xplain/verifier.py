@@ -78,7 +78,8 @@ class VerifierResult(BaseModel):
 
 
 def allowed_numbers(bundle: MomentBundle) -> frozenset[str]:
-    """The numbers a line may contain, as written: the xP percent, the match minute and the difficulty, from the evidence."""
+    """The numbers a line may contain, as written: the xP percent, the match minute, the added-time minute
+    (when there is one, so "45+2" needs both 45 and 2) and the difficulty, from the evidence."""
     m = bundle.moment
     ev = m.evidence
     allowed: set[str] = set()
@@ -86,6 +87,8 @@ def allowed_numbers(bundle: MomentBundle) -> frozenset[str]:
         allowed.add(str(percent(xp)))
     if (minute := ev.get(f"{m.event_id}:minute")) is not None:
         allowed.add(str(minute))
+    if (added := ev.get(f"{m.event_id}:minute_added")) is not None and added > 0:
+        allowed.add(str(added))
     if (difficulty := ev.get(f"{m.event_id}:difficulty")) is not None:
         allowed.add(str(difficulty))
     return frozenset(allowed)

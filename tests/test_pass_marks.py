@@ -2,7 +2,7 @@ import pytest
 from pydantic import ValidationError
 
 from xplain import analytics, pipeline
-from xplain.analyst import match_minute
+from xplain.clock import match_clock, second_half_start
 from xplain.contracts import PassGeometry, PassMark, PlayerSummary
 from xplain.pipeline import (
     analyse_match,
@@ -25,8 +25,9 @@ def mark(seq: int, player_id: str | None, completed: bool, xp: float, *, t: floa
     """A hand-built PassMark; difficulty, band and delta from the analytics functions."""
     t = 10.0 * seq if t is None else t
     d = analytics.difficulty(xp)
+    c = match_clock(t, 1, None)
     return PassMark(
-        event_id=f"m1:{seq}", seq=seq, t=t, minute=match_minute(t), period=1, team_id=team_id,
+        event_id=f"m1:{seq}", seq=seq, t=t, minute=c.minute, minute_added=c.added, minute_label=c.label, period=1, team_id=team_id,
         player_id=player_id, player_name=None if player_id is None else f"Name {player_id}",
         pass_geometry=GEOMETRY, completed=completed, xp=xp, delta=analytics.delta(completed, xp),
         difficulty=d, band=analytics.difficulty_band(d), outlier=outlier,
@@ -49,13 +50,15 @@ def test_one_mark_per_pass_in_seq_order(tiny_analysis, seed42_events):  # noqa: 
     assert len({m.event_id for m in marks}) == len(marks)
 
 
-def test_delta_difficulty_band_from_analytics(tiny_analysis):
+def test_delta_difficulty_band_from_analytics(tiny_analysis, seed42_events):  # noqa: F811
     _, marks = tiny_analysis
+    start = second_half_start(seed42_events)
     for m in marks:
         assert m.delta == (1.0 if m.completed else 0.0) - m.xp
         assert m.difficulty == analytics.difficulty(m.xp)
         assert m.band == analytics.difficulty_band(m.difficulty, WIDE)
-        assert m.minute == match_minute(m.t)
+        c = match_clock(m.t, m.period, start)
+        assert (m.minute, m.minute_added, m.minute_label) == (c.minute, c.added, c.label)
 
 
 def test_outlier_links_match_moments(tiny_analysis):

@@ -43,9 +43,8 @@ Measured with `scripts/compare_variants.py` on generated matches:
   Goal kicks, throw-ins and passes of 45+ complete more often than in real data.
 - xP measures situational pass difficulty and does not know the pass target.
 - Difficulty bands and outlier thresholds are provisional.
-- The match clock keeps counting across half-time, so second-half minutes are too high by the
-  first-half stoppage time (1 to 4 minutes in the generator settings); in seed 42, late passes
-  show as minutes 92 to 97.
+- The second-half clock starts at the first period-2 event (the kick-off), since the event stream
+  has no explicit half-time marker. Added time shows as "45+N" and "90+N".
 - Pitch-position labels use editorial thresholds (thirds of the pitch length, 0.85 of the length
   for "close to the opposition goal", 0.15 / 0.325 of the width) and never say left or right.
 - The commentary settings (top 3 per kind per half, floor 0.25 / 0.96) were chosen from a
@@ -109,7 +108,7 @@ The pipeline prints a summary line and the half-time and full-time reports. Opti
 | `--seed N` | Seed used to generate `--file` when the file does not exist (default 42) |
 | `--full` | Also print every moment (Moment, Explanation, commentary flag) as indented JSON |
 | `--timeline` | Print the timeline of commentated moments at the end of the match |
-| `--as-of-minute N` | Print the timeline as it stood at match minute N |
+| `--as-of-minute N` | Print the timeline as it stood at match minute N (45 includes first-half added time) |
 | `--player PLAYER_ID` | Print that player's pass summary and passes (up to `--as-of-minute` if given) |
 | `--out PATH` | Write one JSON line per moment, plus `*_reports` and `*_marks` files next to it |
 | `--marks-out PATH` | Write one JSON line per pass (every pass, not only outliers) |

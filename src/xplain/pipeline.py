@@ -34,8 +34,8 @@ from pathlib import Path
 
 from pydantic import TypeAdapter
 
-from . import analytics, generator
-from .analyst import OUTLIER_KINDS, build_moment, match_minute, qualifies_live, select_half_highlights
+from . import analytics, clock, generator
+from .analyst import OUTLIER_KINDS, build_moment, qualifies_live, select_half_highlights
 from .config import AnalyticsConfig
 from .contracts import (
     Explanation,
@@ -110,10 +110,12 @@ class _ScoredMatch:
         passes = sorted((e for e in events if isinstance(e, PassEvent)), key=lambda e: e.seq)
         results = scorer.score([p.inputs for p in passes])
         self.players, self.teams = names_from_meta(events)
+        self.second_half_start = clock.second_half_start(events)
         self.scored: list[tuple[PassEvent, float, Moment | None]] = []
         for event, result in zip(passes, results, strict=True):
             moment = build_moment(event, result.expected_probability, scorer.model_version, cfg=cfg,
-                                  player_names=self.players, team_names=self.teams)
+                                  player_names=self.players, team_names=self.teams,
+                                  second_half_start=self.second_half_start)
             self.scored.append((event, result.expected_probability, moment))
         self.cfg, self.scorer = cfg, scorer
 
@@ -134,20 +136,24 @@ class _ScoredMatch:
 
     def marks(self) -> list[PassMark]:
         """One PassMark per pass, in seq order, linked to its Moment when it is an outlier."""
-        return [build_pass_mark(event, xp, moment, self.cfg, self.players, self.teams)
+        return [build_pass_mark(event, xp, moment, self.cfg, self.players, self.teams, self.second_half_start)
                 for event, xp, moment in self.scored]
 
 
 def build_pass_mark(event: PassEvent, xp: float, moment: Moment | None, cfg: AnalyticsConfig,
-                    player_names: dict[str, str], team_names: dict[str, str]) -> PassMark:
-    """The light record of one scored pass; difficulty, band and delta come from analytics.py."""
+                    player_names: dict[str, str], team_names: dict[str, str],
+                    second_half_start: float | None = None) -> PassMark:
+    """The light record of one scored pass; difficulty, band and delta come from analytics.py, the minute from clock.py."""
     completed = event.details.completed
     d = analytics.difficulty(xp)
+    c = clock.match_clock(event.t, event.period, second_half_start)
     return PassMark(
         event_id=event.event_id,
         seq=event.seq,
         t=event.t,
-        minute=match_minute(event.t),
+        minute=c.minute,
+        minute_added=c.added,
+        minute_label=c.label,
         period=event.period,
         team_id=event.team_id,
         team_name=team_names.get(event.team_id),
@@ -276,7 +282,7 @@ def report_table(reports_: Sequence[Report]) -> list[str]:
                 rows.append(f"{report.scope:<11} | {kind:<16} | -    | (none)")
             for rank, b in enumerate(bundles, start=1):
                 m = b.moment
-                rows.append(f"{report.scope:<11} | {kind:<16} | {rank:<4} | {m.minute:<6} | {m.period:<6} | "
+                rows.append(f"{report.scope:<11} | {kind:<16} | {rank:<4} | {m.minute_label:<6} | {m.period:<6} | "
                             f"{_player(m):<16} | {m.xp:.3f} | {m.delta:+.3f} | {m.completed!s:<9} | {_why(b)}")
     return rows
 
@@ -287,19 +293,10 @@ def timeline_table(items: Sequence[TimelineItem]) -> list[str]:
             "in_ranking | rank"]
     for item in items:
         b, m = item.bundle, item.bundle.moment
-        rows.append(f"{m.minute:<6} | {m.kind:<16} | {_player(m):<16} | {m.xp:.3f} | {m.delta:+.3f} | "
+        rows.append(f"{m.minute_label:<6} | {m.kind:<16} | {_player(m):<16} | {m.xp:.3f} | {m.delta:+.3f} | "
                     f"{m.completed!s:<9} | {_why(b):<17} | {item.in_ranking!s:<10} | "
                     f"{item.rank if item.rank is not None else '-'}")
     return rows
-
-
-def minute_to_t(minute: int) -> float:
-    """as_of_t for "up to and including match minute N": the largest float below N * 60 seconds.
-
-    Moment minute = floor(t / 60) + 1, so minute <= N exactly when t < N * 60. A moment at
-    t = N * 60 is minute N + 1 and must not be included.
-    """
-    return math.nextafter(minute * 60.0, -math.inf)
 
 
 def reports_path(out: Path) -> Path:
@@ -325,7 +322,7 @@ def player_table(marks: Sequence[PassMark]) -> list[str]:
     for m in marks:
         g = m.pass_geometry
         vector = f"({g.start_x:5.1f}, {g.start_y:4.1f}) -> ({g.end_x:5.1f}, {g.end_y:4.1f})"
-        rows.append(f"{m.minute:<6} | {vector:<28} | {m.xp:.3f} | {m.delta:+.3f} | {m.completed!s:<9} | {m.outlier or '-'}")
+        rows.append(f"{m.minute_label:<6} | {vector:<28} | {m.xp:.3f} | {m.delta:+.3f} | {m.completed!s:<9} | {m.outlier or '-'}")
     return rows
 
 
@@ -369,9 +366,9 @@ def main(argv: list[str] | None = None) -> int:
         print("\n".join(timeline_table(timeline(bundles, cfg.highlights_per_kind))))
     if args.as_of_minute is not None:
         print(f"timeline at minute {args.as_of_minute}")
-        print("\n".join(timeline_table(timeline(bundles, cfg.highlights_per_kind, minute_to_t(args.as_of_minute)))))
+        print("\n".join(timeline_table(timeline(bundles, cfg.highlights_per_kind, clock.as_of_t(events, args.as_of_minute)))))
     if args.player is not None:
-        as_of = minute_to_t(args.as_of_minute) if args.as_of_minute is not None else None
+        as_of = clock.as_of_t(events, args.as_of_minute) if args.as_of_minute is not None else None
         summary = player_summary(marks, args.player, as_of)
         print(player_line(summary) if summary else f"player {args.player}: no passes")
         print("\n".join(player_table(player_pass_map(marks, args.player, as_of))))

@@ -14,8 +14,8 @@ SUCCESS_XP = CFG.surprise_success_max_xp   # completed at this xP -> surprise_su
 FAILURE_XP = CFG.surprise_failure_min_xp   # failed at this xP -> surprise_failure
 ROUTINE_XP = (SUCCESS_XP + FAILURE_XP) / 2  # between the thresholds -> never an outlier
 
-EVIDENCE_NAMES = ("xp", "delta", "difficulty", "difficulty_band", "completed", "minute", "length",
-                  "ball_speed_ms", "start_x", "start_y", "end_x", "end_y")
+EVIDENCE_NAMES = ("xp", "delta", "difficulty", "difficulty_band", "completed", "minute", "minute_added",
+                  "minute_label", "length", "ball_speed_ms", "start_x", "start_y", "end_x", "end_y")
 
 
 def make_event(seq: int = 10, *, completed: bool = True, t: float = 600.0, period: int = 1,
@@ -30,8 +30,11 @@ def make_event(seq: int = 10, *, completed: bool = True, t: float = 600.0, perio
     )
 
 
+SECOND_HALF_START = 2850.0  # a first half with 2.5 minutes of added time
+
+
 def moment(seq: int, xp: float, completed: bool, **kw) -> Moment:
-    m = build_moment(make_event(seq, completed=completed, **kw), xp, "test-model")
+    m = build_moment(make_event(seq, completed=completed, **kw), xp, "test-model", second_half_start=SECOND_HALF_START)
     assert m is not None
     return m
 
@@ -82,11 +85,21 @@ def test_xp_outside_unit_interval_raises(xp):
         build_moment(make_event(), xp, "test-model")
 
 
-@pytest.mark.parametrize("t, minute", [(0.0, 1), (59.9, 1), (60.0, 2), (2700.0, 46)])
-def test_minute_from_t(t, minute):
-    m = moment(1, SUCCESS_XP, completed=True, t=t)
-    assert m.minute == minute
+@pytest.mark.parametrize("t, period, minute, added, label", [
+    (0.0, 1, 1, 0, "1"), (59.9, 1, 1, 0, "1"), (60.0, 1, 2, 0, "2"), (2700.0, 1, 45, 1, "45+1"),
+    (SECOND_HALF_START, 2, 46, 0, "46"), (SECOND_HALF_START + 2700.0 + 61.0, 2, 90, 2, "90+2"),
+])
+def test_minute_from_clock(t, period, minute, added, label):
+    m = moment(1, SUCCESS_XP, completed=True, t=t, period=period)
+    assert (m.minute, m.minute_added, m.minute_label) == (minute, added, label)
     assert m.evidence["m1:1:minute"] == minute
+    assert m.evidence["m1:1:minute_added"] == added
+    assert m.evidence["m1:1:minute_label"] == label
+
+
+def test_period_two_needs_second_half_start():
+    with pytest.raises(ValueError, match="second_half_start"):
+        build_moment(make_event(completed=True, t=3000.0, period=2), SUCCESS_XP, "test-model")
 
 
 # --- evidence -----------------------------------------------------------------------------------

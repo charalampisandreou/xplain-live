@@ -16,6 +16,7 @@ from typing import Annotated, Literal, get_args
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .analytics import Band, Outlier
+from .clock import clock_label
 from .schema import X, Y
 
 Probability = Annotated[float, Field(ge=0.0, le=1.0)]
@@ -23,6 +24,11 @@ Probability = Annotated[float, Field(ge=0.0, le=1.0)]
 
 class _Strict(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+def _check_minute_label(minute: int, added: int, label: str) -> None:
+    if label != clock_label(minute, added):
+        raise ValueError(f"minute_label {label!r} does not match minute {minute} and minute_added {added}")
 
 
 class PassGeometry(_Strict):
@@ -45,7 +51,9 @@ class Moment(_Strict):
     match_id: str
     seq: Annotated[int, Field(ge=0)]
     t: Annotated[float, Field(ge=0.0)]
-    minute: Annotated[int, Field(ge=1)]
+    minute: Annotated[int, Field(ge=1)]        # base match minute from clock.match_clock, 45 or 90 in added time
+    minute_added: Annotated[int, Field(ge=0)]  # added-time minute (the 2 of "45+2"), 0 in regular time
+    minute_label: str                          # "23", "45+2", "90+4"
     period: Literal[1, 2]
     team_id: str
     team_name: str | None = None
@@ -60,6 +68,11 @@ class Moment(_Strict):
     pass_geometry: PassGeometry
     evidence: dict[str, bool | int | float | str]
     model_version: str
+
+    @model_validator(mode="after")
+    def _check_clock(self) -> Moment:
+        _check_minute_label(self.minute, self.minute_added, self.minute_label)
+        return self
 
 
 class Driver(_Strict):
@@ -176,7 +189,9 @@ class PassMark(_Strict):
     event_id: str
     seq: Annotated[int, Field(ge=0)]
     t: Annotated[float, Field(ge=0.0)]
-    minute: Annotated[int, Field(ge=1)]   # floor(t / 60) + 1, same convention as Moment
+    minute: Annotated[int, Field(ge=1)]        # same clock as Moment (clock.match_clock)
+    minute_added: Annotated[int, Field(ge=0)]
+    minute_label: str
     period: Literal[1, 2]
     team_id: str
     team_name: str | None = None
@@ -196,6 +211,7 @@ class PassMark(_Strict):
         if (self.outlier is None) != (self.moment_id is None):
             raise ValueError(f"outlier and moment_id must both be set or both be None "
                              f"(outlier={self.outlier}, moment_id={self.moment_id})")
+        _check_minute_label(self.minute, self.minute_added, self.minute_label)
         return self
 
 

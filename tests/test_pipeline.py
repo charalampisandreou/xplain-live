@@ -15,6 +15,7 @@ from xgboost import XGBClassifier
 
 from xplain import analytics, pipeline
 from xplain.analyst import qualifies_live, select_half_highlights, select_highlights
+from xplain.clock import as_of_t
 from xplain.config import AnalyticsConfig
 from xplain.contracts import MomentBundle, Report, TimelineItem
 from xplain.features import FEATURE_ORDER
@@ -24,7 +25,6 @@ from xplain.pipeline import (
     clears_floor,
     ensure_match_file,
     load_events,
-    minute_to_t,
     names_from_meta,
     process_match,
     reports,
@@ -385,13 +385,15 @@ def test_end_of_match_ranking_equals_reports(tiny_scorer, seed42_events):
 
 def test_as_of_minute_matches_moment_minute(tiny_scorer):
     # make_event puts seq n at t = 10 * n: seq 5 is t = 50 (minute 1), seq 6 is t = 60 (minute 2)
-    bundles = run(tiny_scorer, [(0.95, False)] * 4 + [(0.2, True), (0.1, True), (0.3, True)])
+    plan = [(0.95, False)] * 4 + [(0.2, True), (0.1, True), (0.3, True)]
+    bundles = run(tiny_scorer, plan)
+    events = [make_event(seq, 10.0 + seq, step[1]) for seq, step in enumerate(plan, start=1)]
     assert [b.moment.minute for b in bundles[4:]] == [1, 2, 2]
     for n in (0, 1, 2, 3):
-        items = timeline(bundles, 5, minute_to_t(n))
+        items = timeline(bundles, 5, as_of_t(events, n))
         assert ids(items) == [b.moment.moment_id for b in bundles if b.qualifies_live and b.moment.minute <= n]
-    assert "moment:m1:6" not in ids(timeline(bundles, 5, minute_to_t(1)))  # t = 60 exactly is minute 2
-    assert "moment:m1:6" in ids(timeline(bundles, 5, minute_to_t(2)))
+    assert "moment:m1:6" not in ids(timeline(bundles, 5, as_of_t(events, 1)))  # t = 60 exactly is minute 2
+    assert "moment:m1:6" in ids(timeline(bundles, 5, as_of_t(events, 2)))
 
 
 def test_timeline_item_rank_invariant(tiny_scorer):

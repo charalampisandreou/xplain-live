@@ -3,6 +3,7 @@ from pydantic import ValidationError
 
 from xplain import analytics
 from xplain.analyst import build_evidence
+from xplain.clock import clock_label
 from xplain.contracts import Driver, Explanation, Moment, MomentBundle, PassGeometry
 from xplain.generator import generate_match
 from xplain.narration import NarratorOut
@@ -13,16 +14,19 @@ from xplain.verifier import MAX_WORDS, allowed_numbers, verify
 LABELS = ("along the ground", "from the middle third, out wide", "with no pressure on the passer")
 
 
-def make_bundle(xp: float = 0.94, minute: int = 3, n_drivers: int = 3, completed: bool = False) -> MomentBundle:
+def make_bundle(xp: float = 0.94, minute: int = 3, n_drivers: int = 3, completed: bool = False,
+                added: int = 0) -> MomentBundle:
     """A small Moment + Explanation built by hand, with Analyst-style evidence."""
     event_id = "m1-00042"
     d = analytics.difficulty(xp)
     dlt = analytics.delta(completed, xp)
     evidence = build_evidence(event_id, {"xp": xp, "delta": dlt, "difficulty": d, "minute": minute,
+                                         "minute_added": added, "minute_label": clock_label(minute, added),
                                          "completed": completed, "player_name": "Weso Wendez"})
     moment = Moment(
         moment_id=f"moment:{event_id}", kind="surprise_success" if completed else "surprise_failure",
-        event_id=event_id, match_id="m1", seq=42, t=(minute - 1) * 60.0 + 5, minute=minute, period=1,
+        event_id=event_id, match_id="m1", seq=42, t=(minute - 1) * 60.0 + 5, minute=minute, minute_added=added,
+        minute_label=clock_label(minute, added), period=1,
         team_id="home", player_id="p7", player_name="Weso Wendez", completed=completed, xp=xp, delta=dlt,
         difficulty=d, band=analytics.difficulty_band(d), significance=abs(dlt),
         pass_geometry=PassGeometry(start_x=50, start_y=75, end_x=70, end_y=70, length=20.6, ball_speed_ms=14),
