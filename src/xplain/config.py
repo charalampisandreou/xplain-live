@@ -44,6 +44,7 @@ reports/outcome_fit.json as evidence.
 """
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 
 GENERATOR_VERSION = "0.1.1"
@@ -211,3 +212,21 @@ class AnalyticsConfig:
             )
         if self.highlights_per_kind < 0:
             raise ValueError(f"highlights_per_kind must be >= 0, got {self.highlights_per_kind}")
+
+
+@dataclass(frozen=True)
+class FoundryConfig:
+    """Where the Narrator's model lives. Auth is Entra ID (a credential object), never an API key.
+
+    Override with XPLAIN_FOUNDRY_ENDPOINT and XPLAIN_FOUNDRY_DEPLOYMENT.
+    """
+
+    endpoint: str = "https://plhack-foundry-candreou-resource.openai.azure.com/openai/v1/"
+    deployment: str = "gpt-4.1-mini"
+
+    @classmethod
+    def from_env(cls) -> FoundryConfig:
+        return cls(
+            endpoint=os.environ.get("XPLAIN_FOUNDRY_ENDPOINT", cls.endpoint),
+            deployment=os.environ.get("XPLAIN_FOUNDRY_DEPLOYMENT", cls.deployment),
+        )
