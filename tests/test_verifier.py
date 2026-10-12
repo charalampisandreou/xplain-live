@@ -1,3 +1,5 @@
+import re
+
 import pytest
 from pydantic import ValidationError
 
@@ -6,10 +8,10 @@ from xplain.analyst import build_evidence
 from xplain.clock import clock_label
 from xplain.contracts import Driver, Explanation, Moment, MomentBundle, PassGeometry
 from xplain.generator import generate_match
-from xplain.narration import NarratorOut
+from xplain.narration import DIFFICULTY_TIERS, NarratorOut, difficulty_tier
 from xplain.pipeline import process_match
 from xplain.scoring import ModelLoadError, XPassScorer, find_default_model
-from xplain.verifier import MAX_WORDS, allowed_numbers, verify
+from xplain.verifier import EASY_WORDS, HARD_WORDS, LANGS, MAX_WORDS, difficulty_words, verify
 
 LABELS = ("along the ground", "from the middle third, out wide", "with no pressure on the passer")
 
@@ -41,15 +43,28 @@ def make_bundle(xp: float = 0.94, minute: int = 3, n_drivers: int = 3, completed
     return MomentBundle(moment=moment, explanation=explanation, qualifies_live=False, qualified_by=())
 
 
+def hard_bundle(**kw) -> MomentBundle:
+    """A completed pass the model rated hard (surprise_success, xP 0.25: tier "difficult")."""
+    return make_bundle(xp=0.25, completed=True, **kw)
+
+
 def make_out(**kw) -> NarratorOut:
+    """A clean line for make_bundle(): an easy pass along the ground that goes astray."""
     base = dict(
-        line_en="Weso Wendez misses a 94% pass in minute 3, played along the ground.",
-        line_es="Weso Wendez falla un pase del 94% en el minuto 3, a ras de suelo.",
-        line_el="Στο 3ο λεπτό ο Weso Wendez χάνει μια πάσα 94% κατά μήκος του εδάφους.",
-        numbers_used=["94", "3"],
+        line_en="Weso Wendez's easy ball along the ground goes astray.",
+        line_es="El pase fácil a ras de suelo de Weso Wendez se pierde.",
+        line_el="Η εύκολη πάσα του Weso Wendez κατά μήκος του εδάφους χάνεται.",
         drivers_used=[1],
     )
     return NarratorOut(**{**base, **kw})
+
+
+HARD_OUT = dict(
+    line_en="Weso Wendez gets a difficult ball away and finds a teammate.",
+    line_es="Weso Wendez saca un pase difícil y encuentra a un compañero.",
+    line_el="Ο Weso Wendez βγάζει μια δύσκολη πάσα και βρίσκει συμπαίκτη.",
+    drivers_used=[1],
+)
 
 
 def reasons_for(out: NarratorOut, bundle: MomentBundle | None = None) -> list[str]:
@@ -64,6 +79,8 @@ def test_narrator_out_is_frozen_and_strict():
         out.line_en = "x"
     with pytest.raises(ValidationError):
         NarratorOut(**out.model_dump(), extra="x")
+    with pytest.raises(ValidationError):
+        NarratorOut(**out.model_dump(), numbers_used=["94"])   # the field is gone
 
 
 def test_percent_is_round_100x():
@@ -77,16 +94,12 @@ def test_percent_is_round_100x():
 
 def test_clean_line_passes():
     result = verify(make_out(), make_bundle())
-    assert result.ok and result.reasons == []
+    assert (result.ok, result.reasons, result.notes) == (True, [], [])
 
 
-def test_allowed_numbers_are_xp_percent_minute_and_difficulty():
-    assert allowed_numbers(make_bundle(xp=0.94, minute=3)) == {"94", "3", "6"}
-
-
-def test_greek_ordinal_counts_as_its_digits():
-    out = make_out(line_el="Στο 3ο λεπτό ο Weso Wendez χάνει μια πάσα 94%.")
-    assert verify(out, make_bundle()).ok
+def test_clean_hard_line_passes():
+    result = verify(NarratorOut(**HARD_OUT), hard_bundle())
+    assert (result.ok, result.reasons, result.notes) == (True, [], [])
 
 
 def test_real_seed42_bundle_passes():
@@ -97,51 +110,124 @@ def test_real_seed42_bundle_passes():
     if not model_path.is_file() or not feature_list_path.is_file():
         pytest.skip(f"xPass model not available: {model_path}")
     bundle = process_match(generate_match(42)[0], XPassScorer(model_path, feature_list_path))[0]
-    m = bundle.moment
-    pct, minute = str(analytics.percent(m.xp)), str(m.minute)
+    tier = difficulty_tier(bundle.moment)
+    name = bundle.moment.player_name
     out = NarratorOut(
-        line_en=f"In minute {minute}, a {pct}% pass goes astray.",
-        line_es=f"En el minuto {minute}, un pase del {pct}% se pierde.",
-        line_el=f"Στο {minute}ο λεπτό χάνεται μια πάσα {pct}%.",
-        numbers_used=[pct, minute],
+        line_en=f"{name}'s {tier.en} pass goes astray.",
+        line_es=f"El pase {tier.es} de {name} se pierde.",
+        line_el=f"Η {tier.el} πάσα του {name} χάνεται.",
         drivers_used=[d.rank for d in bundle.explanation.drivers[:1]],
     )
-    assert verify(out, bundle).reasons == []
+    result = verify(out, bundle)
+    assert (result.reasons, result.notes) == ([], [])
 
 
-# --- numbers ------------------------------------------------------------------------------------
+# --- difficulty tiers ---------------------------------------------------------------------------
 
-def test_wrong_percent_is_rejected():
-    out = make_out(line_en="Weso Wendez misses a 95% pass in minute 3.", numbers_used=["95", "94", "3"])
-    assert reasons_for(out) == ["numbers: numbers_used has '95', not in the evidence (allowed ['3', '6', '94'])"]
-
-
-def test_rounding_edge_uses_round_100x():
-    bundle = make_bundle(xp=0.145, completed=True)      # 100 * 0.145 rounds to 14, not 15
-    good = make_out(line_en="A 14% pass finds its man in minute 3.", line_es="Un pase del 14% llega en el minuto 3.",
-                    line_el="Μια πάσα 14% βρίσκει αποδέκτη στο 3ο λεπτό.", numbers_used=["14", "3"])
-    bad = good.model_copy(update={"line_en": "A 15% pass finds its man in minute 3.", "numbers_used": ["15", "14", "3"]})
-    assert verify(good, bundle).ok
-    assert reasons_for(bad, bundle) == ["numbers: numbers_used has '15', not in the evidence (allowed ['3', '14', '86'])"]
+@pytest.mark.parametrize("xp, completed, en, family", [
+    (0.997, False, "very easy", "easy"), (0.96, False, "very easy", "easy"),
+    (0.9599, False, "easy", "easy"), (0.92, False, "easy", "easy"),
+    (0.35, True, "tricky", "hard"), (0.30, True, "tricky", "hard"),
+    (0.2999, True, "difficult", "hard"), (0.20, True, "difficult", "hard"),
+    (0.1999, True, "very difficult", "hard"), (0.0, True, "very difficult", "hard"),
+])
+def test_difficulty_tier_cutoffs(xp, completed, en, family):
+    tier = difficulty_tier(make_bundle(xp=xp, completed=completed).moment)
+    assert (tier.en, tier.family) == (en, family)
 
 
-def test_number_in_line_missing_from_numbers_used():
-    assert reasons_for(make_out(numbers_used=["94"])) == [
-        "numbers: line_en has 3, not in numbers_used",
-        "numbers: line_es has 3, not in numbers_used",
-        "numbers: line_el has 3, not in numbers_used",
-    ]
+def test_every_tier_word_matches_its_own_family_only():
+    for tiers in DIFFICULTY_TIERS.values():
+        for _, tier in tiers:
+            for lang, word in tier.words().items():
+                found = difficulty_words(lang, word)
+                assert found[tier.family], (lang, word)
+                other = "hard" if tier.family == "easy" else "easy"
+                assert not found[other], (lang, word)
 
 
-def test_numbers_used_entry_matching_nothing_in_evidence():
-    assert reasons_for(make_out(numbers_used=["94", "3", "40"])) == [
-        "numbers: numbers_used has '40', not in the evidence (allowed ['3', '6', '94'])",
-    ]
+@pytest.mark.parametrize("lang, line", [
+    ("en", "Wendez's tough ball along the ground goes astray."),
+    ("es", "El pase difícil de Wendez se pierde."),
+    ("el", "Η δύσκολη πάσα του Wendez χάνεται."),
+])
+def test_hard_word_on_an_easy_pass_is_rejected(lang, line):
+    reasons = reasons_for(make_out(**{f"line_{lang}": line}))
+    assert len(reasons) == 1
+    assert reasons[0].startswith(f"difficulty: line_{lang} says ")
+    assert reasons[0].endswith("but the pass is rated easy (easy)")
 
 
-def test_numbers_used_must_be_digits_as_written():
-    reasons = reasons_for(make_out(numbers_used=["94%", "3"]))
-    assert "numbers: numbers_used has '94%', not in the evidence (allowed ['3', '6', '94'])" in reasons
+@pytest.mark.parametrize("lang, line", [
+    ("en", "Weso Wendez's simple ball finds a teammate."),
+    ("es", "El pase sencillo de Weso Wendez encuentra a un compañero."),
+    ("el", "Η εύκολη πάσα του Weso Wendez βρίσκει συμπαίκτη."),
+])
+def test_easy_word_on_a_hard_pass_is_rejected(lang, line):
+    out = NarratorOut(**{**HARD_OUT, f"line_{lang}": line})
+    reasons = reasons_for(out, hard_bundle())
+    assert len(reasons) == 1
+    assert reasons[0].startswith(f"difficulty: line_{lang} says ")
+    assert reasons[0].endswith("but the pass is rated hard (difficult)")
+
+
+def test_greek_accent_variants_are_found():
+    assert difficulty_words("el", "μια ευκολότερη πάσα")["easy"]
+    assert difficulty_words("el", "ΔΥΣΚΟΛΗ ΠΑΣΑ")["hard"]
+
+
+def test_line_without_a_difficulty_word_is_accepted_but_noted():
+    out = make_out(line_en="Weso Wendez's ball along the ground goes astray.",
+                   line_el="Η πάσα του Weso Wendez κατά μήκος του εδάφους χάνεται.")
+    result = verify(out, make_bundle())
+    assert result.ok and result.reasons == []
+    assert result.notes == ["difficulty: line_en has no difficulty word", "difficulty: line_el has no difficulty word"]
+
+
+# --- no numbers ---------------------------------------------------------------------------------
+
+@pytest.mark.parametrize("lang, line, reason", [
+    ("en", "Weso Wendez's easy 94 ball goes astray.", "no_numbers: line_en has '94'"),
+    ("en", "Weso Wendez's easy % ball goes astray.", "no_numbers: line_en has '%'"),
+    ("en", "Weso Wendez's easy 94% ball goes astray.", "no_numbers: line_en has '94%'"),
+    ("es", "En el 45+2, el pase fácil de Weso Wendez se pierde.", "no_numbers: line_es has '45'"),
+    ("el", "Στο 3ο, η εύκολη πάσα του Weso Wendez χάνεται.", "no_numbers: line_el has '3'"),
+])
+def test_digits_and_percent_are_rejected(lang, line, reason):
+    assert reason in reasons_for(make_out(**{f"line_{lang}": line}))
+
+
+@pytest.mark.parametrize("lang, line, word", [
+    ("en", "Late in the game, Weso Wendez's easy ball goes astray in the final minute.", "minute"),
+    ("en", "Weso Wendez's easy ball goes astray with minutes to go.", "minutes"),
+    ("en", "Weso Wendez's easy, ninety percent ball goes astray.", "percent"),
+    ("en", "Weso Wendez's easy, ninety per cent ball goes astray.", "per cent"),
+    ("es", "En el último minuto, el pase fácil de Weso Wendez se pierde.", "minuto"),
+    ("es", "En los minutos finales, el pase fácil de Weso Wendez se pierde.", "minutos"),
+    ("es", "El pase fácil, noventa por ciento, de Weso Wendez se pierde.", "por ciento"),
+    ("el", "Στο τελευταίο λεπτό, η εύκολη πάσα του Weso Wendez χάνεται.", "λεπτό"),
+    ("el", "Στα τελευταία λεπτά, η εύκολη πάσα του Weso Wendez χάνεται.", "λεπτά"),
+    ("el", "Η εύκολη πάσα του Weso Wendez με υψηλό ποσοστό χάνεται.", "ποσοστό"),
+])
+def test_minute_and_percent_words_are_rejected(lang, line, word):
+    assert reasons_for(make_out(**{f"line_{lang}": line})) == [f"no_numbers: line_{lang} says {word!r}"]
+
+
+def test_greek_delicate_pass_is_not_a_minute():
+    out = make_out(line_el="Η λεπτή και εύκολη πάσα του Weso Wendez χάνεται.")
+    assert verify(out, make_bundle()).ok
+
+
+def test_spike_lines_with_numbers_are_now_rejected():
+    out = NarratorOut(
+        line_en="At 3 minutes, Weso Wendez makes a 94% pass attempt from the middle third, out wide, but fails.",
+        line_es="A los 3 minutos, Weso Wendez intenta un pase del 94% desde el tercio medio, hacia afuera, pero falla.",
+        line_el="Στο 3ο λεπτό, ο Weso Wendez επιχειρεί μια πάσα 94% από το μεσαίο τρίτο, προς τα έξω, αλλά αποτυγχάνει.",
+        drivers_used=[2],
+    )
+    reasons = reasons_for(out)
+    assert {r.split(":")[0] for r in reasons} == {"no_numbers"}
+    assert {r.split(" ")[1] for r in reasons} == {"line_en", "line_es", "line_el"}
 
 
 # --- length and sentence ------------------------------------------------------------------------
@@ -150,48 +236,31 @@ def test_word_limits():
     assert MAX_WORDS == {"en": 18, "es": 22, "el": 22}
 
 
-@pytest.mark.parametrize("lang", ["en", "es", "el"])
+@pytest.mark.parametrize("lang", LANGS)
 def test_over_length_line_is_rejected(lang):
     n = MAX_WORDS[lang] + 1
     line = " ".join(["word"] * n) + "."
     assert reasons_for(make_out(**{f"line_{lang}": line})) == [f"length: line_{lang} has {n} words, max {MAX_WORDS[lang]}"]
 
 
-@pytest.mark.parametrize("lang", ["en", "es", "el"])
+@pytest.mark.parametrize("lang", LANGS)
 def test_exactly_max_words_passes(lang):
     line = " ".join(["word"] * MAX_WORDS[lang]) + "."
     assert verify(make_out(**{f"line_{lang}": line}), make_bundle()).ok
 
 
-SPIKE_ES = "A los 3 minutos, Weso Wendez intenta un pase del 94% desde el tercio medio, hacia afuera, pero falla."
-
-
-@pytest.mark.parametrize("line_en, line_el", [
-    # direct call: en 18, es 19, el 19 words
-    ("At 3 minutes, Weso Wendez makes a 94% pass attempt from the middle third, out wide, but fails.",
-     "Στο 3ο λεπτό, ο Weso Wendez επιχειρεί μια πάσα 94% από το μεσαίο τρίτο, προς τα έξω, αλλά αποτυγχάνει."),
-    # workflow call: en 17, es 19, el 18 words
-    ("At 3 minutes, Weso Wendez attempts a 94% pass from the middle third, out wide, but fails.",
-     "Στο 3ο λεπτό, η πάσα 94% του Weso Wendez από το μεσαίο τρίτο, προς τα έξω, αποτυγχάνει απροσδόκητα."),
-])
-def test_spike_samples_pass(line_en, line_el):
-    """The two gpt-4.1-mini outputs from the spike (moment m42-00042: 94% pass, minute 3) pass at the new limits."""
-    out = NarratorOut(line_en=line_en, line_es=SPIKE_ES, line_el=line_el, numbers_used=["3", "94"], drivers_used=[2])
-    assert verify(out, make_bundle(xp=0.94, minute=3, n_drivers=3)).reasons == []
-
-
 @pytest.mark.parametrize("line, reason", [
     ("", "sentence: line_en is empty"),
     ("   ", "sentence: line_en is empty"),
-    ("A 94% pass in minute 3\ngoes astray.", "sentence: line_en has a line break"),
-    ("A 94% pass in minute 3. It goes astray.", "sentence: line_en has more than one sentence"),
+    ("An easy ball along the ground\ngoes astray.", "sentence: line_en has a line break"),
+    ("An easy ball along the ground. It goes astray.", "sentence: line_en has more than one sentence"),
 ])
 def test_line_must_be_one_non_empty_sentence(line, reason):
     assert reasons_for(make_out(line_en=line)) == [reason]
 
 
 def test_greek_question_mark_ends_a_sentence():
-    out = make_out(line_el="Χάνεται η πάσα 94%; Ναι, στο 3ο λεπτό.")
+    out = make_out(line_el="Χάνεται η εύκολη πάσα; Ναι, του Weso Wendez.")
     assert reasons_for(out) == ["sentence: line_el has more than one sentence"]
 
 
@@ -199,33 +268,33 @@ def test_greek_question_mark_ends_a_sentence():
 
 @pytest.mark.parametrize("field, line", [
     # box / penalty area
-    ("line_en", "Wendez misses a 94% pass inside the box."),
-    ("line_es", "Wendez falla un pase del 94% dentro del área."),
-    ("line_el", "Ο Wendez χάνει πάσα 94% μέσα στην περιοχή."),
+    ("line_en", "Wendez misses an easy pass inside the box."),
+    ("line_es", "Wendez falla un pase fácil dentro del área."),
+    ("line_el", "Ο Wendez χάνει εύκολη πάσα μέσα στην περιοχή."),
     # line-breaking
-    ("line_en", "Wendez tries a line-breaking 94% pass."),
-    ("line_en", "Wendez's 94% pass breaks the line."),
-    ("line_es", "El pase del 94% de Wendez rompe las líneas."),
-    ("line_el", "Η πάσα 94% του Wendez σπάει τις γραμμές."),
+    ("line_en", "Wendez tries an easy line-breaking pass."),
+    ("line_en", "Wendez's easy pass breaks the line."),
+    ("line_es", "El pase fácil de Wendez rompe las líneas."),
+    ("line_el", "Η εύκολη πάσα του Wendez σπάει τις γραμμές."),
     # defender counts
-    ("line_en", "Wendez's 94% pass beats three defenders."),
-    ("line_es", "El pase del 94% de Wendez supera a dos rivales."),
-    ("line_el", "Η πάσα 94% του Wendez περνά δύο αμυντικούς."),
+    ("line_en", "Wendez's easy pass beats three defenders."),
+    ("line_es", "El pase fácil de Wendez supera a dos rivales."),
+    ("line_el", "Η εύκολη πάσα του Wendez περνά δύο αμυντικούς."),
     # left / right
-    ("line_en", "Wendez misses a 94% pass on the left."),
-    ("line_en", "Wendez misses a 94% pass with his right foot."),
-    ("line_es", "Wendez falla un pase del 94% por la izquierda."),
-    ("line_el", "Ο Wendez χάνει πάσα 94% από τα δεξιά."),
+    ("line_en", "Wendez misses an easy pass on the left."),
+    ("line_en", "Wendez misses an easy pass with his right foot."),
+    ("line_es", "Wendez falla un pase fácil por la izquierda."),
+    ("line_el", "Ο Wendez χάνει εύκολη πάσα από τα δεξιά."),
     # model internals
-    ("line_en", "SHAP says the 94% pass fails."),
-    ("line_en", "The 94% pass fails against the baseline."),
-    ("line_en", "The raw score says 94% and the pass fails."),
-    ("line_en", "The expected pass value is 94%."),
-    ("line_es", "La línea base dice 94%."),
-    ("line_el", "Η αναμενόμενη αξία είναι 94%."),
+    ("line_en", "SHAP says the easy pass fails."),
+    ("line_en", "The easy pass fails against the baseline."),
+    ("line_en", "The raw score says easy and the pass fails."),
+    ("line_en", "The expected pass value is high."),
+    ("line_es", "La línea base dice fácil."),
+    ("line_el", "Η αναμενόμενη αξία είναι υψηλή."),
     # throw
-    ("line_en", "Wendez throws away a 94% pass."),
-    ("line_el", "Ο Wendez ρίχνει μια πάσα 94% και χάνει."),
+    ("line_en", "Wendez throws away an easy pass."),
+    ("line_el", "Ο Wendez ρίχνει μια εύκολη πάσα και χάνει."),
 ])
 def test_banned_claims(field, line):
     reasons = reasons_for(make_out(**{field: line}))
@@ -233,17 +302,17 @@ def test_banned_claims(field, line):
 
 
 def test_throw_in_is_not_a_throw():
-    out = make_out(line_en="Wendez misses a 94% pass from a throw-in.")
+    out = make_out(line_en="Wendez misses an easy pass from a throw-in.")
     assert verify(out, make_bundle()).ok
 
 
 def test_spanish_lanza_is_allowed():
-    out = make_out(line_es="Wendez lanza un pase del 94% en el minuto 3 y falla.")
+    out = make_out(line_es="Wendez lanza un pase fácil y lo pierde.")
     assert verify(out, make_bundle()).ok
 
 
 def test_banned_is_case_insensitive():
-    reasons = reasons_for(make_out(line_en="Wendez misses a 94% pass INSIDE THE BOX."))
+    reasons = reasons_for(make_out(line_en="Wendez misses an easy pass INSIDE THE BOX."))
     assert reasons == ["banned: line_en says 'INSIDE THE BOX'"]
 
 
@@ -270,10 +339,18 @@ def test_zero_drivers_with_drivers_used_fails():
 # --- several failures ---------------------------------------------------------------------------
 
 def test_two_failures_return_two_reasons():
-    out = make_out(line_en="Wendez misses a 94% pass in minute 3 inside the box.", drivers_used=[5])
+    out = make_out(line_en="Wendez misses an easy pass inside the box.", drivers_used=[5])
     result = verify(out, make_bundle())
     assert not result.ok
     assert result.reasons == [
         "banned: line_en says 'inside the box'",
         "drivers: drivers_used has [5], the moment's drivers are [1, 2, 3]",
     ]
+
+
+def test_word_lists_compile_for_every_language():
+    for table in (EASY_WORDS, HARD_WORDS):
+        assert set(table) == set(LANGS)
+        for patterns in table.values():
+            for p in patterns:
+                re.compile(p)

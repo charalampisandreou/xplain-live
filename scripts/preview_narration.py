@@ -7,8 +7,10 @@ narrated by the Foundry model and checked by the Verifier. Needs `az login` (Azu
 and one moment with a default-condition label (prompts.DEFAULT_LABELS) as driver 1 or 2, preferring
 one with fewer than 3 drivers. Commentated moments are preferred; otherwise any moment is used.
 
-Prints, per moment: the facts, the three lines, numbers_used, drivers_used, attempts, the Verifier
-reasons and the latency; then how many were accepted first time, after the retry, or rejected.
+Prints, per moment: the card fields the UI shows from code (minute_label, xP percent), the
+difficulty_word and the facts, the three lines, drivers_used, attempts, the Verifier reasons and notes,
+and the latency; then how many were accepted first time, after the retry, or rejected, and how many
+accepted lines had no difficulty word.
 
 Usage:
     python scripts/preview_narration.py [--file data/match_seed42.jsonl] [--n 8] [--spread]
@@ -28,6 +30,7 @@ if str(ROOT / "src") not in sys.path:
 from azure.identity.aio import AzureCliCredential  # noqa: E402
 
 from xplain.analyst import OUTLIER_KINDS, select_half_highlights  # noqa: E402
+from xplain.analytics import percent  # noqa: E402
 from xplain.contracts import MomentBundle  # noqa: E402
 from xplain.narrator import Narrator, build_agent, build_facts  # noqa: E402
 from xplain.pipeline import ensure_match_file, load_events, process_match  # noqa: E402
@@ -96,25 +99,32 @@ async def main(path: Path, n: int, use_spread: bool) -> None:
             result = await narrator.narrate(bundle)
             results.append(result)
             print(f"=== {i}. {bundle.moment.moment_id} ===")
+            facts = build_facts(bundle)
             print("selected:", why)
-            print("facts:", json.dumps(build_facts(bundle), ensure_ascii=False))
+            print(f"card: minute {bundle.moment.minute_label} | xP {percent(bundle.moment.xp)}% (from code)")
+            print("difficulty_word:", json.dumps(facts["difficulty_word"], ensure_ascii=False))
+            print("facts:", json.dumps(facts, ensure_ascii=False))
             if result.line is not None:
                 print("EN:", result.line.line_en)
                 print("ES:", result.line.line_es)
                 print("EL:", result.line.line_el)
-                print("numbers_used:", result.line.numbers_used, "| drivers_used:", result.line.drivers_used)
+                print("drivers_used:", result.line.drivers_used)
             else:
                 print("no line")
             print(f"attempts: {result.attempts} | latency: {result.latency_s:.2f} s")
             print("reasons:", result.reasons or "none")
+            print("notes:", result.notes or "none")
             print()
 
     first = sum(r.line is not None and r.attempts == 1 for r in results)
     retry = sum(r.line is not None and r.attempts > 1 for r in results)
     rejected = sum(r.line is None for r in results)
     mean = sum(r.latency_s for r in results) / len(results) if results else 0.0
+    no_word = sum(len(r.notes) for r in results if r.line is not None)
+    lines = 3 * sum(r.line is not None for r in results)
     print(f"accepted first try {first}, after retry {retry}, rejected {rejected}; "
           f"mean latency {mean:.2f} s per moment")
+    print(f"accepted lines with no difficulty word: {no_word} of {lines}")
 
 
 if __name__ == "__main__":

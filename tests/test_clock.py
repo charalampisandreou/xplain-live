@@ -9,7 +9,7 @@ from xplain.generator import generate_match
 from xplain.narration import NarratorOut
 from xplain.pipeline import process_match
 from xplain.schema import PassEvent
-from xplain.verifier import allowed_numbers, verify
+from xplain.verifier import verify
 
 from .test_pipeline import seed42_events, tiny_scorer, tiny_model  # noqa: F401  (fixtures)
 from .test_verifier import make_bundle
@@ -117,23 +117,10 @@ def test_other_seeds_have_a_second_half_start_matching_the_truth():
 
 # --- verifier with added time --------------------------------------------------------------------
 
-def test_allowed_numbers_include_added_time():
-    assert allowed_numbers(make_bundle(minute=45, added=2)) == {"94", "45", "2", "6"}
-    assert allowed_numbers(make_bundle(minute=45, added=0)) == {"94", "45", "6"}
-
-
-def test_added_time_line_needs_both_numbers():
+def test_added_time_label_in_a_line_is_rejected():
+    # the card shows minute_label ("45+2"); the lines never carry the minute
     bundle = make_bundle(minute=45, added=2)
-    lines = dict(line_en="In minute 45+2, Wendez misses a 94% pass.",
-                 line_es="En el minuto 45+2, Wendez falla un pase del 94%.",
-                 line_el="Στο 45+2 λεπτό ο Wendez χάνει πάσα 94%.")
-    assert verify(NarratorOut(**lines, numbers_used=["45", "2", "94"], drivers_used=[]), bundle).ok
-    reasons = verify(NarratorOut(**lines, numbers_used=["45", "94"], drivers_used=[]), bundle).reasons
-    assert reasons == [f"numbers: line_{lang} has 2, not in numbers_used" for lang in ("en", "es", "el")]
-
-
-def test_added_number_not_allowed_in_regular_time():
-    bundle = make_bundle(minute=3, added=0)
-    out = NarratorOut(line_en="In minute 3+2, Wendez misses a 94% pass.", line_es="Wendez falla un pase del 94%.",
-                      line_el="Ο Wendez χάνει πάσα 94%.", numbers_used=["3", "2", "94"], drivers_used=[])
-    assert verify(out, bundle).reasons == ["numbers: numbers_used has '2', not in the evidence (allowed ['3', '6', '94'])"]
+    out = NarratorOut(line_en="In 45+2, Wendez's easy pass goes astray.",
+                      line_es="En el tiempo añadido, el pase fácil de Wendez se pierde.",
+                      line_el="Στις καθυστερήσεις, η εύκολη πάσα του Wendez χάνεται.", drivers_used=[])
+    assert verify(out, bundle).reasons == ["no_numbers: line_en has '45'", "no_numbers: line_en has '2'"]

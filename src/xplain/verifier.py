@@ -2,16 +2,19 @@
 Verifier: checks a NarratorOut against its MomentBundle. Deterministic, no LLM, no I/O.
 
 Checks (every failing check adds a reason; all reasons are collected, not just the first):
-  * sentence: each line is non-empty, has no line break and holds one sentence
-  * length:   each line has at most MAX_WORDS[lang] whitespace-separated words
-  * numbers:  every digit run in a line (\\d+, so Greek "3ο" reads as 3) is listed in numbers_used,
-              and every numbers_used entry is one of allowed_numbers(bundle)
-  * banned:   no line matches a BANNED pattern of its language (claims we have no data for,
-              model internals, wrong vocabulary)
-  * drivers:  drivers_used has no duplicates and only ranks of the bundle's drivers (empty when
-              there are none)
+  * sentence:   each line is non-empty, has no line break and holds one sentence
+  * length:     each line has at most MAX_WORDS[lang] whitespace-separated words
+  * no_numbers: no line has a digit, a "%" or a NUMBER_WORDS word of its language (percent, minute);
+                the card shows the numbers and the minute, from code
+  * difficulty: no line contradicts the moment's difficulty tier (narration.difficulty_tier): an
+                easy-tier moment never gets a HARD_WORDS word, a hard-tier moment never an EASY_WORDS word
+  * banned:     no line matches a BANNED pattern of its language (claims we have no data for,
+                model internals, wrong vocabulary)
+  * drivers:    drivers_used has no duplicates and only ranks of the bundle's drivers (empty when
+                there are none)
 
-Reasons start with the check name, e.g. "numbers: line_en has 7, not in numbers_used".
+Reasons start with the check name, e.g. "no_numbers: line_en has '94%'". Notes are observations that
+do not fail a line, e.g. "difficulty: line_en has no difficulty word".
 """
 from __future__ import annotations
 
@@ -20,21 +23,41 @@ from collections import Counter
 
 from pydantic import BaseModel, ConfigDict
 
-from .analytics import percent
 from .contracts import MomentBundle
-from .narration import NarratorOut
+from .narration import NarratorOut, difficulty_tier
 
 LANGS: tuple[str, ...] = ("en", "es", "el")
 
 # Word limit per language; one place to change it.
 MAX_WORDS: dict[str, int] = {"en": 18, "es": 22, "el": 22}
 
-DIGITS = re.compile(r"\d+")
 # A sentence end followed by more text means a second sentence. Greek uses ";" (and U+037E) as its question mark.
 SENTENCE_BREAK: dict[str, re.Pattern[str]] = {
     "en": re.compile(r"[.!?](?=\s+\S)"),
     "es": re.compile(r"[.!?](?=\s+\S)"),
     "el": re.compile(r"[.!?;;](?=\s+\S)"),
+}
+
+NUMBER_CHARS = re.compile(r"[\d%]+")
+# Number and time words per language, matched case-insensitively as stems. Greek "λεπτ" is limited to the
+# noun forms (λεπτό, λεπτά, λεπτού, λεπτών), so "λεπτή πάσα" (a delicate pass) stays allowed.
+NUMBER_WORDS: dict[str, tuple[str, ...]] = {
+    "en": (r"\bper ?cent\w*", r"\bminutes?\b"),
+    "es": (r"\bpor ?ciento\b", r"\bporcentaje\w*", r"\bminut\w*"),
+    "el": (r"τοις εκατό", r"ποσοστ\w*", r"λεπτ(ό|ού|ά|ών)\b"),
+}
+
+# Difficulty words per language, as stems. A line about an easy-tier moment must not use a HARD word, and the
+# other way round. Keep the lists short; every tier word in narration.DIFFICULTY_TIERS must match its family.
+EASY_WORDS: dict[str, tuple[str, ...]] = {
+    "en": (r"\beas(y|ier|iest|ily)\b", r"\bsimple\b", r"\broutine\b", r"\bstraightforward\b"),
+    "es": (r"\bf[aá]cil\w*", r"\bsencill\w*", r"\bsimple\b", r"\brutinari\w*"),
+    "el": (r"ε[υύ]κολ\w*", r"\bαπλ(ή|ής|ό|ός|ές)\b", r"ρουτίν\w*"),
+}
+HARD_WORDS: dict[str, tuple[str, ...]] = {
+    "en": (r"\btough\w*", r"\bdifficult\w*", r"\bhard(er|est)?\b", r"\btricky\b", r"\bdemanding\b"),
+    "es": (r"\bdif[ií]cil\w*", r"\bcomplicad\w*", r"\bcomplej\w*", r"\bexigente\w*"),
+    "el": (r"δ[υύ]σκολ\w*", r"ζόρικ\w*", r"απαιτητικ\w*"),
 }
 
 # Banned claims per language, matched case-insensitively. Keep each list short; add a pattern to ban a phrase.
@@ -65,9 +88,15 @@ BANNED: dict[str, tuple[str, ...]] = {
         r"ρίχν\w*", r"πετάει",
     ),
 }
-_BANNED_RE: dict[str, list[re.Pattern[str]]] = {
-    lang: [re.compile(p, re.IGNORECASE) for p in patterns] for lang, patterns in BANNED.items()
-}
+
+
+def _compile(table: dict[str, tuple[str, ...]]) -> dict[str, list[re.Pattern[str]]]:
+    return {lang: [re.compile(p, re.IGNORECASE) for p in patterns] for lang, patterns in table.items()}
+
+
+_BANNED_RE = _compile(BANNED)
+_NUMBER_WORDS_RE = _compile(NUMBER_WORDS)
+_FAMILY_RE = {"easy": _compile(EASY_WORDS), "hard": _compile(HARD_WORDS)}
 
 
 class VerifierResult(BaseModel):
@@ -75,23 +104,13 @@ class VerifierResult(BaseModel):
 
     ok: bool
     reasons: list[str]
+    notes: list[str] = []   # observations that do not fail the line
 
 
-def allowed_numbers(bundle: MomentBundle) -> frozenset[str]:
-    """The numbers a line may contain, as written: the xP percent, the match minute, the added-time minute
-    (when there is one, so "45+2" needs both 45 and 2) and the difficulty, from the evidence."""
-    m = bundle.moment
-    ev = m.evidence
-    allowed: set[str] = set()
-    if (xp := ev.get(f"{m.event_id}:xp")) is not None:
-        allowed.add(str(percent(xp)))
-    if (minute := ev.get(f"{m.event_id}:minute")) is not None:
-        allowed.add(str(minute))
-    if (added := ev.get(f"{m.event_id}:minute_added")) is not None and added > 0:
-        allowed.add(str(added))
-    if (difficulty := ev.get(f"{m.event_id}:difficulty")) is not None:
-        allowed.add(str(difficulty))
-    return frozenset(allowed)
+def difficulty_words(lang: str, line: str) -> dict[str, list[str]]:
+    """The easy and hard words a line uses, per family."""
+    return {family: [m.group(0) for p in table[lang] if (m := p.search(line))]
+            for family, table in _FAMILY_RE.items()}
 
 
 def _lines(out: NarratorOut) -> dict[str, str]:
@@ -119,18 +138,29 @@ def check_length(out: NarratorOut) -> list[str]:
     return reasons
 
 
-def check_numbers(out: NarratorOut, bundle: MomentBundle) -> list[str]:
+def check_no_numbers(out: NarratorOut) -> list[str]:
     reasons = []
-    used = set(out.numbers_used)
     for lang, line in _lines(out).items():
-        for n in dict.fromkeys(DIGITS.findall(line)):
-            if n not in used:
-                reasons.append(f"numbers: line_{lang} has {n}, not in numbers_used")
-    allowed = allowed_numbers(bundle)
-    for n in dict.fromkeys(out.numbers_used):
-        if n not in allowed:
-            reasons.append(f"numbers: numbers_used has {n!r}, not in the evidence (allowed {sorted(allowed, key=int)})")
+        for chars in dict.fromkeys(NUMBER_CHARS.findall(line)):
+            reasons.append(f"no_numbers: line_{lang} has {chars!r}")
+        for pattern in _NUMBER_WORDS_RE[lang]:
+            if match := pattern.search(line):
+                reasons.append(f"no_numbers: line_{lang} says {match.group(0)!r}")
     return reasons
+
+
+def check_difficulty(out: NarratorOut, bundle: MomentBundle) -> tuple[list[str], list[str]]:
+    """(reasons, notes): a word of the opposite family fails the line; a line with no difficulty word is noted."""
+    tier = difficulty_tier(bundle.moment)
+    opposite = "hard" if tier.family == "easy" else "easy"
+    reasons, notes = [], []
+    for lang, line in _lines(out).items():
+        found = difficulty_words(lang, line)
+        for word in found[opposite]:
+            reasons.append(f"difficulty: line_{lang} says {word!r}, but the pass is rated {tier.family} ({tier.en})")
+        if not found["easy"] and not found["hard"]:
+            notes.append(f"difficulty: line_{lang} has no difficulty word")
+    return reasons, notes
 
 
 def check_banned(out: NarratorOut) -> list[str]:
@@ -156,12 +186,14 @@ def check_drivers(out: NarratorOut, bundle: MomentBundle) -> list[str]:
 
 
 def verify(out: NarratorOut, bundle: MomentBundle) -> VerifierResult:
-    """Run every check and collect every failing reason; ok when there are none."""
+    """Run every check and collect every failing reason; ok when there are none. Notes never fail a line."""
+    difficulty_reasons, notes = check_difficulty(out, bundle)
     reasons = [
         *check_sentence(out),
         *check_length(out),
-        *check_numbers(out, bundle),
+        *check_no_numbers(out),
+        *difficulty_reasons,
         *check_banned(out),
         *check_drivers(out, bundle),
     ]
-    return VerifierResult(ok=not reasons, reasons=reasons)
+    return VerifierResult(ok=not reasons, reasons=reasons, notes=notes)

@@ -6,7 +6,8 @@ retried once with the Verifier's reasons added to the facts; a second rejection,
 error gives no line. narrate() never raises. Every result is stored by moment_id, so a moment is
 narrated at most once and a second call does not reach the model.
 
-The model sees only the facts from build_facts: no SHAP values, baseline or raw score. The agent is
+The model sees only the facts from build_facts: no numbers, no minute (the card shows those), no SHAP
+values, baseline or raw score; difficulty_word comes from narration.DIFFICULTY_TIERS. The agent is
 injected (build_agent takes any Azure credential, so a managed identity can replace the CLI login).
 """
 from __future__ import annotations
@@ -20,10 +21,9 @@ from agent_framework import Agent
 from agent_framework.openai import OpenAIChatCompletionClient
 from pydantic import BaseModel, ConfigDict
 
-from .analytics import percent
 from .config import FoundryConfig
 from .contracts import MomentBundle
-from .narration import NarratorOut
+from .narration import NarratorOut, difficulty_tier
 from .prompts import NARRATOR_INSTRUCTIONS
 from .verifier import verify
 
@@ -44,6 +44,7 @@ class NarrationResult(BaseModel):
     line: NarratorOut | None   # None when no attempt passed the Verifier
     attempts: int              # model calls made for this moment (1 or 2)
     reasons: list[str]         # every rejection, prefixed "attempt N: "; empty when accepted first time
+    notes: list[str] = []      # the Verifier's notes on the accepted line (e.g. no difficulty word)
     latency_s: float           # wall time of all attempts
 
 
@@ -55,16 +56,14 @@ def build_agent(credential: Any, config: FoundryConfig | None = None) -> Agent:
 
 
 def build_facts(bundle: MomentBundle) -> dict[str, Any]:
-    """The facts the model may narrate. The minute is the Moment's own label; no SHAP, baseline or raw score."""
+    """The facts the model may narrate: no numbers, no minute, no SHAP, baseline or raw score."""
     m = bundle.moment
     return {
-        "minute": m.minute_label,
-        "minute_added": m.minute_added,
         "kind": m.kind,
         "player": m.player_name,
         "team": m.team_name,
-        "xp_percent": percent(m.xp),
         "completed": m.completed,
+        "difficulty_word": difficulty_tier(m).words(),
         "drivers": [
             {"rank": d.rank, "topic": d.topic, "label": d.label, "direction": d.direction}
             for d in bundle.explanation.drivers
@@ -103,8 +102,8 @@ class Narrator:
         reasons: list[str] = []
         attempts = 0
 
-        def result(line: NarratorOut | None) -> NarrationResult:
-            return NarrationResult(line=line, attempts=attempts, reasons=reasons,
+        def result(line: NarratorOut | None, notes: list[str] | None = None) -> NarrationResult:
+            return NarrationResult(line=line, attempts=attempts, reasons=reasons, notes=notes or [],
                                    latency_s=time.perf_counter() - start)
 
         try:
@@ -125,9 +124,10 @@ class Narrator:
                     if not isinstance(out, NarratorOut):
                         rejected = ["format: no NarratorOut in the answer"]
                     else:
-                        rejected = verify(out, bundle).reasons
+                        checked = verify(out, bundle)
+                        rejected = checked.reasons
                         if not rejected:
-                            return result(out)
+                            return result(out, checked.notes)
                 reasons.extend(f"attempt {attempts}: {r}" for r in rejected)
             return result(None)
         except TimeoutError:

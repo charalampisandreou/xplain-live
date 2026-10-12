@@ -12,7 +12,8 @@ from xplain.verifier import MAX_WORDS
 
 from .test_verifier import make_bundle, make_out
 
-BAD = make_out(numbers_used=["95", "94", "3"], line_en="Weso Wendez misses a 95% pass in minute 3.")  # wrong percent
+BAD = make_out(line_en="Weso Wendez's easy 95% pass goes astray.")  # a number in the line
+BAD_REASON = "no_numbers: line_en has '95%'"
 
 
 class FakeAgent:
@@ -61,9 +62,9 @@ def test_bad_then_good_uses_the_retry():
     result = narrate(agent)
     assert result.line == make_out()
     assert result.attempts == 2
-    assert result.reasons == ["attempt 1: numbers: numbers_used has '95', not in the evidence (allowed ['3', '6', '94'])"]
+    assert result.reasons == [f"attempt 1: {BAD_REASON}"]
     retry = json.loads(agent.messages[1])
-    assert retry["rejected_because"] == ["numbers: numbers_used has '95', not in the evidence (allowed ['3', '6', '94'])"]
+    assert retry["rejected_because"] == [BAD_REASON]   # the Verifier's reasons are fed back
     assert {k: v for k, v in retry.items() if k != "rejected_because"} == build_facts(make_bundle())
 
 
@@ -148,23 +149,27 @@ def test_result_is_frozen():
 
 # --- facts --------------------------------------------------------------------------------------
 
-def test_facts_have_no_shap_baseline_or_raw_score():
-    facts = build_facts(make_bundle())
-    text = json.dumps(facts).lower()
-    for word in ("shap", "baseline", "raw_score", "evidence", "delta", "difficulty"):
+def test_facts_have_no_numbers_minute_shap_baseline_or_raw_score():
+    facts = build_facts(make_bundle(minute=45, added=2))
+    text = json.dumps(facts, ensure_ascii=False).lower()
+    for word in ("shap", "baseline", "raw_score", "evidence", "delta", "minute", "xp", "percent", "45"):
         assert word not in text
+    no_ranks = json.dumps({**facts, "drivers": [{k: v for k, v in d.items() if k != "rank"} for d in facts["drivers"]]},
+                          ensure_ascii=False)
+    assert not any(ch.isdigit() for ch in no_ranks)   # driver ranks are the only numbers the model sees
     assert facts == {
-        "minute": "3", "minute_added": 0, "kind": "surprise_failure", "player": "Weso Wendez", "team": None,
-        "xp_percent": 94, "completed": False,
+        "kind": "surprise_failure", "player": "Weso Wendez", "team": None, "completed": False,
+        "difficulty_word": {"en": "easy", "es": "fácil", "el": "εύκολη"},
         "drivers": [{"rank": i, "topic": "pitch position", "label": label, "direction": "raises"}
                     for i, label in enumerate(("along the ground", "from the middle third, out wide",
                                                "with no pressure on the passer"), start=1)],
     }
 
 
-def test_facts_use_the_minute_label():
-    facts = build_facts(make_bundle(minute=45, added=2))
-    assert (facts["minute"], facts["minute_added"]) == ("45+2", 2)
+def test_difficulty_word_comes_from_the_tier():
+    assert build_facts(make_bundle(xp=0.97))["difficulty_word"]["en"] == "very easy"
+    assert build_facts(make_bundle(xp=0.15, completed=True))["difficulty_word"] == {
+        "en": "very difficult", "es": "muy difícil", "el": "εξαιρετικά δύσκολη"}
 
 
 def test_prompt_has_the_verifier_word_limits():
@@ -172,6 +177,8 @@ def test_prompt_has_the_verifier_word_limits():
         assert f"{MAX_WORDS[lang]} in" in NARRATOR_INSTRUCTIONS or f"{MAX_WORDS[lang]} words" in NARRATOR_INSTRUCTIONS
     assert "{" not in NARRATOR_INSTRUCTIONS   # every placeholder was filled
     assert '"with the foot"' in NARRATOR_INSTRUCTIONS
+    assert "=== EXAMPLES" in NARRATOR_INSTRUCTIONS and "=== END EXAMPLES ===" in NARRATOR_INSTRUCTIONS
+    assert "numbers_used" not in NARRATOR_INSTRUCTIONS
 
 
 def test_foundry_config_reads_env(monkeypatch):
@@ -185,23 +192,28 @@ def test_foundry_config_reads_env(monkeypatch):
     assert FoundryConfig.from_env() == FoundryConfig("https://other.openai.azure.com/openai/v1/", "other-model")
 
 
-# --- added time ---------------------------------------------------------------------------------
+# --- no numbers and difficulty through the Narrator ---------------------------------------------
 
-ADDED_TIME = dict(line_en="In minute 45+2, Weso Wendez misses a 94% pass along the ground.",
-                  line_es="En el minuto 45+2, Weso Wendez falla un pase del 94% a ras de suelo.",
-                  line_el="Στο 45+2 ο Weso Wendez χάνει μια πάσα 94% κατά μήκος του εδάφους.",
-                  drivers_used=[1])
-
-
-def test_added_time_line_accepted_with_both_digits():
-    out = NarratorOut(**ADDED_TIME, numbers_used=["45", "2", "94"])
-    result = narrate(FakeAgent(out), make_bundle(minute=45, added=2))
-    assert result.line == out and result.attempts == 1
+def test_minute_word_in_greek_is_retried_with_the_reason():
+    bad = make_out(line_el="Στο τελευταίο λεπτό, η εύκολη πάσα του Weso Wendez χάνεται.")
+    agent = FakeAgent(bad, make_out())
+    result = narrate(agent)
+    assert result.line == make_out()
+    assert json.loads(agent.messages[1])["rejected_because"] == ["no_numbers: line_el says 'λεπτό'"]
 
 
-def test_added_time_line_rejected_without_the_added_digit():
-    out = NarratorOut(**ADDED_TIME, numbers_used=["45", "94"])
-    result = narrate(FakeAgent(out, out), make_bundle(minute=45, added=2))
+def test_contradicting_difficulty_twice_gives_no_line():
+    bad = make_out(line_es="El pase difícil de Weso Wendez se pierde.")
+    result = narrate(FakeAgent(bad, bad))
     assert result.line is None
-    assert "attempt 1: numbers: line_en has 2, not in numbers_used" in result.reasons
-    assert "attempt 2: numbers: line_en has 2, not in numbers_used" in result.reasons
+    assert result.reasons == [
+        "attempt 1: difficulty: line_es says 'difícil', but the pass is rated easy (easy)",
+        "attempt 2: difficulty: line_es says 'difícil', but the pass is rated easy (easy)",
+    ]
+
+
+def test_line_without_difficulty_word_is_accepted_with_a_note():
+    plain = make_out(line_en="Weso Wendez's ball along the ground goes astray.")
+    result = narrate(FakeAgent(plain))
+    assert result.line == plain and result.attempts == 1
+    assert result.notes == ["difficulty: line_en has no difficulty word"]
