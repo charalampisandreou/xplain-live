@@ -197,6 +197,22 @@ class AnalyticsConfig:
             raise ValueError(f"highlights_per_kind must be >= 0, got {self.highlights_per_kind}")
 
 
+# How the Narrator words the drivers. "free": the model gets each driver's English label and words it
+# naturally in each language. "hints": the label plus suggested wordings (phrases.py) it may use, adapt or
+# replace. "strict": the approved phrases, to be used verbatim, which the Verifier checks.
+# Override with XPLAIN_PHRASE_MODE.
+PHRASE_MODES: tuple[str, ...] = ("free", "strict", "hints")
+DEFAULT_PHRASE_MODE = "hints"
+
+
+def phrase_mode() -> str:
+    """The phrase mode from XPLAIN_PHRASE_MODE, or the default; ValueError for an unknown value."""
+    mode = os.environ.get("XPLAIN_PHRASE_MODE", DEFAULT_PHRASE_MODE).strip().lower()
+    if mode not in PHRASE_MODES:
+        raise ValueError(f"XPLAIN_PHRASE_MODE must be one of {PHRASE_MODES}, got {mode!r}")
+    return mode
+
+
 @dataclass(frozen=True)
 class FoundryConfig:
     """Where the Narrator's model lives. Auth is Entra ID (a credential object), never an API key.
