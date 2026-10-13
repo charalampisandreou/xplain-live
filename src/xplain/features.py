@@ -1,9 +1,11 @@
 """
 Feature builder for the xPass model.
 
-Turns ``PassInputs`` into the exact 17 columns, in the exact order, the trained model expects.
-The one-hot baselines match training: ground pass (height); any body part or play pattern
-without its own column, including "Other" (body part and play pattern).
+Turns ``PassInputs`` into the exact 17 columns, in the exact order, the trained model expects
+(models/xpass_v2/feature_list.json, written by xplain.train). Start-of-pass information only:
+location (with distance and angle to the goal centre), height, body part, play pattern and
+pressure. One-hot baselines: ground pass (height); any body part or play pattern without its own
+column, including "Other".
 """
 from __future__ import annotations
 
@@ -19,7 +21,7 @@ from .schema import BodyPart, PassHeight, PassInputs, PlayPattern
 GOAL_X = 120.0
 GOAL_Y = 40.0
 
-# Must equal FEAT_TRUEBEST in xPass-Project (commit bc29660) and models/feature_list.json.
+# The model's input columns, in order; xplain.train saves them as feature_list.json next to the model.
 FEATURE_ORDER: list[str] = [
     "start_x",
     "start_y",
@@ -46,7 +48,7 @@ class FeatureOrderError(ValueError):
 
 
 def angle_to_goal(start_x, start_y):
-    """Angle (radians) from the pass start to the goal centre. Same formula as training."""
+    """Angle (radians) from the pass start to the goal centre (120, 40); 0 is straight at goal."""
     return np.arctan2(GOAL_Y - start_y, GOAL_X - start_x)
 
 

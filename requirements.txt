@@ -1,8 +1,8 @@
-# Python 3.13. Model-loading pins must match the xPass training environment
-# (xPass-Project, commit bc29660, tested with Python 3.13.14) or the .joblib may not load.
+# Python 3.13. The model file (models/xpass_v2) is a joblib pickle: load it with the same
+# xgboost and scikit-learn versions it was trained with (python -m xplain.train).
 xgboost==3.3.0
 scikit-learn==1.9.0
-scipy==1.18.1          # direct import in scripts/fit_outcome_weights.py (C2 fit)
+scipy==1.18.1          # calibration slope fit in xplain.train
 joblib==1.5.3
 pandas==3.0.3
 numpy==2.3.4

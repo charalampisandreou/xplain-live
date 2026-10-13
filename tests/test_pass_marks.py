@@ -45,7 +45,7 @@ def tiny_analysis(tiny_scorer, seed42_events):  # noqa: F811
 def test_one_mark_per_pass_in_seq_order(tiny_analysis, seed42_events):  # noqa: F811
     _, marks = tiny_analysis
     passes = [e for e in seed42_events if isinstance(e, PassEvent)]
-    assert len(marks) == len(passes) == 976
+    assert len(marks) == len(passes) > 0   # one mark per pass; the pass count depends on the generator
     assert [m.seq for m in marks] == sorted(p.seq for p in passes)
     assert len({m.event_id for m in marks}) == len(marks)
 
@@ -162,7 +162,8 @@ def test_cli_marks_and_player(tiny_scorer, tmp_path, monkeypatch, capsys):  # no
     pipeline.main(["--file", str(match), "--marks-out", str(marks_file), "--out", str(out)])
     assert capsys.readouterr().out == plain  # file flags do not change what is printed
     lines = marks_file.read_text(encoding="utf-8").splitlines()
-    assert len(lines) == 976 and marks_path(out).read_text(encoding="utf-8").splitlines() == lines
+    n_passes = sum(isinstance(e, PassEvent) for e in pipeline.load_events(match))
+    assert len(lines) == n_passes and marks_path(out).read_text(encoding="utf-8").splitlines() == lines
     first = PassMark.model_validate_json(lines[0])
 
     pipeline.main(["--file", str(match), "--player", first.player_id, "--as-of-minute", "30"])
@@ -183,6 +184,7 @@ def test_real_model_seed42_marks(seed42_events):  # noqa: F811
     if not model_path.is_file() or not feature_list_path.is_file():
         pytest.skip(f"xPass model not available: {model_path}")
     bundles, marks = analyse_match(seed42_events, XPassScorer(model_path, feature_list_path))
-    assert len(marks) == 976 and len(bundles) > 0   # counts depend on the trained model, so none are pinned
+    # counts depend on the generator and the trained model, so none are pinned
+    assert len(marks) == sum(isinstance(e, PassEvent) for e in seed42_events) and len(bundles) > 0
     assert sum(m.outlier is not None for m in marks) == len(bundles)
     assert {m.moment_id for m in marks if m.moment_id} == {b.moment.moment_id for b in bundles}

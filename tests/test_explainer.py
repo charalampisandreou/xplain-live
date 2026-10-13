@@ -11,6 +11,7 @@ from xgboost import XGBClassifier
 
 from xplain.analyst import build_moment
 from xplain.contracts import Driver, Explanation, Moment
+from xplain.clock import second_half_start
 from xplain.explainer import (
     ADDITIVITY_TOLERANCE,
     BODY_PART_LABELS,
@@ -409,11 +410,13 @@ def test_real_model_first_moment_additivity():
     if not model_path.is_file() or not feature_list_path.is_file():
         pytest.skip(f"xPass model not available: {model_path}")
     scorer = XPassScorer(model_path, feature_list_path)
-    passes = [e for e in generate_match(42)[0] if e.type == "pass"]
+    events = generate_match(42)[0]
+    passes = [e for e in events if e.type == "pass"]
     results = scorer.score([p.inputs for p in passes])
+    start = second_half_start(events)
     event, moment = next(
         (p, m) for p, r in zip(passes, results)
-        if (m := build_moment(p, r.expected_probability, scorer.model_version)) is not None
+        if (m := build_moment(p, r.expected_probability, scorer.model_version, second_half_start=start)) is not None
     )
     explainer = ShapExplainer(scorer.boosters)
     e = explainer.explain(event, moment)

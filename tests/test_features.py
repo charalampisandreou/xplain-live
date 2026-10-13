@@ -9,6 +9,7 @@ from xplain.features import (
     FeatureOrderError,
     angle_to_goal,
     build_features,
+    dist_to_goal,
     validate_feature_order,
 )
 from xplain.schema import (
@@ -38,14 +39,17 @@ def test_feature_order_has_17_unique_columns():
     assert len(FEATURE_ORDER) == 17 and len(set(FEATURE_ORDER)) == 17
 
 
-def test_no_end_of_pass_columns():
-    assert {"pass_angle", "pass_length", "end_x", "end_y"}.isdisjoint(FEATURE_ORDER)
+def test_no_column_comes_from_the_pass_outcome_or_end():
+    # nothing known only after the pass (PassDetails) may be a feature, not even by name
+    outcome_names = set(PassDetails.model_fields)
+    assert not any(name in col for col in FEATURE_ORDER for name in outcome_names)
 
 
-def test_angle_matches_training_formula():
-    # same expectations as xPass-Project tests/test_features.py
-    got = angle_to_goal(np.array([60.0, 120.0, 100.0]), np.array([40.0, 0.0, 60.0]))
-    np.testing.assert_allclose(got, [0.0, np.pi / 2, np.arctan2(-20, 20)])
+def test_angle_to_goal_points():
+    # on the centre line the angle is 0; 30 m out and 30 m to either side it is +/- 45 degrees
+    got = angle_to_goal(np.array([80.0, 90.0, 90.0, 119.0]), np.array([40.0, 10.0, 70.0, 40.0]))
+    np.testing.assert_allclose(got, [0.0, np.pi / 4, -np.pi / 4, 0.0])
+    assert dist_to_goal(90.0, 10.0) == pytest.approx(30.0 * np.sqrt(2))
 
 
 def test_build_features_columns_and_values():

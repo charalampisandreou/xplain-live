@@ -234,7 +234,7 @@ def test_generated_match_with_tiny_scorer(tiny_scorer, seed42_events):
         assert b.moment.player_name == players[b.moment.player_id]
         assert b.moment.team_name == teams[b.moment.team_id]
         assert additivity_error(b.explanation) <= 1e-4
-    line = summary_line(tiny_scorer.model_version, 976, bundles)
+    line = summary_line(tiny_scorer.model_version, sum(isinstance(e, PassEvent) for e in seed42_events), bundles)
     assert "threshold-only" in line and "h1" in line and "max additivity error" in line
 
 

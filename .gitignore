@@ -12,10 +12,8 @@ Thumbs.db
 data/
 *.jsonl
 
-# Model artifacts are NOT committed (too large for GitHub, see models/README.md).
-# Only the feature list stays tracked.
+# Model files are NOT committed (rebuilt with python -m xplain.train, see models/README.md).
 *.joblib
-!models/xpass/feature_list.json
 *.csv
 *.parquet
 *.pkl

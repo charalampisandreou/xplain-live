@@ -7,7 +7,7 @@ All randomness comes from one ``numpy.random.default_rng(seed)``, split with ``s
 independent streams for teams, play and player load.
 
 Coordinates
-    StatsBomb pitch, 120 x 80. Every event is in the frame of its own ``team_id``: that team
+    A 120 x 80 event-data convention. Every event is in the frame of its own ``team_id``: that team
     attacks toward x=120 (goal centre (120, 40)). When the ball changes team it is mirrored,
     (x, y) -> (120 - x, 80 - y).
 
@@ -27,10 +27,10 @@ Possession flow
     3. A pass starts where the ball is. Length ~ gamma (mean 18 m, long tail), direction ~
        von Mises around "forward", end clipped inside the pitch. Restarts (kick off, throw in,
        goal kick, corner, keeper) use their own shapes. Height depends on length; body part
-       on height and passer. under_pressure ~ Bernoulli(0.12 + 0.20 * x / 120) in open play,
+       on height and passer. under_pressure ~ Bernoulli(0.20 + 0.30 * x / 120) in open play,
        with a pressure event 0.5-2.0 s before the pass by an opposing outfield player.
-    4. Completion is the hidden logistic mechanism in config.py (skill, length, forward gain,
-       pressure, height, restart bonus). It never uses the xPass model.
+    4. Completion is the hidden logistic mechanism in config.py (skill, position, length, forward
+       gain, pressure, height, body part, restart bonus). It never uses the xPass model.
     5. A completed pass gives the ball to a teammate at the end point. A failed pass is a
        turnover at the mirrored end point, or (12%) goes out of play: its end is moved to the
        line it crossed and the other team restarts with a Throw In, Goal Kick or Corner.
@@ -38,9 +38,9 @@ Possession flow
        (Keeper pattern); off target -> corner (blocked), or goal kick.
     7. Next action time = event time + ball travel time + U(1, 4) s, plus a dead-ball delay
        before restarts and a loose-ball delay U(3, 8) s after an interception or won tackle.
-    play_pattern is a possession attribute, as in StatsBomb: it is set when a possession starts
-    (the restart type, or Regular Play after a turnover) and kept until the next restart or
-    change of team. A possession_change event (team_id = gaining team, in its frame) marks
+    play_pattern is a possession attribute, as in a 120 x 80 event-data convention: it is set
+    when a possession starts (the restart type, or Regular Play after a turnover) and kept until
+    the next restart or change of team. A possession_change event (team_id = gaining team, in its frame) marks
     every change of the team in possession.
 
 Player load
@@ -419,20 +419,19 @@ class _Match:
         under_pressure = (not set_piece) and bool(rng.random() < p_press)
         speed = self._ball_speed(length, height, body)
 
-        # hidden completion mechanism: independent of any trained model
+        # hidden completion mechanism: designed (config.GenConfig), independent of any trained model
         logit = (
             cfg.intercept
             + cfg.w_skill * player["pass_skill"]
-            + cfg.w_length * length
-            + cfg.w_forward * max(ex - sx, 0.0)
+            + cfg.w_x * sx / PITCH_LENGTH
+            + cfg.w_y * abs(sy - GOAL_Y) / GOAL_Y
             + cfg.w_pressure * under_pressure
             + cfg.w_high * (height == PassHeight.HIGH)
             + cfg.w_low * (height == PassHeight.LOW)
+            + cfg.w_head * (body == BodyPart.HEAD)
             + self._restart_bonus()
-            # optional start-location terms, appended last so 0.0 weights leave the logit bit-identical
-            + cfg.w_start_x * sx
-            + cfg.w_dist_goal * math.hypot(PITCH_LENGTH - sx, GOAL_Y - sy)
-            + cfg.w_angle_goal * math.atan2(GOAL_Y - sy, PITCH_LENGTH - sx)  # = features.angle_to_goal
+            + cfg.w_length * length
+            + cfg.w_forward * max(ex - sx, 0.0)
         )
         completed = bool(rng.random() < _sigmoid(logit))
 

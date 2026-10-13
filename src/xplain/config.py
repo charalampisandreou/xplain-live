@@ -4,43 +4,22 @@ Constants for the synthetic match generator.
 Every tunable number lives in ``GenConfig`` so the truth file can record the exact settings a
 match was generated with.
 
-Pass-completion mechanism (hidden, never written to the events file):
+Pass-completion mechanism (hidden, never written to the events file). It is designed, not fitted
+to any data: each term has a sign from football reasoning and a round magnitude.
 
     logit = intercept
-            + w_skill * pass_skill              (player latent, Normal(0, 1))
-            + w_length * length_m
-            + w_forward * max(forward_gain_m, 0)
+            + w_skill * pass_skill                  (player latent, Normal(0, 1))
+            + w_x * start_x / 120                   (0 at own goal line, 1 at the opposition's)
+            + w_y * |start_y - 40| / 40             (0 in the centre, 1 on a touchline)
             + w_pressure * under_pressure
             + w_high * is_high + w_low * is_low
-            + restart_bonus                     (first pass of a restart only)
-            + w_start_x * start_x + w_dist_goal * dist_to_goal + w_angle_goal * angle_to_goal
+            + w_head * is_head
+            + restart_bonus                         (first pass of a restart only)
+            + w_length * length_m
+            + w_forward * max(forward_gain_m, 0)
     completed ~ Bernoulli(sigmoid(logit))
 
-All coefficients except w_skill come from an unpenalised logistic regression on StatsBomb open
-data (scripts/fit_outcome_weights.py, variant C in reports/outcome_fit.json: 3,961 matches,
-3,836,550 passes, completion rate 77.5%). The fit has no skill term; w_skill = 0.45 is synthetic.
-start_x and dist_to_goal are nearly collinear, which is why the intercept is large; read the two
-together, not one at a time. The generator does not use the xPass model.
-
-The pass mix (length, height, pressure) and the flow of play are hand-designed and differ from
-real football, so the fitted weights do not reproduce real completion rates per situation.
-Measured over seeds 1..20 with these weights (scripts/compare_variants.py), synthetic vs real:
-    mean pass length         16.2 vs 21.2
-    share of high passes     10.9% vs 21.8%
-    share under pressure     20.2% vs 15.6%
-    goal kick completion     79.1% vs 61.2%
-    throw-in completion      93.5% vs 82.3%
-    45+ pass completion      62.3% vs 41.4%
-Overall synthetic completion is 79.8%, against a mean xP of 79.3% for the same passes.
-
-Known limitations (seeds 1..40, these defaults): mean actual completion matches mean xP within
-0.4-1.4 pp, but the calibration slope of xP on the synthetic passes is about 0.62, so outcomes
-are flatter than xP: passes with xP below 0.4 complete 22-27 pp more often than predicted, and
-passes above 0.8 complete 2-4 pp less often. The cause is that a linear logistic rule fitted on
-real data is a weaker model of real football than the xP model (in-sample log-loss of the
-start-only variant D 0.4176, against the xP hold-out log-loss of 0.4007), and it cannot
-reproduce xP's penalty on final-third passes. Variants A, B, C2 and D were tried and are kept in
-reports/outcome_fit.json as evidence.
+The generator does not use any trained model, and no real match data was used to set any value.
 """
 from __future__ import annotations
 
@@ -48,7 +27,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-GENERATOR_VERSION = "0.1.1"
+GENERATOR_VERSION = "0.2.1"
 
 # The xPass model trained in this repo (python -m xplain.train); XPLAIN_MODEL_PATH overrides it.
 XPASS_MODEL_PATH = Path(__file__).resolve().parents[2] / "models" / "xpass_v2" / "xpass_v2.joblib"
@@ -103,9 +82,9 @@ class GenConfig:
     pass_length_range: tuple[float, float] = (2.0, 75.0)
     direction_kappa: float = 0.9            # von Mises concentration around "forward"
     end_margin: float = 0.5                 # in-play pass ends are kept this far inside the lines
-    p_low: float = 0.10
-    high_base: float = -0.06                # p(high) = clip(high_base + high_per_m * length)
-    high_per_m: float = 0.009
+    p_low: float = 0.12                     # 0.2.1: a little more driven play (was 0.10)
+    high_base: float = -0.04                # p(high) = clip(high_base + high_per_m * length)
+    high_per_m: float = 0.012               # 0.2.1: more lofted balls (was -0.06 and 0.009)
     high_range: tuple[float, float] = (0.02, 0.85)
     p_head_given_high: float = 0.2          # outfield open-play high passes
     p_keeper_arm: float = 0.35              # goalkeeper passes other than goal kicks
@@ -125,30 +104,30 @@ class GenConfig:
     gk_max_x: float = 25.0                  # goalkeeper only involved below this x in open play
 
     # --- pressure ---
-    pressure_base: float = 0.12             # p = base + per_x * x / 120
-    pressure_per_x: float = 0.20
+    pressure_base: float = 0.20             # p = base + per_x * x / 120
+    pressure_per_x: float = 0.30            # 0.2.1: a more aggressive press (was 0.12 and 0.20)
     pressure_lead_s: tuple[float, float] = (0.5, 2.0)
 
-    # --- hidden pass-completion mechanism (see module docstring) ---
-    # fitted values: variant C in reports/outcome_fit.json; w_skill is synthetic
-    intercept: float = 9.19253
-    w_skill: float = 0.45
-    w_length: float = 0.05739
-    w_forward: float = -0.0915511
-    w_pressure: float = -0.47375
-    w_high: float = -2.25611
-    w_low: float = -1.50876
-    bonus_kick_off: float = 2.47708
-    bonus_throw_in: float = 1.81685
-    bonus_goal_kick: float = 0.484437
-    bonus_free_kick: float = 0.399624
-    bonus_corner: float = -0.0958905
-    bonus_keeper: float = 0.509077
-    # start-location terms, same definitions as features.py: dist and angle from the pass start
-    # to the goal centre (120, 40), angle = atan2(40 - y, 120 - x)
-    w_start_x: float = -0.0632789
-    w_dist_goal: float = -0.0495605
-    w_angle_goal: float = 0.00425759
+    # --- hidden pass-completion mechanism (see module docstring): designed, round values ---
+    # 0.2.1 widens the spread by design: position and pressure doubled, height and head x1.5; length,
+    # forward gain and skill unchanged; the intercept re-solved for about 78% completion.
+    intercept: float = 4.6          # sets the overall level: a short, central, unpressured ground pass is easy
+    w_skill: float = 0.45           # better passers complete more; one sd of skill is a clear but modest edge
+    w_x: float = -2.0               # further up the pitch the space is tighter, so passes get harder
+    w_y: float = -0.8               # out wide the touchline closes off options
+    w_pressure: float = -1.2        # a pressed passer has less time and a worse body position
+    w_high: float = -1.2            # lofted balls are harder to control and easier to contest in the air
+    w_low: float = -0.6             # driven low balls are harder to receive than ground passes
+    w_head: float = -1.05           # headed passes are much less accurate than passes with the foot
+    w_length: float = -0.04         # every extra metre adds error and time for an opponent to react
+    w_forward: float = -0.02        # forward metres go past opponents, so they are riskier than sideways ones
+    # restart bonuses (first pass of a restart only), relative to open play
+    bonus_kick_off: float = 2.0     # easiest: a short, unopposed pass in the centre circle
+    bonus_throw_in: float = 0.8     # usually short to a nearby teammate, but opponents mark close
+    bonus_goal_kick: float = -0.3   # often long and contested in the air
+    bonus_free_kick: float = 0.5    # a dead ball with time to pick the pass
+    bonus_corner: float = -1.0      # hardest: delivered into a crowded area
+    bonus_keeper: float = 0.5       # the keeper has time and usually finds a free defender
 
     # --- turnovers and restarts ---
     p_out_of_play: float = 0.12             # share of failed passes that leave the pitch

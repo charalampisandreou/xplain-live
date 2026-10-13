@@ -39,8 +39,8 @@ def test_different_seeds_differ(tmp_path, match42):
 def test_truth_file_location_and_content(match42):
     events_path, truth_path, _, truth = match42
     assert truth_path.name == "match_seed42.truth.json"
-    assert truth["seed"] == 42 and truth["generator_version"] == "0.1.1"
-    assert truth["config"]["intercept"] == pytest.approx(9.19253)
+    assert truth["seed"] == 42 and truth["generator_version"] == "0.2.1"
+    assert truth["config"]["intercept"] == pytest.approx(4.6)
     assert len(truth["players"]) == 22
     assert all(isinstance(p["pass_skill"], float) for p in truth["players"])
 
@@ -111,7 +111,8 @@ def test_pressure_precedes_pressured_pass(match42):
     _, _, events, _ = match42
     for i, e in enumerate(events):
         if e.type == "pass" and e.inputs.under_pressure:
-            prev = events[i - 1]
+            # periodic player_load snapshots can fall between the pressure event and the pass
+            prev = next(p for p in reversed(events[:i]) if p.type != "player_load")
             assert prev.type == "pressure" and prev.pressed_player_id == e.player_id
             assert e.t - prev.t <= 2.0 + 1e-9
 

@@ -9,7 +9,7 @@ Pass events keep two groups of fields strictly apart:
   They are for display, statistics and evaluation, and are never passed to the model.
 
 The feature builder accepts ``PassInputs`` only, so an end-derived field cannot reach the model.
-Coordinates use the StatsBomb pitch: 120 x 80, the attacking goal centre at (120, 40).
+Coordinates follow a 120 x 80 event-data convention: the attacking goal centre is at (120, 40).
 """
 from __future__ import annotations
 
