@@ -450,9 +450,14 @@ def test_real_model_seed42(seed42_events):
         pytest.skip(f"xPass model not available ({exc})")
     if not model_path.is_file() or not feature_list_path.is_file():
         pytest.skip(f"xPass model not available: {model_path}")
-    bundles = process_match(seed42_events, XPassScorer(model_path, feature_list_path))
-    assert len(bundles) == 42
-    assert Counter(b.moment.kind for b in bundles) == {"surprise_success": 21, "surprise_failure": 21}
+    scorer = XPassScorer(model_path, feature_list_path)
+    bundles = process_match(seed42_events, scorer)
+    # counts depend on the trained model: check them against the outlier rule, not pinned numbers
+    passes = [e for e in seed42_events if isinstance(e, PassEvent)]
+    kinds = [analytics.outlier(p.details.completed, r.expected_probability, CFG)
+             for p, r in zip(passes, scorer.score([p.inputs for p in passes]), strict=True)]
+    assert Counter(b.moment.kind for b in bundles) == Counter(k for k in kinds if k is not None)
+    assert len(bundles) > 0
     for b in bundles:
         assert MomentBundle.model_validate_json(b.model_dump_json()) == b
         assert additivity_error(b.explanation) <= 1e-4

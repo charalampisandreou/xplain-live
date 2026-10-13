@@ -1,0 +1,47 @@
+{
+  "spec": {
+    "event_type": "pass",
+    "features": [
+      "start_x",
+      "start_y",
+      "angle_to_goal",
+      "dist_to_goal",
+      "height_Low Pass",
+      "height_High Pass",
+      "body_part_Foot",
+      "body_part_Head",
+      "body_part_Keeper Arm",
+      "play_pattern_Regular Play",
+      "play_pattern_Kick Off",
+      "play_pattern_Throw In",
+      "play_pattern_Free Kick",
+      "play_pattern_Goal Kick",
+      "play_pattern_Keeper",
+      "play_pattern_Corner",
+      "under_pressure"
+    ],
+    "label": "completed",
+    "group": "match_id"
+  },
+  "training": {
+    "max_depth": 3,
+    "n_estimators": 273,
+    "val_logloss_by_depth": {
+      "3": 0.4238541170084971,
+      "4": 0.4239317698375835,
+      "5": 0.42399446934191015
+    },
+    "n_rows": 187997,
+    "n_groups": 200,
+    "train_seconds": 9.053297899998142,
+    "params": {
+      "learning_rate": 0.05,
+      "subsample": 0.9,
+      "colsample_bytree": 0.9,
+      "early_stopping_rounds": 50,
+      "n_folds": 5,
+      "calibration": "isotonic",
+      "seed": 7
+    }
+  }
+}

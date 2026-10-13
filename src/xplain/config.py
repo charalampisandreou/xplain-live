@@ -46,8 +46,12 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from pathlib import Path
 
 GENERATOR_VERSION = "0.1.1"
+
+# The xPass model trained in this repo (python -m xplain.train); XPLAIN_MODEL_PATH overrides it.
+XPASS_MODEL_PATH = Path(__file__).resolve().parents[2] / "models" / "xpass_v2" / "xpass_v2.joblib"
 
 # Invented clubs as (team_id, name). Checked against web search: none is a real club.
 CLUBS: tuple[tuple[str, str], ...] = (

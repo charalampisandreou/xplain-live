@@ -160,7 +160,7 @@ def test_real_model_scores_all_seed42_passes(real_scorer, seed42_passes):
     results = real_scorer.score([p.inputs for p in seed42_passes])
     assert len(results) == len(seed42_passes)
     assert all(math.isfinite(r.expected_probability) and 0.0 <= r.expected_probability <= 1.0 for r in results)
-    assert real_scorer.model_version.startswith("xpass_production_")
+    assert real_scorer.model_version.endswith(".joblib")
 
 
 def test_real_model_ignores_details(real_scorer, seed42_passes):
@@ -196,14 +196,16 @@ def test_find_default_model_env_override(tmp_path, monkeypatch):
     assert find_default_model() == (tmp_path / "m.joblib", tmp_path / "f.json")
 
 
-def test_find_default_model_picks_latest(tmp_path, monkeypatch):
+def test_find_default_model_uses_the_configured_path(tmp_path, monkeypatch):
     monkeypatch.delenv("XPLAIN_MODEL_PATH", raising=False)
     monkeypatch.delenv("XPLAIN_FEATURE_LIST", raising=False)
-    for name in ("xpass_production_09-10-2026_23-00-00.joblib", "xpass_production_10-10-2026_12-51-20.joblib",
-                 "xpass_production_01-09-2026_08-00-00.joblib"):
-        (tmp_path / name).write_bytes(b"")
-    model, features = find_default_model(tmp_path)
-    assert model.name == "xpass_production_10-10-2026_12-51-20.joblib"
-    assert features == tmp_path / "feature_list.json"
-    with pytest.raises(ModelLoadError):
-        find_default_model(tmp_path / "empty")
+    (tmp_path / "xpass_v2.joblib").write_bytes(b"")
+    model, features = find_default_model(tmp_path / "xpass_v2.joblib")
+    assert (model, features) == (tmp_path / "xpass_v2.joblib", tmp_path / "feature_list.json")
+    with pytest.raises(ModelLoadError, match="python -m xplain.train"):
+        find_default_model(tmp_path / "missing.joblib")
+
+
+def test_default_model_path_is_xpass_v2():
+    from xplain.config import XPASS_MODEL_PATH
+    assert XPASS_MODEL_PATH.parts[-3:] == ("models", "xpass_v2", "xpass_v2.joblib")
