@@ -5,10 +5,11 @@ Expectation versus outcome, live. A studio copilot for the Microsoft
 expected with what happened, explains the gap, and emits timed, machine-readable
 overlay cards that a graphics system can render alongside the match.
 
-> Status: work in progress. Built: the synthetic match generator, the xPass scoring API (`/score`),
-> replay, and an offline deterministic analysis pipeline (outlier moments, SHAP-based drivers,
-> per-half commentary gate, half reports, timeline, pass marks). Not built yet: the LLM agents
-> (narration, personalization), the live overlay UI and the Azure deployment.
+> Status: work in progress. Built: the synthetic match generator, the pass model trained in this
+> repository (xpass_v2) behind a scoring API (`/score`), replay, an offline deterministic analysis
+> pipeline (outlier moments, SHAP-based drivers, per-half commentary gate, half reports, timeline,
+> pass marks), and the Narrator with a code Verifier. Not built yet: personalization, the Agent
+> Framework workflow, the live overlay UI and the Azure deployment.
 > Results, demo and deployment sections are filled in as they are measured.
 
 ## What it does
@@ -17,10 +18,11 @@ _To be written once the end-to-end demo works. It will lead with measured result
 
 ## Honest limits
 
-- **Synthetic data only.** All matches are produced by a seeded generator with fictional clubs
-  and players. No real match data is used at run time or redistributed. The xPass model was
-  trained on StatsBomb open data, part of which is real English top-flight matches, and the
-  generator's outcome weights were estimated from the same data (see Attribution).
+- **Synthetic data only.** All matches come from a seeded generator with fictional clubs and
+  players, and the generator's rules are designed, not fitted to real data. No third-party data is
+  used at run time, in training or in the repository. The scoring model is trained in this
+  repository on the generator's own matches, so its quality figures check the pipeline's
+  consistency; they say nothing about accuracy on real football.
 - **xP is situational pass difficulty.** It is computed from start-of-pass information only
   (location, pass height, body part, play pattern, pressure). It does not know the intended
   target, so it does not say whether a particular pass was a good choice.
@@ -32,40 +34,46 @@ _To be written once the end-to-end demo works. It will lead with measured result
 
 ## Known simplifications
 
-Measured with `scripts/compare_variants.py` on generated matches:
+Measured on generated matches only (generator 0.2.1; `reports/xpass_v2_metrics.json`):
 
-- On 40 generated matches (seeds 1-40), mean xP and actual completion agree within 0.4-1.4
-  percentage points.
-- xP's predictions are more spread out than the generated outcomes (calibration slope about
-  0.62). Passes that xP rates below 0.4 complete 22-27 points more often than predicted.
-- The generated pass mix differs from real football (seeds 1-20 against StatsBomb open data):
-  mean pass length 16.2 vs 21.2, high passes 10.9% vs 21.8%, under pressure 20.2% vs 15.6%.
-  Goal kicks, throw-ins and passes of 45+ complete more often than in real data.
+- xpass_v2 is trained on 250 generated matches (231,412 passes) and evaluated on 100 hold-out
+  generated matches (92,396 passes): ROC AUC 0.770, log-loss 0.4326 (constant rate 0.5168),
+  Brier 0.1372 (constant rate 0.1671), Brier skill 0.179, calibration slope 1.002. Completion on
+  the hold-out is 78.8% against a mean xP of 78.8%. These are results on generated passes.
+- The generator's completion rule also uses pass length, forward gain and a hidden player skill,
+  which xP cannot see (it uses start-of-pass information only), so xP cannot rank passes
+  perfectly. Generator 0.2.1 makes the context xP does see matter more, by design (position and
+  pressure effects doubled, height and header effects 1.5 times, more pressured and lofted
+  passes), so xP covers a wide range: on the hold-out its 5th percentile is 0.40 and its 95th is
+  0.96; 5.1% of passes have xP <= 0.40 and 23.0% have xP >= 0.92.
 - xP measures situational pass difficulty and does not know the pass target.
-- Difficulty bands and outlier thresholds are provisional.
+- Difficulty bands, outlier thresholds (completed with xP <= 0.35, failed with xP >= 0.92),
+  difficulty tiers and the commentary settings (top 3 per kind per half, floor 0.25 / 0.96) are
+  editorial settings. At generator 0.2.1 they give about 19 outliers per match on the hold-out
+  (12.0 surprise failures and 7.3 surprise successes), and 17 commentated moments out of 19
+  outliers on seed 42.
+- Base-rate check (`scripts/base_rate_check.py`, seeds 1001-1010, 9,068 passes): passes with
+  xP >= 0.92 have 114.1 expected failures and 109 observed; passes with xP <= 0.35 have 72.9
+  expected successes and 68 observed. This is a measured check that the outliers occur about as
+  often as a calibrated model implies.
 - The second-half clock starts at the first period-2 event (the kick-off), since the event stream
   has no explicit half-time marker. Added time shows as "45+N" and "90+N".
 - Pitch-position labels use editorial thresholds (thirds of the pitch length, 0.85 of the length
   for "close to the opposition goal", 0.15 / 0.325 of the width) and never say left or right.
-- The commentary settings (top 3 per kind per half, floor 0.25 / 0.96) were chosen from a
-  calibration over 10 generated matches and are provisional.
-- The model's real-world quality is its hold-out result (ROC AUC 0.8328, log-loss 0.4007,
-  Brier 0.1266), not the reliability numbers on synthetic passes.
 
 ## Synthetic data
 
 `src/xplain/generator.py` produces full matches from a seed: two fictional clubs (4-4-2, invented
 names), passes, pressure, tackles, shots, possession changes and periodic player-load events, on
-the 120 x 80 StatsBomb pitch with every event in its own team's attacking frame. The same seed
+a 120 x 80 pitch with every event in its own team's attacking frame. The same seed
 always gives a byte-identical file.
 
-- **Outcomes are independent of the xP model.** Pass completion comes from a logistic rule
-  (length, forward gain, pressure, height, restart type, start location). Its weights were
-  computed by fitting a logistic regression to real passes: 3,836,550 passes from StatsBomb open
-  data, each labelled completed or not (`scripts/fit_outcome_weights.py`, results in
-  `reports/outcome_fit.json`). The fitted values are in `src/xplain/config.py`. The player skill
-  term is synthetic, and the pass mix (length, height, pressure, flow of play) is hand-designed.
-  The generator never imports or loads the xP model.
+- **Outcomes come from a designed rule.** Pass completion is a logistic rule over the passer's
+  hidden skill, start position (how far up the pitch, how wide), pressure, pass height, header,
+  restart type, length and forward gain. Every weight is a round value with a sign from football
+  reasoning and a one-line rationale in `src/xplain/config.py`; none was fitted to data. The pass
+  mix (length, height, pressure, flow of play) is designed too. The generator never imports or
+  loads the xP model.
 - **Hidden skill stays hidden.** Each player's latent pass skill is written only to a separate
   `<name>.truth.json` file, never to the events file.
 
@@ -120,7 +128,7 @@ byte-identical JSON.
 
 - An **outlier** is a pass that was a surprise: a completed pass with xP <= 0.35, or a failed pass
   with xP >= 0.92 (provisional thresholds).
-- Every outlier gets a hover card; only some get commentary.
+- Every outlier gets a selectable card; only some get commentary.
 - Commentary goes to moments that enter the running **top 3 of their kind within their half**, or
   that clear an always-commentate floor (success xP <= 0.25, failure xP >= 0.96). Successes and
   failures are ranked separately, and the ranking resets at half-time. The half-time and
@@ -130,27 +138,26 @@ byte-identical JSON.
 - Each moment carries SHAP-based drivers computed with XGBoost's built-in TreeSHAP; they explain
   the model's raw score in log-odds, not percentage points of xP.
 
-## Attribution
+## Provenance
 
-- The pass-completion model (xPass) was trained on the [StatsBomb Open Data](https://github.com/statsbomb/open-data)
-  under its user agreement. Source repo: [xPass-Project](https://github.com/charalampisandreou/xPass-Project).
-  StatsBomb credit is required wherever the model or its derived analysis is shown.
-- **Model training data:** the xPass model was trained on StatsBomb Open Data
-  (3,961 matches across more than 20 competitions). 418 of those matches
-  (about 10.6%) are real Premier League matches from the 2003/04 and 2015/16
-  seasons. The demo and all generated matches use synthetic data only; no real
-  match data is used at run time or redistributed.
-- **Generator outcome weights:** the weights of the generator's pass-completion rule were
-  computed with a logistic regression on real passes from StatsBomb Open Data (same source:
-  3,961 matches, 3,836,550 passes). Only aggregate results are stored
-  (`reports/outcome_fit.json`); no real events are stored in this repository. To rerun the fit
-  you need a local copy of the StatsBomb open-data event files, passed as an argument (the data
-  is not included):
+No third-party data and no pre-built scoring model is used anywhere in the current version. The
+generator's rules are designed and the scoring model is trained in this repository on generated
+matches only. The only third-party model is the Microsoft Foundry language model (gpt-4.1-mini)
+that phrases the commentary lines; it never sees or produces a football statistic (the only
+numbers it handles are the driver ranks 1 to 3).
 
-  ```powershell
-  python scripts/fit_outcome_weights.py --data-dir <path to the StatsBomb event JSON files>
-  python scripts/compare_variants.py
-  ```
+History: an earlier version of the generator used pass-completion weights fitted on StatsBomb Open
+Data. After correspondence with the hackathon support team (13 October 2026), who asked entrants
+to stay within the published rules on third-party data, the fitted weights were removed and the
+scoring model was retrained from scratch on generated data. The earlier commits remain in the
+repository history. The generator is now fully designed (version 0.2.1).
+
+An earlier personal pass-model project (xPass, June 2026) informed the choice of start-only
+features: the 17-column feature list (`xplain.features.FEATURE_ORDER`) and its angle-to-goal
+definition follow that project's design, and the pitch frame and category names follow the common
+120 x 80 event-data convention. Two feature tests taken from that project were replaced with tests
+written here.
+
 - The model is used behind a pluggable scoring interface, so it can be replaced without changing
   the rest of the system.
 - Fictional clubs and players in the generator are invented and unrelated to real people or clubs.
@@ -166,8 +173,14 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-The xPass model is not in git. Place `xpass_production_*.joblib` and `feature_list.json`
-in `models/xpass/` (see `models/README.md`).
+The xPass model is trained in this repo on generated matches and is not in git (see
+`models/README.md`). To build it (about 40 s):
+
+```powershell
+python scripts/make_dataset.py
+python -m xplain.train --train data/xpass_train.csv --holdout data/xpass_holdout.csv `
+    --out models/xpass_v2 --report reports/xpass_v2_metrics.json
+```
 
 ## License
 
