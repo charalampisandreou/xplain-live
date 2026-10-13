@@ -9,9 +9,15 @@ Checks (every failing check adds a reason; all reasons are collected, not just t
   * difficulty: no line contradicts the moment's difficulty tier (narration.difficulty_tier): an
                 easy-tier moment never gets a HARD_WORDS word, a hard-tier moment never an EASY_WORDS word
   * banned:     no line matches a BANNED pattern of its language (claims we have no data for,
-                model internals, wrong vocabulary)
-  * drivers:    drivers_used has no duplicates and only ranks of the bundle's drivers (empty when
-                there are none)
+                model internals, wrong vocabulary, the two vague driver labels); a match inside an
+                earlier match is not reported twice
+  * drivers:    drivers_used has no duplicates and only ranks of the narrated drivers (phrases.narrated:
+                the drivers the model is shown; empty when there are none)
+  * phrases:    strict phrase mode only (config.phrase_mode): every driver in drivers_used has its
+                approved phrase (phrases.driver_phrases) for that language in the line,
+                case-insensitive; a position driver may use the composed phrase or one of its pieces
+  * driver_direction: every driver in drivers_used, whatever its rank, points the same way as the
+                difficulty tier: "raises" for an easy tier, "lowers" for a hard one
 
 Reasons start with the check name, e.g. "no_numbers: line_en has '94%'". Notes are observations that
 do not fail a line, e.g. "difficulty: line_en has no difficulty word".
@@ -23,8 +29,10 @@ from collections import Counter
 
 from pydantic import BaseModel, ConfigDict
 
-from .contracts import MomentBundle
+from .config import phrase_mode
+from .contracts import Driver, MomentBundle
 from .narration import NarratorOut, difficulty_tier
+from .phrases import driver_phrases, narrated
 
 LANGS: tuple[str, ...] = ("en", "es", "el")
 
@@ -62,30 +70,46 @@ HARD_WORDS: dict[str, tuple[str, ...]] = {
 
 # Banned claims per language, matched case-insensitively. Keep each list short; add a pattern to ban a phrase.
 # Families: box/penalty area, line-breaking, defender counts, left/right, model internals, wrong vocabulary
-# ("throw"; none for Spanish, where "lanza un pase" is normal commentary).
+# ("throw"; none for Spanish, where "lanza un pase" is normal commentary), and the wording of the two vague
+# driver labels (phrases.NOT_NARRATED), which must never reach a line. Within a family the longer patterns
+# come first, so a reason quotes the longest match.
 BANNED: dict[str, tuple[str, ...]] = {
     "en": (
-        r"\binside the (penalty )?box\b", r"\bin the box\b", r"\bpenalty area\b",
+        r"\binside the (penalty )?box\b", r"\bin the box\b", r"\bpenalty (area|box)\b",
+        r"\bthe box\b", r"\bthe area\b",
         r"\bline[- ]?break\w*", r"\bbreaks? (the|their) lines?\b",
         r"\b(\d+|two|three|four|five|six|several) (defenders|opponents)\b",
         r"\bleft\b", r"\bright\b",
         r"\bshap\b", r"\bbaseline\b", r"\braw score\b", r"\bexpected pass value\b",
         r"\bthrow(?!-ins?\b)\w*",  # "throw-in" is a play pattern, not a throw
+        r"\banother part of the body\b", r"\banother kind of play\b",
+        # verbs of intent, effort or credit (the model rates difficulty; it does not judge the player)
+        r"\btr(y|ies|ied|ying)\b", r"\battempt(s|ed|ing)?\b", r"\bpull(s|ed|ing)? off\b",
+        r"\bthread(s|ed|ing)?\b", r"\bmanag(e|es|ed|ing) to\b",
     ),
     "es": (
-        r"\bdentro del [aá]rea\b", r"\ben el [aá]rea\b",
+        r"\bdentro del [aá]rea\b", r"\ben el [aá]rea\b", r"\bcerca del [aá]rea\b", r"\bdel [aá]rea\b",
+        r"\b[aá]reas?\b",
         r"\brompe(n)? (la|las) l[ií]neas?\b", r"\brompel[ií]neas\b",
         r"\b(\d+|dos|tres|cuatro|cinco|seis|varios) (defensas|defensores|rivales)\b",
         r"\bizquierd[ao]s?\b", r"\bderech[ao]s?\b",
         r"\bshap\b", r"\bl[ií]nea base\b", r"\bpuntuaci[oó]n bruta\b", r"\bvalor esperado del? pase\b",
+        r"\botra parte del cuerpo\b", r"\botro tipo de jugada\b",
+        # verbs of intent, effort or credit; "se trata de" (it is a ...) is not one
+        r"\bintent(a|an|ó|aba|ando|ar)\b", r"(?<!\bse )\btrat(a|an|ó|aba|ando|ar) de\b",
+        r"\blogr(a|an|ó|aba|ando|ar)\b",
     ),
     "el": (
-        r"μέσα στην περιοχή", r"στη μεγάλη περιοχή",
+        r"μέσα στην περιοχή", r"στη μεγάλη περιοχή", r"\bπεριοχ\w*",
         r"σπάει τ(η|ις) γραμμ(ή|ές)",
         r"(\d+|δύο|τρεις|τέσσερις|πέντε|έξι|πολλούς) (αμυντικούς|αντιπάλους)",
         r"αριστερ\w*", r"δεξι\w*",
         r"\bshap\b", r"γραμμή βάσης", r"ακατέργαστ\w* βαθμολογ\w*", r"αναμενόμεν\w* αξία",
         r"ρίχν\w*", r"πετάει",
+        r"\bάλλο μέρος του σώματος\b", r"\bάλλο είδος φάσης\b",
+        # verbs of intent, effort or credit (present, participle and past forms)
+        r"\bεπιχειρ(εί|ούν|ώντας)\b", r"\bεπιχείρησε\b", r"\bπροσπαθ(εί|ούν|ώντας)\b", r"\bπροσπάθησε\b",
+        r"\bκαταφέρν(ει|ουν|οντας)\b", r"\bκατάφερε\b",
     ),
 }
 
@@ -166,27 +190,74 @@ def check_difficulty(out: NarratorOut, bundle: MomentBundle) -> tuple[list[str],
 def check_banned(out: NarratorOut) -> list[str]:
     reasons = []
     for lang, line in _lines(out).items():
+        spans: list[tuple[int, int]] = []
         for pattern in _BANNED_RE[lang]:
-            if match := pattern.search(line):
+            match = pattern.search(line)
+            if match and not any(a <= match.start() and match.end() <= b for a, b in spans):
+                spans.append(match.span())
                 reasons.append(f"banned: line_{lang} says {match.group(0)!r}")
     return reasons
 
 
+def narrated_drivers(bundle: MomentBundle) -> dict[int, Driver]:
+    """The drivers the model is shown, by their original rank (phrases.narrated: NOT_NARRATED and the
+    lower-ranked driver of an INCOMPATIBLE_PAIRS pair left out)."""
+    return {d.rank: d for d in narrated(bundle.explanation.drivers)}
+
+
 def check_drivers(out: NarratorOut, bundle: MomentBundle) -> list[str]:
     reasons = []
-    ranks = {d.rank for d in bundle.explanation.drivers}
+    ranks = set(narrated_drivers(bundle))
     dupes = sorted(r for r, c in Counter(out.drivers_used).items() if c > 1)
     if dupes:
         reasons.append(f"drivers: drivers_used repeats {dupes}")
     if not ranks and out.drivers_used:
-        reasons.append(f"drivers: the moment has no drivers but drivers_used is {out.drivers_used}")
+        reasons.append(f"drivers: the moment has no narrated drivers but drivers_used is {out.drivers_used}")
     elif unknown := sorted(set(out.drivers_used) - ranks):
-        reasons.append(f"drivers: drivers_used has {unknown}, the moment's drivers are {sorted(ranks)}")
+        reasons.append(f"drivers: drivers_used has {unknown}, the narrated drivers are {sorted(ranks)}")
     return reasons
 
 
-def verify(out: NarratorOut, bundle: MomentBundle) -> VerifierResult:
-    """Run every check and collect every failing reason; ok when there are none. Notes never fail a line."""
+def has_phrase(line: str, phrase: str) -> bool:
+    """The phrase appears in the line as whole words, case-insensitive ("raso" is not found in "fracaso")."""
+    return re.search(rf"(?<!\w){re.escape(phrase)}(?!\w)", line, re.IGNORECASE) is not None
+
+
+def check_phrases(out: NarratorOut, bundle: MomentBundle) -> list[str]:
+    """Each driver in drivers_used has its approved phrase in every line (position: composed phrase or a piece)."""
+    reasons = []
+    drivers = narrated_drivers(bundle)
+    for rank in dict.fromkeys(out.drivers_used):
+        if rank not in drivers:
+            continue   # check_drivers reports it
+        phrases = driver_phrases(drivers[rank])   # the phrase, plus depth and width for a position driver
+        for lang, line in _lines(out).items():
+            options = [p[lang] for p in phrases.values()]
+            if not any(has_phrase(line, o) for o in options):
+                wanted = " or ".join(repr(o) for o in options)
+                reasons.append(f"phrases: line_{lang} lists driver {rank} but does not say {wanted}")
+    return reasons
+
+
+def check_driver_direction(out: NarratorOut, bundle: MomentBundle) -> list[str]:
+    """Every used driver points the way of the tier: "raises" for an easy pass, "lowers" for a hard one."""
+    tier = difficulty_tier(bundle.moment)
+    wanted = "raises" if tier.family == "easy" else "lowers"
+    drivers = narrated_drivers(bundle)
+    return [
+        f"driver_direction: driver {rank} ({drivers[rank].label}) {drivers[rank].direction} the rating, but the "
+        f"pass is rated {tier.family} ({tier.en})"
+        for rank in dict.fromkeys(out.drivers_used)
+        if rank in drivers and drivers[rank].direction != wanted
+    ]
+
+
+def verify(out: NarratorOut, bundle: MomentBundle, mode: str | None = None) -> VerifierResult:
+    """Run every check and collect every failing reason; ok when there are none. Notes never fail a line.
+
+    mode is the phrase mode (default config.phrase_mode()); the phrases check runs in "strict" mode only.
+    """
+    mode = mode or phrase_mode()
     difficulty_reasons, notes = check_difficulty(out, bundle)
     reasons = [
         *check_sentence(out),
@@ -195,5 +266,7 @@ def verify(out: NarratorOut, bundle: MomentBundle) -> VerifierResult:
         *difficulty_reasons,
         *check_banned(out),
         *check_drivers(out, bundle),
+        *(check_phrases(out, bundle) if mode == "strict" else []),
+        *check_driver_direction(out, bundle),
     ]
     return VerifierResult(ok=not reasons, reasons=reasons, notes=notes)
