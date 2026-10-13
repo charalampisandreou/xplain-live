@@ -1,0 +1,101 @@
+{
+  "model": "models/xpass_v2/xpass_v2.joblib",
+  "model_bytes": 9172420,
+  "holdout_matches": 50,
+  "holdout": {
+    "n": 46437,
+    "completion_rate": 0.799297973598639,
+    "mean_prediction": 0.7991033065004076,
+    "roc_auc": 0.7577916198990757,
+    "log_loss": 0.42736872708306084,
+    "log_loss_constant_rate": 0.5013741000003629,
+    "brier": 0.1343240876038842,
+    "brier_constant_rate": 0.1604207229997484,
+    "brier_skill": 0.16267621107720065,
+    "calibration_intercept": 0.008626410599102968,
+    "calibration_slope": 0.9939177248412728
+  },
+  "reliability": [
+    {
+      "bin": 0,
+      "n": 38,
+      "mean_p": 0.055104002655532794,
+      "observed": 0.23684210526315788
+    },
+    {
+      "bin": 1,
+      "n": 97,
+      "mean_p": 0.1545289602629917,
+      "observed": 0.13402061855670103
+    },
+    {
+      "bin": 2,
+      "n": 461,
+      "mean_p": 0.2597993414081358,
+      "observed": 0.26247288503253796
+    },
+    {
+      "bin": 3,
+      "n": 762,
+      "mean_p": 0.35953259951095257,
+      "observed": 0.33858267716535434
+    },
+    {
+      "bin": 4,
+      "n": 1946,
+      "mean_p": 0.44503595873422513,
+      "observed": 0.45375128468653647
+    },
+    {
+      "bin": 5,
+      "n": 3295,
+      "mean_p": 0.5530114977945869,
+      "observed": 0.5456752655538695
+    },
+    {
+      "bin": 6,
+      "n": 3349,
+      "mean_p": 0.6441817192612708,
+      "observed": 0.6584054941773664
+    },
+    {
+      "bin": 7,
+      "n": 5855,
+      "mean_p": 0.7584065709268812,
+      "observed": 0.7537147736976942
+    },
+    {
+      "bin": 8,
+      "n": 15003,
+      "mean_p": 0.8590760948085423,
+      "observed": 0.8610944477771112
+    },
+    {
+      "bin": 9,
+      "n": 15631,
+      "mean_p": 0.9290754962299982,
+      "observed": 0.9275158339197748
+    }
+  ],
+  "training": {
+    "max_depth": 3,
+    "n_estimators": 273,
+    "val_logloss_by_depth": {
+      "3": 0.4238541170084971,
+      "4": 0.4239317698375835,
+      "5": 0.42399446934191015
+    },
+    "n_rows": 187997,
+    "n_groups": 200,
+    "train_seconds": 9.053297899998142,
+    "params": {
+      "learning_rate": 0.05,
+      "subsample": 0.9,
+      "colsample_bytree": 0.9,
+      "early_stopping_rounds": 50,
+      "n_folds": 5,
+      "calibration": "isotonic",
+      "seed": 7
+    }
+  }
+}
