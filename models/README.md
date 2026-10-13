@@ -1,13 +1,14 @@
 # Model artifacts
 
-The xPass model file is **not in git**: it is 134.8 MB, over GitHub's 100 MB file limit.
+The xPass model is trained in this repo, on generated matches only (`scripts/make_dataset.py`,
+then `python -m xplain.train`; see the main README). The scorer loads, by default,
+`models/xpass_v2/` (`config.XPASS_MODEL_PATH`):
 
-Put both files from the same xPass-Project training run in `models/xpass/`:
+- `xpass_v2.joblib`: CalibratedClassifierCV (isotonic, 5 match-grouped folds) over XGBClassifier
+  (ignored by git; rebuild it with the commands above)
+- `feature_list.json`: the exact feature columns, in order, the model expects
+- `metrics.json`: training settings (chosen depth and tree count, validation log-loss)
 
-- `xpass_production_<timestamp>.joblib`: calibrated XGBoost pass-completion model (ignored by git)
-- `feature_list.json`: the exact feature columns, in order, the model expects (tracked)
-
+Set `XPLAIN_MODEL_PATH` (and optionally `XPLAIN_FEATURE_LIST`) to load another model file.
 The feature builder rejects a `feature_list.json` whose columns or order differ from
 `xplain.features.FEATURE_ORDER`. Load the model with the pinned versions in `requirements.txt`.
-
-TODO: download location for the .joblib (GitHub release asset or Azure Blob).
