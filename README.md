@@ -32,6 +32,12 @@ _To be written once the end-to-end demo works. It will lead with measured result
   reported, not assumed.
 - **"Progressive" and "difficulty" are defined from available fields.** No claims that need
   freeze-frame data (e.g. line-breaking passes) are made.
+- **Spanish is not reviewed by a native speaker.** The English and Greek lines are reviewed by the
+  author (a native Greek speaker). The Spanish lines and the Spanish phrase table were drafted with
+  an AI assistant and have not been reviewed by a native speaker. The code checks difficulty
+  wording and unsupported claims in all three languages, but it cannot judge naturalness.
+- **The outcome-cause check is a heuristic.** A causal word must sit next to a difficulty word to
+  be accepted; the check can miss some phrasings and paraphrases, and does not read the sentence.
 
 ## Known simplifications
 
@@ -138,6 +144,47 @@ Per moment it prints the minute, player, xP percent (from code), the EN/ES/EL li
 Verifier verdict (accepted, retried, or rejected with reasons), then a summary. A moment that is
 rejected, times out or fails gets no line and never stops the others. `--mode strict|free|hints`
 overrides `XPLAIN_PHRASE_MODE`.
+
+## Phrase modes
+
+`XPLAIN_PHRASE_MODE` (or `--mode` on the workflow CLI) sets how the Narrator model is briefed. The
+default is `hints`.
+
+| Mode | What the model is given for each driver | What the Verifier additionally checks |
+|---|---|---|
+| `strict` | The approved phrase in English, Spanish and Greek (a position driver also its depth and width pieces), to be used verbatim | Every driver the line declares must appear as its approved phrase in that language |
+| `free` | The driver's English label only; the model words it naturally in each language | No phrase check |
+| `hints` (default) | The English label plus suggested approved wordings per language, which it may use, adapt or replace | No phrase check |
+
+The other Verifier checks run in all three modes. `free` and `hints` also add a small variation
+nudge (sentence shape, how many drivers to mention, outcome wording) chosen from a hash of the
+moment id, so the same moment always gets the same nudge.
+
+## Narration contract
+
+- One spoken sentence per language (English, Spanish, Greek) for each commentated moment.
+- No numbers and no minute in any line. The card shows them, computed by code.
+- A line may give a **reason for the model's rating** ("difficult because it was lofted high") or
+  a **concession** ("not completed, even though it was along the ground"). It never gives a cause
+  of the outcome. Drivers explain why the *model* rated the pass as it did, not why the pass
+  succeeded or failed.
+- A code Verifier (deterministic, no LLM) checks every line before it is shown. It rejects a line
+  that:
+  - is not one non-empty sentence, or is over the word limit of its language;
+  - contains a digit, a percent sign or a percent or minute word;
+  - uses a difficulty word that contradicts the moment's rating;
+  - makes a banned claim: penalty area or box, left or right, defender counts, line-breaking,
+    intent or credit verbs (tries, attempts, manages to and their Spanish and Greek equivalents),
+    model internals, or "throw";
+  - names a driver that was not shown to the model, uses a driver that points the wrong way for
+    the rating, or says a phrase-table fact (for example "under pressure") that is not among the
+    declared drivers;
+  - uses "mainly" or a similar word without driver 1 declared, or declares no driver although one
+    points the way of the rating;
+  - uses a causal word (because, due to, thanks to and their Spanish and Greek equivalents) away
+    from a difficulty word, which reads as a cause of the outcome.
+- A rejected line is retried once with the Verifier's reasons. If the retry is also rejected, or
+  the model times out or fails, the moment simply has no line. The card is still shown.
 
 ## How moments are chosen
 
