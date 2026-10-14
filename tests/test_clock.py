@@ -122,5 +122,5 @@ def test_added_time_label_in_a_line_is_rejected():
     bundle = make_bundle(minute=45, added=2)
     out = NarratorOut(line_en="In 45+2, Wendez's easy pass goes astray.",
                       line_es="En el tiempo añadido, el pase fácil de Wendez se pierde.",
-                      line_el="Στις καθυστερήσεις, η εύκολη πάσα του Wendez χάνεται.", drivers_used=[])
+                      line_el="Στις καθυστερήσεις, η εύκολη πάσα του Wendez χάνεται.", drivers_used=[1])
     assert verify(out, bundle).reasons == ["no_numbers: line_en has '45'", "no_numbers: line_en has '2'"]

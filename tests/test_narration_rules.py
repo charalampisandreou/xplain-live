@@ -37,7 +37,10 @@ def test_every_example_passes_the_verifier(ex, mode):
     bundle = example_bundle(ex)
     assert difficulty_tier(bundle.moment) == ex.tier()
     result = verify(example_out(ex), bundle, mode)
-    assert (result.reasons, result.notes) == ([], [])   # every line also carries the difficulty idea
+    assert result.reasons == []
+    # F1 and S2 (concessions) carry no difficulty word: recommended, so only a note
+    assert all(n.startswith("difficulty: ") and n.endswith("has no difficulty word") for n in result.notes)
+    assert bool(result.notes) == (ex.name in ("F1", "S2"))
 
 
 @pytest.mark.parametrize("ex", EXAMPLES, ids=[ex.name for ex in EXAMPLES])
@@ -48,7 +51,7 @@ def test_example_facts_match_what_the_model_sees_in_free_mode(ex):
     assert set(ex.facts()) == set(facts)
 
 
-def test_each_kind_has_two_shapes_in_the_examples():
+def test_each_kind_has_both_shapes_in_the_examples():
     shapes = {kind: {ex.variation[0] for ex in EXAMPLES if ex.kind == kind}
               for kind in ("surprise_failure", "surprise_success")}
     assert all(len(s) >= 2 for s in shapes.values()), shapes
@@ -62,9 +65,8 @@ def test_examples_are_in_every_brief_and_say_they_are_not_wording_to_reuse():
         assert "=== EXAMPLES (they show tone and shape, not wording to reuse) ===" in text
         assert render_examples() in text
         assert "placeholder" not in text
-    assert [ex.player for ex in EXAMPLES] == ["Teo Marlow", "Dario Quill", "Pelo Hart", "Ivo Varga", "Roan Delk",
-                                              "Mika Dovan"]
-    assert "Από την άμυνα, χάνεται η εύκολη πάσα του Roan Delk." in render_examples()
+    assert [ex.player for ex in EXAMPLES] == ["Ivo Varga", "Teo Marlow", "Mika Dovan", "Roan Delk"]
+    assert "Η πάσα του Roan Delk ήταν εύκολη διότι έγινε από το αμυντικό τρίτο, αλλά χάθηκε." in render_examples()
 
 
 @pytest.mark.parametrize("lang, line", [(lang, getattr(ex, f"line_{lang}")) for ex in EXAMPLES for lang in LANGS])
@@ -214,19 +216,19 @@ def test_the_same_moment_always_gets_the_same_nudge():
 
 @pytest.mark.parametrize("completed", [False, True])
 def test_nudges_are_spread_across_moments(completed):
-    # drivers that allow every shape: a position fact and a second fact, both pointing the tier's way
+    # two drivers pointing the tier's way, so one or two may be asked for
     direction = "lowers" if completed else "raises"
     drivers = [make_driver(1, *WIDE, direction), make_driver(2, *PRESSED, direction)]
     base = make_bundle(xp=0.25 if completed else 0.94, completed=completed, drivers=drivers)
     nudges = [build_facts(_moment(base, f"moment:m{i % 7}-{i:05d}"), "hints")["variation"] for i in range(200)]
     shapes = Counter(n["shape"] for n in nudges)
     outcomes = Counter(n["outcome"] for n in nudges)
-    assert set(shapes) == set(SHAPES) and min(shapes.values()) >= 25          # 50 each if even
+    assert SHAPES == ("rating_reason", "concession")
+    assert set(shapes) == set(SHAPES) and min(shapes.values()) >= 50          # 100 each if even
     assert set(outcomes) == set(OUTCOMES[base.moment.kind])
     assert min(outcomes.values()) >= 200 / len(OUTCOMES[base.moment.kind]) / 2
-    two = [n for n in nudges if n["shape"] != "short"]
-    assert {n["situation_facts"] for n in two} == {1, 2}
-    assert all(n["situation_facts"] == 1 for n in nudges if n["shape"] == "short")
+    assert {n["situation_facts"] for n in nudges if n["shape"] == "concession"} == {1, 2}
+    assert {n["situation_facts"] for n in nudges if n["shape"] == "rating_reason"} == {1}   # cap: length
 
 
 @pytest.mark.parametrize("drivers, at_most", [
@@ -243,11 +245,15 @@ def test_the_nudge_never_asks_for_more_drivers_than_are_narrated(drivers, at_mos
 
 
 def test_the_nudge_counts_only_drivers_that_match_the_tier():
-    # an easy pass whose only position fact lowers the rating: it may not be mentioned, so no situation_first
+    # an easy pass whose position fact lowers the rating: it may not be mentioned
     drivers = [make_driver(1, *GROUND), make_driver(2, *WIDE, "lowers")]
     for i in range(100):
         nudge = build_facts(_moment(make_bundle(drivers=drivers), f"moment:m1-{i:05d}"), "hints")["variation"]
-        assert nudge["situation_facts"] <= 1 and nudge["shape"] != "situation_first"
+        assert nudge["situation_facts"] == 1
+    # no driver pointing the tier's way: 0 facts, whatever the shape
+    against = [make_driver(1, *GROUND, "lowers")]
+    nudge = build_facts(_moment(make_bundle(drivers=against), "moment:m1-00001"), "hints")["variation"]
+    assert nudge["situation_facts"] == 0 and nudge["shape"] in SHAPES
 
 
 def test_free_and_hints_briefs_explain_the_nudge_and_strict_does_not():
@@ -284,3 +290,23 @@ def test_greek_depth_hints():
 ])
 def test_no_banned_pattern_fires_on_a_hint(lang, phrase):
     assert not [p for p in BANNED[lang] if re.search(p, phrase, re.IGNORECASE)]
+
+
+def test_rating_reason_asks_for_one_driver_and_concession_for_up_to_two():
+    drivers = [make_driver(1, *GROUND), make_driver(2, *PRESSED, "raises")]
+    nudges = [build_facts(_moment(make_bundle(drivers=drivers), f"moment:m3-{i:05d}"), "hints")["variation"]
+              for i in range(200)]
+    assert all(n["situation_facts"] == 1 for n in nudges if n["shape"] == "rating_reason")
+    assert {n["situation_facts"] for n in nudges if n["shape"] == "concession"} == {1, 2}
+    one = [make_driver(1, *GROUND)]   # the concession cap still holds: never more than the usable drivers
+    for i in range(100):
+        nudge = build_facts(_moment(make_bundle(drivers=one), f"moment:m3-{i:05d}"), "hints")["variation"]
+        assert nudge["situation_facts"] == 1
+
+
+def test_brief_asks_for_the_same_reason_in_every_language_and_short_lines():
+    for text in INSTRUCTIONS.values():
+        assert "All three lines carry the same shape and the same reason" in text
+        assert "line_es and line_el give that reason too, not just a description" in text
+        assert '"mainly" and "also" are optional; leave them out when the line is long' in text
+        assert "Every word counts toward\n  the limit." in text

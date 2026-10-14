@@ -12,7 +12,8 @@ from xplain.narration import DIFFICULTY_TIERS, NarratorOut, difficulty_tier
 from xplain.pipeline import process_match
 from xplain.scoring import ModelLoadError, XPassScorer, find_default_model
 from xplain.phrases import driver_phrases
-from xplain.verifier import EASY_WORDS, HARD_WORDS, LANGS, MAX_WORDS, difficulty_words, narrated_drivers, verify
+from xplain.verifier import (EASY_WORDS, HARD_WORDS, LANGS, MAX_WORDS, TABLE_PHRASES, difficulty_words, narrated_drivers,
+                             verify)
 
 LABELS = ("along the ground", "from the middle third, out wide", "with no pressure on the passer")
 # (feature, topic, value, label) for the default drivers: rank 3 is a default condition the model never sees
@@ -75,8 +76,16 @@ def make_out(**kw) -> NarratorOut:
 
 
 def line_out(**kw) -> NarratorOut:
-    """make_out() citing no driver, for tests of other checks whose line need not carry a driver phrase."""
-    return make_out(**{"drivers_used": [], **kw})
+    """make_out() for tests of other checks. It cites driver 1 (along the ground), which its Spanish and Greek
+    lines name, so needs_driver and unsupported_fact stay quiet on make_bundle()."""
+    return make_out(**{"drivers_used": [1], **kw})
+
+
+def bare_out(**kw) -> NarratorOut:
+    """A line that names no driver and cites none, for moments with no driver the line could use."""
+    base = dict(line_en="Weso Wendez's easy ball goes astray.", line_es="El pase fácil de Weso Wendez se pierde.",
+                line_el="Η εύκολη πάσα του Weso Wendez χάνεται.", drivers_used=[])
+    return NarratorOut(**{**base, **kw})
 
 
 HARD_OUT = dict(
@@ -187,7 +196,7 @@ def test_hard_word_on_an_easy_pass_is_rejected(lang, line):
     ("el", "Η εύκολη πάσα του Weso Wendez βρίσκει συμπαίκτη."),
 ])
 def test_easy_word_on_a_hard_pass_is_rejected(lang, line):
-    out = NarratorOut(**{**HARD_OUT, "drivers_used": [], f"line_{lang}": line})
+    out = NarratorOut(**{**HARD_OUT, "drivers_used": [1], f"line_{lang}": line})
     reasons = reasons_for(out, hard_bundle())
     assert len(reasons) == 1
     assert reasons[0].startswith(f"difficulty: line_{lang} says ")
@@ -246,7 +255,7 @@ def test_spike_lines_with_numbers_are_now_rejected():
         line_en="At 3 minutes, Weso Wendez makes a 94% pass attempt from the middle third, out wide, but fails.",
         line_es="A los 3 minutos, Weso Wendez intenta un pase del 94% desde el tercio medio, hacia afuera, pero falla.",
         line_el="Στο 3ο λεπτό, ο Weso Wendez επιχειρεί μια πάσα 94% από το μεσαίο τρίτο, προς τα έξω, αλλά αποτυγχάνει.",
-        drivers_used=[],
+        drivers_used=[2],   # the English line says "out wide", a piece of driver 2
     )
     reasons = reasons_for(out)
     assert {r.split(":")[0] for r in reasons} == {"no_numbers", "banned"}   # banned: the intent verbs
@@ -327,8 +336,9 @@ def test_banned_claims(field, line):
 
 
 def test_throw_in_is_not_a_throw():
-    out = line_out(line_en="Wendez misses an easy pass from a throw-in.")
-    assert verify(out, make_bundle()).ok
+    throw_in = make_driver(2, "play_pattern", "how the move started", "Throw In", "from a throw-in")
+    out = line_out(line_en="Wendez misses an easy pass from a throw-in.", drivers_used=[1, 2])
+    assert verify(out, make_bundle(drivers=[make_driver(1, *DRIVER_SPECS[0]), throw_in])).ok
 
 
 def test_spanish_lanza_is_allowed():
@@ -353,18 +363,18 @@ def test_duplicate_driver_rank():
 
 
 def test_zero_drivers_with_empty_drivers_used_passes():
-    assert verify(make_out(drivers_used=[]), make_bundle(n_drivers=0)).ok
+    assert verify(bare_out(), make_bundle(n_drivers=0)).ok
 
 
 def test_zero_drivers_with_drivers_used_fails():
-    reasons = reasons_for(make_out(drivers_used=[1]), make_bundle(n_drivers=0))
+    reasons = reasons_for(bare_out(drivers_used=[1]), make_bundle(n_drivers=0))
     assert reasons == ["drivers: the moment has no narrated drivers but drivers_used is [1]"]
 
 
 # --- several failures ---------------------------------------------------------------------------
 
 def test_two_failures_return_two_reasons():
-    out = make_out(line_en="Wendez misses an easy pass inside the box.", drivers_used=[5])
+    out = make_out(line_en="Wendez misses an easy pass inside the box.", drivers_used=[1, 5])
     result = verify(out, make_bundle())
     assert not result.ok
     assert result.reasons == [
@@ -399,14 +409,14 @@ def test_free_mode_skips_the_phrases_check():
 def test_every_other_check_still_runs_in_both_modes(mode):
     area = make_out(line_es="El pase fácil y raso de Weso Wendez cerca del área se pierde.")
     assert reasons_for(area, mode=mode) == ["banned: line_es says 'cerca del área'"]
-    vague = line_out(line_en="Weso Wendez's easy ball with another part of the body goes astray.")
+    vague = line_out(line_en="Weso Wendez's easy ball along the ground with another part of the body goes astray.")
     assert reasons_for(vague, mode=mode) == ["banned: line_en says 'another part of the body'"]
-    assert reasons_for(make_out(drivers_used=[3]), mode=mode) == [
+    assert reasons_for(make_out(drivers_used=[1, 3]), mode=mode) == [
         "drivers: drivers_used has [3], the narrated drivers are [1, 2]"]
     against = NarratorOut(**ONE_EASY, drivers_used=[1])
     assert reasons_for(against, make_bundle(drivers=_two_drivers("lowers", "raises")), mode) == [
         "driver_direction: driver 1 (lofted high) lowers the rating, but the pass is rated easy (easy)"]
-    assert reasons_for(line_out(line_en="Weso Wendez's easy 94% ball goes astray."), mode=mode) == [
+    assert reasons_for(line_out(line_en="Weso Wendez's easy 94% ball along the ground goes astray."), mode=mode) == [
         "no_numbers: line_en has '94%'"]
 
 
@@ -497,7 +507,7 @@ def test_rank_one_driver_that_agrees_is_accepted():
 
 def test_a_line_with_no_drivers_is_valid_whatever_the_directions():
     bundle = make_bundle(drivers=_two_drivers("lowers", "lowers"))   # easy pass, no driver agrees
-    assert verify(line_out(line_en="Weso Wendez's easy ball goes astray."), bundle).ok
+    assert verify(bare_out(), bundle).ok
 
 
 # --- drivers the model never sees ---------------------------------------------------------------
@@ -511,8 +521,8 @@ def test_all_drivers_dropped_means_no_driver_may_be_used():
     dropped = [make_driver(1, "body_part", "body part", "Foot", "with the foot"),
                make_driver(2, "play_pattern", "how the move started", "Regular Play", "in open play")]
     bundle = make_bundle(drivers=dropped)
-    assert verify(line_out(line_en="Weso Wendez's easy ball goes astray."), bundle).ok
-    assert reasons_for(make_out(drivers_used=[1]), bundle) == [
+    assert verify(bare_out(), bundle).ok
+    assert reasons_for(bare_out(drivers_used=[1]), bundle) == [
         "drivers: the moment has no narrated drivers but drivers_used is [1]"]
 
 
@@ -559,3 +569,123 @@ def test_banned_near_misses_do_not_fire(lang, line):
 def test_a_longer_banned_match_is_reported_once():
     assert reasons_for(line_out(line_es="El pase fácil de Weso Wendez dentro del área se pierde.")) == [
         "banned: line_es says 'dentro del área'"]
+
+
+# --- honesty: a reason for the rating, never for the outcome ------------------------------------
+
+def _cause(line: str) -> str:
+    return f"outcome_cause: line_en says {line!r} away from a difficulty word: a reason may explain the rating, never the outcome"
+
+
+def test_a_cause_of_the_outcome_is_rejected():
+    out = line_out(line_en="Weso Wendez's easy ball goes astray because it was along the ground.")
+    assert reasons_for(out) == [_cause("because")]
+
+
+def test_a_reason_for_the_rating_is_accepted():
+    out = line_out(line_en="Weso Wendez's pass was easy because it was along the ground, but it goes astray.")
+    assert verify(out, make_bundle()).ok
+
+
+@pytest.mark.parametrize("lang, line, marker", [
+    ("en", "Weso Wendez's easy ball goes astray, thanks to the ground.", "thanks to"),
+    ("en", "Weso Wendez's easy ball along the ground goes astray due to that.", "due to"),
+    ("es", "El pase fácil y raso de Weso Wendez se pierde ya que nadie lo recibe.", "ya que"),
+    ("es", "El pase fácil y raso de Weso Wendez se pierde, puesto que no llega.", "puesto que"),
+    ("es", "El pase fácil y raso de Weso Wendez se pierde por culpa de la altura.", "por culpa de"),
+    ("el", "Η εύκολη πάσα του Weso Wendez, συρτά, χάνεται αφού δεν βρίσκει κανέναν.", "αφού"),
+    ("el", "Η εύκολη πάσα του Weso Wendez, συρτά, χάνεται διότι δεν βρίσκει κανέναν.", "διότι"),
+    ("el", "Η εύκολη πάσα του Weso Wendez, συρτά, χάνεται χάρη σε μια κακή αναπήδηση.", "χάρη σε"),
+])
+def test_causal_markers_away_from_a_difficulty_word(lang, line, marker):
+    reasons = reasons_for(line_out(**{f"line_{lang}": line}))
+    assert [r for r in reasons if r.startswith("outcome_cause:")] == [
+        f"outcome_cause: line_{lang} says {marker!r} away from a difficulty word: a reason may explain the rating, "
+        f"never the outcome"]
+
+
+@pytest.mark.parametrize("lang, line", [
+    ("en", "What makes it easy is the ball along the ground, yet Weso Wendez's pass goes astray."),
+    ("es", "El pase de Weso Wendez era fácil ya que iba raso, pero se pierde."),
+    ("es", "Lo que hace fácil el pase raso de Weso Wendez no evita que se pierda."),
+    ("el", "Η πάσα του Weso Wendez ήταν εύκολη διότι ήταν συρτά, αλλά χάνεται."),
+    ("el", "Η πάσα του Weso Wendez ήταν εύκολη χάρη στο ότι ήταν συρτά, αλλά χάνεται."),
+])
+def test_causal_markers_next_to_a_difficulty_word_are_accepted(lang, line):
+    assert verify(line_out(**{f"line_{lang}": line}), make_bundle()).ok
+
+
+@pytest.mark.parametrize("lang, line", [
+    ("en", "Weso Wendez's easy pass goes astray, even though it was along the ground."),
+    ("es", "El pase fácil de Weso Wendez se pierde, aunque iba raso."),
+    ("el", "Η εύκολη πάσα του Weso Wendez χάνεται, παρόλο που ήταν συρτά."),
+])
+def test_concessions_are_not_banned(lang, line):
+    assert verify(line_out(**{f"line_{lang}": line}), make_bundle()).ok
+
+
+def test_greek_delicate_and_especially_trip_nothing():
+    out = line_out(line_el="Η λεπτή και ιδιαίτερα εύκολη πάσα του Weso Wendez, συρτά, χάνεται.")
+    result = verify(out, make_bundle())
+    assert (result.ok, result.reasons) == (True, [])
+
+
+# --- unsupported facts, the lead driver, a driver is needed --------------------------------------
+
+def _unsupported(lang: str, said: str) -> str:
+    return f"unsupported_fact: line_{lang} says {said!r}, which is not a driver in drivers_used"
+
+
+def test_pressure_on_a_moment_with_no_pressure_driver_is_rejected():
+    out = line_out(line_en="Weso Wendez's easy ball along the ground under pressure goes astray.")
+    assert reasons_for(out) == [_unsupported("en", "under pressure")]
+
+
+def test_a_header_on_a_foot_pass_is_rejected():
+    foot = [make_driver(1, *DRIVER_SPECS[0]), make_driver(2, "body_part", "body part", "Foot", "with the foot")]
+    out = line_out(line_en="Weso Wendez's easy ball along the ground with a header goes astray.")
+    assert reasons_for(out, make_bundle(drivers=foot)) == [_unsupported("en", "with a header")]
+
+
+def test_a_narrated_driver_left_out_of_drivers_used_is_rejected():
+    lofted = [make_driver(1, "height", "pass height", "High Pass", "lofted high", "lowers")]
+    out = NarratorOut(line_en="Weso Wendez's difficult lofted ball finds a teammate.",
+                      line_es="El pase difícil de Weso Wendez encuentra a un compañero.",
+                      line_el="Η δύσκολη πάσα του Weso Wendez βρίσκει συμπαίκτη.", drivers_used=[])
+    assert reasons_for(out, hard_bundle(drivers=lofted)) == [
+        _unsupported("en", "lofted"),
+        "needs_driver: drivers_used is empty, but driver(s) [1] point the way of the rating (lowers) and the pass "
+        "is rated hard (difficult)",
+    ]
+
+
+def test_a_longer_unsupported_phrase_is_reported_once():
+    out = line_out(line_en="Weso Wendez's easy ball along the ground, lofted high, goes astray.")
+    assert reasons_for(out) == [_unsupported("en", "lofted high")]   # not "lofted" again
+
+
+def test_the_phrase_scan_covers_the_whole_table_and_its_hints():
+    for word in ("lofted", "ground", "low", "under pressure", "with a header", "out wide", "in the attacking third"):
+        assert word in TABLE_PHRASES["en"], word
+    for word in ("συρτή", "ψηλή", "χαμηλή", "από την άμυνα", "από το κέντρο", "με κεφαλιά"):
+        assert word in TABLE_PHRASES["el"], word
+    assert "de cabeza" in TABLE_PHRASES["es"]
+    assert "with another part of the body" not in TABLE_PHRASES["en"]   # banned outright already
+
+
+def test_mainly_needs_driver_one():
+    out = NarratorOut(line_en="Weso Wendez's easy ball, mainly out wide, goes astray.",
+                      line_es="El pase fácil desde la banda de Weso Wendez se pierde.",
+                      line_el="Η εύκολη πάσα του Weso Wendez από τα πλάγια χάνεται.", drivers_used=[2])
+    assert reasons_for(out) == [
+        "lead_driver: line_en says 'mainly', but driver 1 is not a narrated driver in drivers_used"]
+    lead = line_out(line_en="Weso Wendez's easy ball, mainly along the ground, goes astray.",
+                    line_es="El pase fácil, sobre todo raso, de Weso Wendez se pierde.",
+                    line_el="Η εύκολη πάσα του Weso Wendez, κυρίως συρτά, χάνεται.")
+    assert verify(lead, make_bundle()).ok
+
+
+def test_an_empty_drivers_used_needs_no_matching_driver():
+    assert reasons_for(bare_out()) == [
+        "needs_driver: drivers_used is empty, but driver(s) [1, 2] point the way of the rating (raises) and the pass "
+        "is rated easy (easy)"]

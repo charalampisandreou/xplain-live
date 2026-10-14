@@ -18,6 +18,13 @@ Checks (every failing check adds a reason; all reasons are collected, not just t
                 case-insensitive; a position driver may use the composed phrase or one of its pieces
   * driver_direction: every driver in drivers_used, whatever its rank, points the same way as the
                 difficulty tier: "raises" for an easy tier, "lowers" for a hard one
+  * outcome_cause: a causal marker (CAUSAL_MARKERS: because, porque, λόγω, ...) may only give a reason
+                for the rating, so it must sit next to a difficulty word of the moment's family (at most
+                CAUSE_GAP words between them, either side); anywhere else it reads as a cause of the outcome
+  * unsupported_fact: every phrase of the phrase table (approved phrases, position pieces and every
+                hints suggestion, for any label) found in a line must belong to a driver in drivers_used
+  * lead_driver: "mainly" and its kin (LEAD_WORDS) only when driver 1 is narrated and in drivers_used
+  * needs_driver: drivers_used is not empty when a narrated driver points the way of the tier
 
 Reasons start with the check name, e.g. "no_numbers: line_en has '94%'". Notes are observations that
 do not fail a line, e.g. "difficulty: line_en has no difficulty word".
@@ -32,7 +39,8 @@ from pydantic import BaseModel, ConfigDict
 from .config import phrase_mode
 from .contracts import Driver, MomentBundle
 from .narration import NarratorOut, difficulty_tier
-from .phrases import driver_phrases, narrated
+from .phrases import (DEPTH_PHRASES, ENGLISH_HEIGHT_HINTS, GREEK_ADJECTIVES, GREEK_DEPTH_HINTS, LABEL_PHRASES,
+                      WIDTH_PHRASES, driver_phrases, narrated, suggestions)
 
 LANGS: tuple[str, ...] = ("en", "es", "el")
 
@@ -114,6 +122,28 @@ BANNED: dict[str, tuple[str, ...]] = {
 }
 
 
+# Causal markers per language. A marker may give a reason for the model's rating ("difficult because it was
+# lofted high"), never for the outcome ("goes astray because ..."); concessions ("even though") are fine.
+CAUSAL_MARKERS: dict[str, tuple[str, ...]] = {
+    "en": (r"\bbecause\b", r"\bdue to\b", r"\bowing to\b", r"\bthanks to\b", r"\bwhat makes\b"),
+    "es": (r"\bporque\b", r"\bdebido a\b", r"\ba causa de\b", r"\bgracias a\b", r"\bpor culpa de\b",
+           r"\blo que hace\b", r"\bya que\b", r"\bpuesto que\b"),
+    "el": (r"\bλόγω\b", r"\bεξαιτίας\b", r"\bεπειδή\b", r"\bγιατί\b", r"\bχάρη σ\w*", r"\bαφού\b", r"\bδιότι\b"),
+}
+CAUSE_GAP = 2   # at most this many words between a causal marker and a difficulty word
+
+# Words that single out the strongest driver: only for driver 1.
+LEAD_WORDS: dict[str, tuple[str, ...]] = {
+    "en": (r"\bmainly\b", r"\bmostly\b", r"\babove all\b"),
+    "es": (r"\bsobre todo\b", r"\bprincipalmente\b"),
+    "el": (r"\bκυρίως\b", r"\bπρωτίστως\b"),
+}
+
+# The two vague labels: BANNED rejects their wording already, so the unsupported_fact scan leaves them out.
+VAGUE_LABELS = frozenset({"with another part of the body", "from another kind of play"})
+WORD = re.compile(r"\w+")
+
+
 def _compile(table: dict[str, tuple[str, ...]]) -> dict[str, list[re.Pattern[str]]]:
     return {lang: [re.compile(p, re.IGNORECASE) for p in patterns] for lang, patterns in table.items()}
 
@@ -121,6 +151,26 @@ def _compile(table: dict[str, tuple[str, ...]]) -> dict[str, list[re.Pattern[str
 _BANNED_RE = _compile(BANNED)
 _NUMBER_WORDS_RE = _compile(NUMBER_WORDS)
 _FAMILY_RE = {"easy": _compile(EASY_WORDS), "hard": _compile(HARD_WORDS)}
+_CAUSAL_RE = _compile(CAUSAL_MARKERS)
+_LEAD_RE = _compile(LEAD_WORDS)
+
+
+def _table_phrases() -> dict[str, list[str]]:
+    """Every phrase of the phrase table per language, longest first: label phrases (VAGUE_LABELS left out),
+    depth and width pieces, and the extra hints wordings (English height forms, Greek adjectives and depths)."""
+    out: dict[str, set[str]] = {lang: set() for lang in LANGS}
+    labels = {k: v for k, v in LABEL_PHRASES.items() if k not in VAGUE_LABELS}
+    for table in (DEPTH_PHRASES, WIDTH_PHRASES, labels):
+        for phrase in table.values():
+            for lang in LANGS:
+                out[lang].add(phrase[lang])
+    out["en"].update(w for words in ENGLISH_HEIGHT_HINTS.values() for w in words)
+    out["el"].update(GREEK_ADJECTIVES.values())
+    out["el"].update(GREEK_DEPTH_HINTS.values())
+    return {lang: sorted(phrases, key=lambda p: (-len(p), p)) for lang, phrases in out.items()}
+
+
+TABLE_PHRASES: dict[str, list[str]] = _table_phrases()
 
 
 class VerifierResult(BaseModel):
@@ -252,6 +302,86 @@ def check_driver_direction(out: NarratorOut, bundle: MomentBundle) -> list[str]:
     ]
 
 
+def _word_index(tokens: list[re.Match[str]], pos: int) -> int:
+    """The index of the word at character pos (or the first word after it)."""
+    return next((i for i, t in enumerate(tokens) if pos < t.end()), len(tokens))
+
+
+def check_outcome_cause(out: NarratorOut, bundle: MomentBundle) -> list[str]:
+    """A causal marker must sit next to a difficulty word of the moment's family: at most CAUSE_GAP words
+    between them, on either side ("difficult because", "what makes it difficult"). Elsewhere it reads as a
+    cause of the outcome ("goes astray because it was along the ground").
+
+    A heuristic (adjacency to a difficulty word), not a reading of the sentence. It cannot catch a cause of
+    the outcome placed right next to a difficulty word ("Weso Wendez's easy pass, lost because it was lofted
+    high": two words between "easy" and "because"), nor a cause given without a listed marker ("as", "since").
+    """
+    family = difficulty_tier(bundle.moment).family
+    reasons = []
+    for lang, line in _lines(out).items():
+        tokens = list(WORD.finditer(line))
+        words = [(_word_index(tokens, m.start()), _word_index(tokens, m.end() - 1))
+                 for p in _FAMILY_RE[family][lang] for m in p.finditer(line)]
+        for pattern in _CAUSAL_RE[lang]:
+            for m in pattern.finditer(line):
+                first, last = _word_index(tokens, m.start()), _word_index(tokens, m.end() - 1)
+                if not any(first - end - 1 <= CAUSE_GAP if first > end else start - last - 1 <= CAUSE_GAP
+                           for start, end in words):
+                    reasons.append(f"outcome_cause: line_{lang} says {m.group(0)!r} away from a difficulty word: "
+                                   f"a reason may explain the rating, never the outcome")
+    return reasons
+
+
+def _phrase_spans(line: str, phrase: str) -> list[tuple[int, int]]:
+    return [m.span() for m in re.finditer(rf"(?<!\w){re.escape(phrase)}(?!\w)", line, re.IGNORECASE)]
+
+
+def _driver_wordings(driver: Driver, lang: str) -> list[str]:
+    """Every approved wording of one driver in one language: its phrase (and pieces) and its hints suggestions."""
+    wordings = [p[lang] for p in driver_phrases(driver).values()]
+    hints = suggestions(driver)
+    for options in (hints.values() if driver.feature == "position" else [hints]):
+        wordings += options[lang]
+    return wordings
+
+
+def check_unsupported_facts(out: NarratorOut, bundle: MomentBundle) -> list[str]:
+    """Every phrase-table wording in a line (whole words, case-insensitive) must belong to a driver in
+    drivers_used: "under pressure" on a pass with no pressure driver, or a narrated driver left out of
+    drivers_used, is rejected. Best effort: paraphrases ("with his head", "high in the air") are not caught."""
+    drivers = narrated_drivers(bundle)
+    used = [drivers[r] for r in dict.fromkeys(out.drivers_used) if r in drivers]
+    reasons = []
+    for lang, line in _lines(out).items():
+        covered = [s for d in used for w in _driver_wordings(d, lang) for s in _phrase_spans(line, w)]
+        for phrase in TABLE_PHRASES[lang]:   # longest first, so a piece inside a reported phrase is not repeated
+            for a, b in _phrase_spans(line, phrase):
+                if not any(x <= a and b <= y for x, y in covered):
+                    covered.append((a, b))
+                    reasons.append(f"unsupported_fact: line_{lang} says {line[a:b]!r}, "
+                                   f"which is not a driver in drivers_used")
+    return reasons
+
+
+def check_lead_driver(out: NarratorOut, bundle: MomentBundle) -> list[str]:
+    """"mainly" and its kin (LEAD_WORDS) single out the strongest driver: only when driver 1 is narrated and used."""
+    if 1 in narrated_drivers(bundle) and 1 in out.drivers_used:
+        return []
+    return [f"lead_driver: line_{lang} says {m.group(0)!r}, but driver 1 is not a narrated driver in drivers_used"
+            for lang, line in _lines(out).items() for p in _LEAD_RE[lang] if (m := p.search(line))]
+
+
+def check_needs_driver(out: NarratorOut, bundle: MomentBundle) -> list[str]:
+    """When a narrated driver points the way of the tier, the line must use at least one driver."""
+    tier = difficulty_tier(bundle.moment)
+    wanted = "raises" if tier.family == "easy" else "lowers"
+    matching = [rank for rank, d in narrated_drivers(bundle).items() if d.direction == wanted]
+    if out.drivers_used or not matching:
+        return []
+    return [f"needs_driver: drivers_used is empty, but driver(s) {matching} point the way of the rating "
+            f"({wanted}) and the pass is rated {tier.family} ({tier.en})"]
+
+
 def verify(out: NarratorOut, bundle: MomentBundle, mode: str | None = None) -> VerifierResult:
     """Run every check and collect every failing reason; ok when there are none. Notes never fail a line.
 
@@ -268,5 +398,9 @@ def verify(out: NarratorOut, bundle: MomentBundle, mode: str | None = None) -> V
         *check_drivers(out, bundle),
         *(check_phrases(out, bundle) if mode == "strict" else []),
         *check_driver_direction(out, bundle),
+        *check_outcome_cause(out, bundle),
+        *check_unsupported_facts(out, bundle),
+        *check_lead_driver(out, bundle),
+        *check_needs_driver(out, bundle),
     ]
     return VerifierResult(ok=not reasons, reasons=reasons, notes=notes)

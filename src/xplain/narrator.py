@@ -75,11 +75,12 @@ def _driver_fact(d: Driver, mode: str) -> dict[str, Any]:
     return fact
 
 
-# Variation nudge (hints and free modes): sentence shapes, and the outcome wording per kind as an English
+# Variation nudge (hints and free modes): the sentence shape, and the outcome wording per kind as an English
 # intent the model renders naturally. Neutral verbs only: no cause, no intent or credit.
-SHAPES: tuple[str, ...] = ("player_first", "situation_first", "result_first", "short")
-SITUATION_FIRST_FEATURES = ("position", "under_pressure")   # situation_first opens with one of these facts
-SHORT_MAX_WORDS = 10
+# "rating_reason": the driver is the reason for the rating ("difficult because it was lofted high, but it still
+# reaches a teammate"); "concession": the driver is conceded against the outcome ("is not completed, even
+# though it was played along the ground"). Never a reason for the outcome.
+SHAPES: tuple[str, ...] = ("rating_reason", "concession")
 OUTCOMES: dict[str, tuple[str, ...]] = {
     "surprise_failure": ("goes astray", "is lost", "does not reach a teammate", "comes to nothing"),
     "surprise_success": ("reaches a teammate", "is completed", "comes off"),
@@ -90,17 +91,16 @@ def variation(bundle: MomentBundle, drivers: list[Driver]) -> dict[str, Any]:
     """A stable nudge for one moment, from a SHA-256 of its moment_id (the same moment always gets the same one).
 
     drivers are the narrated drivers; only those whose direction matches the tier may be mentioned, so
-    situation_facts never exceeds their number (0 when there are none), "short" asks for at most one, and
-    "situation_first" is only offered when one of them is a position or pressure fact.
+    situation_facts never exceeds their number, and is 0 when there are none (the brief then asks for the
+    difficulty and the outcome only, whatever the shape). "rating_reason" asks for at most one driver (a
+    reason clause with two runs over the word limit); "concession" asks for 1 or 2.
     """
     m = bundle.moment
     digest = hashlib.sha256(m.moment_id.encode("utf-8")).digest()
     wanted = "raises" if difficulty_tier(m).family == "easy" else "lowers"
     usable = [d for d in drivers if d.direction == wanted]
-    shapes = [s for s in SHAPES
-              if s != "situation_first" or any(d.feature in SITUATION_FIRST_FEATURES for d in usable)]
-    shape = shapes[digest[0] % len(shapes)]
-    facts = 1 if shape == "short" else 1 + digest[1] % 2
+    shape = SHAPES[digest[0] % len(SHAPES)]
+    facts = 1 if shape == "rating_reason" else 1 + digest[1] % 2
     outcomes = OUTCOMES[m.kind]
     return {"shape": shape, "situation_facts": min(facts, len(usable)), "outcome": outcomes[digest[2] % len(outcomes)]}
 

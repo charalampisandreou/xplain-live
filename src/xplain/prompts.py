@@ -8,9 +8,11 @@ may use, adapt or replace; in "strict" mode the approved phrases (phrases.py), t
 The word limits and the default conditions are filled in from verifier.MAX_WORDS and the label /
 phrase tables, so they are written once.
 
-EXAMPLES holds six hand-written examples (invented names), two sentence shapes per kind. They are
-rendered into the brief with their facts as the model would see them in free mode (with the variation
-nudge each one follows), and a test runs each through the Verifier.
+EXAMPLES holds four owner-approved examples (invented names): per kind, one "rating_reason" line (the
+driver is the reason for the rating) and one "concession" line (the driver is conceded against the
+outcome). They are rendered into the brief with their facts as the model would see them in free mode
+(with the variation nudge each one follows), and a test runs each through the Verifier. The Greek lines
+are the owner's and final; the Spanish lines are drafts not yet reviewed by a native speaker.
 """
 from __future__ import annotations
 
@@ -60,45 +62,32 @@ class Example:
 
 
 EXAMPLES: tuple[Example, ...] = (
-    Example("A", "surprise_failure", 0.93, "Teo Marlow",
+    Example("S1", "surprise_success", 0.25, "Ivo Varga",
+            (("height", "pass height", "High Pass", "lofted high", "lowers"),),
+            "Ivo Varga's pass was especially difficult because it was lofted high, but it still reaches a teammate.",
+            "El pase de Ivo Varga era especialmente difícil porque iba por alto, pero aun así llega a un compañero.",
+            "Η πάσα του Ivo Varga ήταν ιδιαίτερα δύσκολη λόγω του ύψους της, αλλά παρ' όλ' αυτά φτάνει σε συμπαίκτη.",
+            (1,), ("rating_reason", 1, "reaches a teammate")),
+    Example("F1", "surprise_failure", 0.94, "Teo Marlow",
             (("height", "pass height", "Ground Pass", "along the ground", "raises"),),
-            "Teo Marlow's easy pass along the ground goes astray.",
-            "El fácil pase raso de Teo Marlow se pierde.",
-            "Η εύκολη, συρτή πάσα του Teo Marlow χάνεται.",
-            (1,), ("player_first", 1, "goes astray")),
-    Example("B", "surprise_failure", 0.97, "Dario Quill",
-            (("position", "pitch position", "middle_third|out_wide", "from the middle third, out wide", "raises"),),
-            "Out wide, Dario Quill's very easy pass finds no one.",
-            "Por la banda, el pase muy fácil de Dario Quill no encuentra destino.",
-            "Στα πλάγια, η πολύ εύκολη πάσα του Dario Quill δεν βρίσκει στόχο.",
-            (1,), ("situation_first", 1, "does not reach a teammate")),
-    Example("C", "surprise_success", 0.25, "Pelo Hart",
+            "Teo Marlow's pass is not completed, even though it was played along the ground.",
+            "El pase de Teo Marlow no se completa, aunque iba raso.",
+            "Η πάσα του Teo Marlow δεν ολοκληρώνεται, παρόλο που ήταν συρτή.",
+            (1,), ("concession", 1, "does not reach a teammate")),
+    Example("S2", "surprise_success", 0.25, "Mika Dovan",
             (("height", "pass height", "High Pass", "lofted high", "lowers"),
              ("under_pressure", "pressure", 1.0, "under pressure", "lowers")),
-            "Pelo Hart completes a difficult pass, lofted high and under pressure.",
-            "Pelo Hart completa un pase difícil, por alto y bajo presión.",
-            "Ο Pelo Hart ολοκληρώνει μια πολύ δύσκολη, ψηλή πάσα υπό πίεση.",
-            (1, 2), ("player_first", 2, "is completed")),
-    Example("D", "surprise_success", 0.32, "Ivo Varga",
-            (("height", "pass height", "Low Pass", "played low", "lowers"),),
-            "Ivo Varga's tricky pass, played low, still reaches a teammate.",
-            "El pase complicado y a media altura de Ivo Varga llega a un compañero.",
-            "Η δύσκολη, χαμηλή πάσα του Ivo Varga φτάνει σε συμπαίκτη.",
-            (1,), ("player_first", 1, "reaches a teammate")),
-    Example("E", "surprise_failure", 0.93, "Roan Delk",
+            "Mika Dovan's pass reaches a teammate, even though it was lofted high and under pressure.",
+            "El pase de Mika Dovan llega a un compañero, aunque iba por alto y bajo presión.",
+            "Η πάσα του Mika Dovan φτάνει σε συμπαίκτη, παρόλο που ήταν ψηλή και έγινε υπό πίεση.",
+            (1, 2), ("concession", 2, "reaches a teammate")),
+    Example("F2", "surprise_failure", 0.94, "Roan Delk",
             (("position", "pitch position", "defensive_third|out_wide", "from their own defensive third, out wide",
               "raises"),),
-            "From their own third, Roan Delk's easy pass is lost.",
-            "Desde su tercio defensivo, se pierde el fácil pase de Roan Delk.",
-            "Από την άμυνα, χάνεται η εύκολη πάσα του Roan Delk.",
-            (1,), ("situation_first", 1, "is lost")),
-    Example("F", "surprise_success", 0.25, "Mika Dovan",
-            (("height", "pass height", "High Pass", "lofted high", "lowers"),
-             ("under_pressure", "pressure", 1.0, "under pressure", "lowers")),
-            "It reaches a teammate: Mika Dovan's difficult pass, lofted and under pressure.",
-            "Llega a un compañero el difícil pase de Mika Dovan, por alto y bajo presión.",
-            "Φτάνει σε συμπαίκτη η πολύ δύσκολη, ψηλή πάσα του Mika Dovan υπό πίεση.",
-            (1, 2), ("result_first", 2, "reaches a teammate")),
+            "Roan Delk's pass was easy because it came from their own defensive third, but it is lost.",
+            "El pase de Roan Delk era fácil porque salía de su propio tercio defensivo, pero se pierde.",
+            "Η πάσα του Roan Delk ήταν εύκολη διότι έγινε από το αμυντικό τρίτο, αλλά χάθηκε.",
+            (1,), ("rating_reason", 1, "is lost")),
 )
 
 
@@ -122,22 +111,24 @@ DRIVERS_FACT: dict[str, str] = {
   "raises" means this made the pass easier in the model's eyes, "lowers" means harder. label is a
   plain English fact about what the pass had. Default conditions are left out, so drivers can be
   empty.
-- variation: a nudge for the shape of this line. shape: "player_first" (open with the player),
-  "situation_first" (open with the position or pressure fact), "result_first" (open with what
-  happens to the pass), "short" (at most 10 words, one situation fact). situation_facts: how many
-  drivers to mention. outcome: what happens to the pass, as an English intent; say it naturally in
-  each language.""",
+- variation: a nudge for the shape of this line. shape: "rating_reason" (the drivers are the reason
+  for the rating: "the pass was difficult because it was lofted high, but it still reaches a
+  teammate") or "concession" (the drivers are conceded against the outcome: "the pass is not
+  completed, even though it was played along the ground"). situation_facts: how many drivers to
+  mention; 0 means no driver fits, so say only the difficulty and the outcome. outcome: what happens
+  to the pass, as an English intent; say it naturally in each language.""",
     "hints": """\
 - drivers: why the model rated the pass easy or hard, strongest first (lowest rank). direction
   "raises" means this made the pass easier in the model's eyes, "lowers" means harder. label is a
   plain English fact about what the pass had; suggested lists approved wordings per language (en, es,
   el), for a pitch position driver separately for depth and width. Default conditions are left out,
   so drivers can be empty.
-- variation: a nudge for the shape of this line. shape: "player_first" (open with the player),
-  "situation_first" (open with the position or pressure fact), "result_first" (open with what
-  happens to the pass), "short" (at most 10 words, one situation fact). situation_facts: how many
-  drivers to mention. outcome: what happens to the pass, as an English intent; say it naturally in
-  each language.""",
+- variation: a nudge for the shape of this line. shape: "rating_reason" (the drivers are the reason
+  for the rating: "the pass was difficult because it was lofted high, but it still reaches a
+  teammate") or "concession" (the drivers are conceded against the outcome: "the pass is not
+  completed, even though it was played along the ground"). situation_facts: how many drivers to
+  mention; 0 means no driver fits, so say only the difficulty and the outcome. outcome: what happens
+  to the pass, as an English intent; say it naturally in each language.""",
     "strict": """\
 - drivers: why the model rated the pass easy or hard, strongest first (lowest rank). direction
   "raises" means this made the pass easier in the model's eyes, "lowers" means harder. phrase is the
@@ -155,6 +146,8 @@ _FREE_RULES = """\
 - Do not give every line the same shape: vary where the player, the situation and the result come
   in the sentence, and do not start every line the same way.
 - Mention at most two situation facts (drivers); skip any that do not fit naturally.
+- Name at least one driver whose direction matches difficulty_word whenever one exists, as the
+  reason for the rating or as a concession (see Honesty).
 - Follow the variation nudge unless it makes the sentence unnatural. The nudge changes the shape of
   the sentence, never the facts.
 - Mention only the drivers you list in drivers_used, and list every driver you mention.
@@ -183,6 +176,7 @@ DRIVER_RULES: dict[str, str] = {
 - Mention only a driver whose direction matches difficulty_word: "raises" with easy words, "lowers"
   with tricky, difficult or very difficult. If none matches, mention no driver and return
   drivers_used empty. This rule comes before "mention the first driver".
+- Name each driver as the reason for the rating or as a concession (see Honesty).
 - For a pitch position driver, use one piece alone (depth or width) when the full phrase would sound
   redundant; either is accepted.
 - In Spanish, call the pass "pase" (el pase, un pase), so fixed phrases such as "raso" agree with it.""",
@@ -211,11 +205,15 @@ The voice:
 {driver_rules}
 - Never mention default conditions on your own: {defaults}.
 
-Honesty: the drivers explain the model's rating, never the outcome.
-- Never give a cause for the outcome: no "because", no "rushed", no pressure as an excuse, no
-  defenders, space, intent or tactics.
-- Fine: "Savan Dornani's simple ball along the ground goes astray."
-  Not fine: "Dornani loses it because he is rushed."
+Honesty: the drivers explain the model's rating, never the outcome. A driver may appear in one of
+two ways only:
+- as the reason for the rating, next to the difficulty word: "Savan Dornani's pass was easy because
+  it was played along the ground, but it goes astray.";
+- as a concession on the outcome: "Savan Dornani's pass goes astray, even though it was played along
+  the ground."
+- Never give a cause for the outcome: not "goes astray because ...", not "reaches a teammate thanks
+  to ...", no "rushed", no pressure as an excuse, no defenders, space, intent or tactics.
+- Say "mainly" (or "above all") only about driver 1.
 
 Never:
 - numbers of any kind, percentages, or the minute or time of the match (the screen shows those);
@@ -228,6 +226,8 @@ Never:
   completes, reaches, goes astray.
 
 Languages:
+- All three lines carry the same shape and the same reason. If line_en gives a reason for the
+  rating, line_es and line_el give that reason too, not just a description.
 - English: plain broadcast English.
 - Spanish and Greek: natural, idiomatic football language as a local commentator would say it,
   not a word-for-word translation of the English. Prefer simple everyday phrasing
@@ -237,6 +237,8 @@ Languages:
 Form:
 - At most {max_en} words in English, {max_es} in Spanish, {max_el} in Greek.
 - One sentence per line: no line breaks, no second sentence, no semicolons.
+- "mainly" and "also" are optional; leave them out when the line is long. Every word counts toward
+  the limit.
 
 Return JSON with:
 - line_en, line_es, line_el: the three lines.
