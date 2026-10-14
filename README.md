@@ -8,8 +8,9 @@ overlay cards that a graphics system can render alongside the match.
 > Status: work in progress. Built: the synthetic match generator, the pass model trained in this
 > repository (xpass_v2) behind a scoring API (`/score`), replay, an offline deterministic analysis
 > pipeline (outlier moments, SHAP-based drivers, per-half commentary gate, half reports, timeline,
-> pass marks), and the Narrator with a code Verifier. Not built yet: personalization, the Agent
-> Framework workflow, the live overlay UI and the Azure deployment.
+> pass marks), the Narrator with a code Verifier, and a first Agent Framework workflow that runs
+> them end to end (Analyst -> Explainer -> Narrator -> Verifier). Not built yet: personalization,
+> the live overlay UI and the Azure deployment.
 > Results, demo and deployment sections are filled in as they are measured.
 
 ## What it does
@@ -123,6 +124,20 @@ The pipeline prints a summary line and the half-time and full-time reports. Opti
 
 This path is deterministic and offline: it makes no LLM or Azure calls, and the same seed gives
 byte-identical JSON.
+
+## Run the workflow
+
+The Agent Framework workflow (`src/xplain/workflow.py`) chains Analyst -> Explainer -> Narrator ->
+Verifier and narrates every commentated moment. It calls the Foundry model, so it needs `az login`:
+
+```bash
+python -m xplain.workflow --file data/match_seed42.jsonl --max-moments 5
+```
+
+Per moment it prints the minute, player, xP percent (from code), the EN/ES/EL lines and the
+Verifier verdict (accepted, retried, or rejected with reasons), then a summary. A moment that is
+rejected, times out or fails gets no line and never stops the others. `--mode strict|free|hints`
+overrides `XPLAIN_PHRASE_MODE`.
 
 ## How moments are chosen
 

@@ -119,19 +119,22 @@ class _ScoredMatch:
             self.scored.append((event, result.expected_probability, moment))
         self.cfg, self.scorer = cfg, scorer
 
-    def bundles(self) -> list[MomentBundle]:
-        """Run the commentary gate on earlier moments only and explain every Moment; in seq order."""
-        pairs: list[tuple[PassEvent, Moment]] = []
-        reasons: list[tuple[QualifiedBy, ...]] = []
+    def gated(self) -> list[tuple[PassEvent, Moment, tuple[QualifiedBy, ...]]]:
+        """Every Moment with its event and commentary reasons, gated on earlier moments only; in seq order."""
+        out: list[tuple[PassEvent, Moment, tuple[QualifiedBy, ...]]] = []
         for event, _, moment in self.scored:
             if moment is None:
                 continue
-            reasons.append(commentary_reasons(moment, [m for _, m in pairs], self.cfg))
-            pairs.append((event, moment))
-        explanations = ShapExplainer(self.scorer.boosters).explain_many(pairs)
+            out.append((event, moment, commentary_reasons(moment, [m for _, m, _ in out], self.cfg)))
+        return out
+
+    def bundles(self) -> list[MomentBundle]:
+        """Run the commentary gate on earlier moments only and explain every Moment; in seq order."""
+        gated = self.gated()
+        explanations = ShapExplainer(self.scorer.boosters).explain_many([(e, m) for e, m, _ in gated])
         return [
             MomentBundle(moment=moment, explanation=explanation, qualifies_live=bool(why), qualified_by=why)
-            for (_, moment), explanation, why in zip(pairs, explanations, reasons, strict=True)
+            for (_, moment, why), explanation in zip(gated, explanations, strict=True)
         ]
 
     def marks(self) -> list[PassMark]:
@@ -179,6 +182,12 @@ def analyse_match(events: Sequence, scorer: XPassScorer,
     """Bundles (outliers) and marks (every pass) from a single scoring of the passes."""
     match = _ScoredMatch(events, scorer, cfg)
     return match.bundles(), match.marks()
+
+
+def gate_match(events: Sequence, scorer: XPassScorer, cfg: AnalyticsConfig = analytics.DEFAULT
+               ) -> list[tuple[PassEvent, Moment, tuple[QualifiedBy, ...]]]:
+    """Every outlier as (event, Moment, commentary reasons), in seq order; no SHAP. Empty reasons: not commentated."""
+    return _ScoredMatch(events, scorer, cfg).gated()
 
 
 def process_match(events: Sequence, scorer: XPassScorer,
