@@ -254,7 +254,7 @@
       else if (e.key === ' ') { setPlaying(!state.playing); e.preventDefault(); }
       else if (e.key === 'l' || e.key === 'L') backToLive();
     });
-    setPlaying(true);
+    setPlaying(state.now < state.bundle.clock.last_event_t);   // ?t at full time opens paused, not restarted
     setSpeed(state.speed);
   }
 
