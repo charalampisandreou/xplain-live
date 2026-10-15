@@ -82,10 +82,10 @@ def test_accepted_line_passes_through(seed42_events, tiny_scorer):  # noqa: F811
 
 def test_rejected_line_yields_no_line(seed42_events, tiny_scorer):  # noqa: F811
     outcomes, agent = run(seed42_events, tiny_scorer, lambda i, f: BAD(f), max_moments=2)
-    assert len(agent.calls) == 4   # each moment: the first call and one retry
+    assert len(agent.calls) == 6   # each moment: the first call and two retries
     for o in outcomes:
-        assert o.line is None and o.status == "rejected" and o.attempts == 2
-        assert o.reasons == ["attempt 1: no_numbers: line_en has '95%'", "attempt 2: no_numbers: line_en has '95%'"]
+        assert o.line is None and o.status == "rejected" and o.attempts == 3
+        assert o.reasons == [f"attempt {i}: no_numbers: line_en has '95%'" for i in (1, 2, 3)]
 
 
 def test_bad_then_good_is_retried(seed42_events, tiny_scorer):  # noqa: F811
@@ -158,7 +158,7 @@ def test_verifier_step_drops_a_line_that_fails(seed42_events, tiny_scorer):  # n
 
 
 def test_outcome_lines_and_summary(seed42_events, tiny_scorer):  # noqa: F811
-    outcomes, _ = run(seed42_events, tiny_scorer, lambda i, f: BAD(f) if i <= 3 else GOOD(f), max_moments=3)
+    outcomes, _ = run(seed42_events, tiny_scorer, lambda i, f: BAD(f) if i <= 4 else GOOD(f), max_moments=3)
     assert [o.status for o in outcomes] == ["rejected", "retried", "accepted"]
     m = outcomes[0].moment
     rejected, retried = outcome_lines(outcomes[0]), outcome_lines(outcomes[1])
@@ -166,7 +166,7 @@ def test_outcome_lines_and_summary(seed42_events, tiny_scorer):  # noqa: F811
     assert f"xP {analytics.percent(m.xp)}%" in rejected[0]                       # the percent from code
     assert "  (no line)" in rejected
     assert retried[1:4] == [f"  EN: {NEUTRAL.line_en}", f"  ES: {NEUTRAL.line_es}", f"  EL: {NEUTRAL.line_el}"]
-    assert summary(outcomes, 3.0) == ("3 moments: accepted 1, retried 1 (accepted on the retry), rejected 1; "
+    assert summary(outcomes, 3.0) == ("3 moments: accepted 1, retried 1 (accepted on a retry), rejected 1; "
                                       "mean 1.00 s per moment (0.00 s narrating)")
     assert summary([], 0.0).startswith("0 moments: accepted 0")
 

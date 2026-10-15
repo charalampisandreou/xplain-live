@@ -12,7 +12,7 @@ from xplain.phrases import LABEL_PHRASES as PHRASES
 from xplain.phrases import NOT_NARRATED, narrated
 from xplain.config import PHRASE_MODES, phrase_mode
 from xplain.prompts import INSTRUCTIONS, narrator_instructions
-from xplain.verifier import MAX_WORDS
+from xplain.verifier import MAX_WORDS, WORD_LIMIT, WORD_TARGET
 
 from .test_verifier import make_bundle, make_driver, make_out
 
@@ -72,13 +72,23 @@ def test_bad_then_good_uses_the_retry():
     assert {k: v for k, v in retry.items() if k != "rejected_because"} == build_facts(make_bundle())
 
 
-def test_bad_twice_gives_no_line():
-    agent = FakeAgent(BAD, BAD)
+def test_bad_three_times_gives_no_line():
+    agent = FakeAgent(BAD, BAD, BAD)
     result = narrate(agent)
     assert result.line is None
-    assert result.attempts == MAX_ATTEMPTS == 2
-    assert [r.split(":")[0] for r in result.reasons] == ["attempt 1", "attempt 2"]
+    assert result.attempts == MAX_ATTEMPTS == 3
+    assert [r.split(":")[0] for r in result.reasons] == ["attempt 1", "attempt 2", "attempt 3"]
     assert agent.answers == []
+
+
+def test_bad_twice_then_good_uses_the_second_retry():
+    agent = FakeAgent(BAD, BAD, make_out())
+    result = narrate(agent)
+    assert result.line == make_out()
+    assert result.attempts == 3
+    assert result.reasons == [f"attempt 1: {BAD_REASON}", f"attempt 2: {BAD_REASON}"]
+    for message in agent.messages[1:]:   # every retry carries the latest Verifier reasons
+        assert json.loads(message)["rejected_because"] == [BAD_REASON]
 
 
 def test_invalid_structured_output_is_retried():
@@ -137,12 +147,12 @@ def test_concurrent_calls_for_the_same_moment_call_the_model_once():
 
 
 def test_a_rejected_moment_is_stored_too():
-    agent = FakeAgent(BAD, BAD)
+    agent = FakeAgent(BAD, BAD, BAD)
     narrator = Narrator(agent)
     bundle = make_bundle()
     asyncio.run(narrator.narrate(bundle))
     again = asyncio.run(narrator.narrate(bundle))
-    assert again.line is None and len(agent.messages) == 2
+    assert again.line is None and len(agent.messages) == MAX_ATTEMPTS
 
 
 def test_result_is_frozen():
@@ -206,8 +216,8 @@ def test_difficulty_word_comes_from_the_tier():
 @pytest.mark.parametrize("mode", PHRASE_MODES)
 def test_prompt_has_the_verifier_word_limits(mode):
     text = INSTRUCTIONS[mode]
-    for lang in ("en", "es", "el"):
-        assert f"{MAX_WORDS[lang]} in" in text or f"{MAX_WORDS[lang]} words" in text
+    assert set(MAX_WORDS.values()) == {WORD_LIMIT}
+    assert f"About {WORD_TARGET} words per line, never more than {WORD_LIMIT} words" in text
     assert not re.search(r"\{[a-z_]+\}", text)   # every placeholder was filled
     assert '"with the foot"' in text
     assert "=== EXAMPLES" in text and "=== END EXAMPLES ===" in text
@@ -255,13 +265,12 @@ def test_minute_word_in_greek_is_retried_with_the_reason():
     assert json.loads(agent.messages[1])["rejected_because"] == ["no_numbers: line_el says 'λεπτό'"]
 
 
-def test_contradicting_difficulty_twice_gives_no_line():
+def test_contradicting_difficulty_every_time_gives_no_line():
     bad = make_out(line_es="El pase difícil y raso de Weso Wendez se pierde.")
-    result = narrate(FakeAgent(bad, bad))
+    result = narrate(FakeAgent(bad, bad, bad))
     assert result.line is None
     assert result.reasons == [
-        "attempt 1: difficulty: line_es says 'difícil', but the pass is rated easy (easy)",
-        "attempt 2: difficulty: line_es says 'difícil', but the pass is rated easy (easy)",
+        f"attempt {i}: difficulty: line_es says 'difícil', but the pass is rated easy (easy)" for i in (1, 2, 3)
     ]
 
 

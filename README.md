@@ -257,8 +257,11 @@ moment id, so the same moment always gets the same nudge.
     points the way of the rating;
   - uses a causal word (because, due to, thanks to and their Spanish and Greek equivalents) away
     from a difficulty word, which reads as a cause of the outcome.
-- A rejected line is retried once with the Verifier's reasons. If the retry is also rejected, or
-  the model times out or fails, the moment simply has no line. The card is still shown.
+- A rejected line is retried up to twice, each time with the Verifier's reasons (three attempts in
+  all). If every attempt is rejected, or the model times out or fails, the moment simply has no
+  line. The card is still shown.
+- Length: the prompt asks for about 18 words; the Verifier rejects more than 24 words in any
+  language (`verifier.WORD_LIMIT`, one value; the plate has room for two lines).
 
 ## How moments are chosen
 

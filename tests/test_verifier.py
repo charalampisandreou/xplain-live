@@ -267,7 +267,7 @@ def test_spike_lines_with_numbers_are_now_rejected():
 # --- length and sentence ------------------------------------------------------------------------
 
 def test_word_limits():
-    assert MAX_WORDS == {"en": 18, "es": 22, "el": 22}
+    assert MAX_WORDS == {"en": 24, "es": 24, "el": 24}
 
 
 @pytest.mark.parametrize("lang", LANGS)

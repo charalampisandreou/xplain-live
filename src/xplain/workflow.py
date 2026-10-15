@@ -8,12 +8,12 @@ Each executor is a thin wrapper around code that already exists; none adds rules
   * AnalystExecutor:   a match's events in; scores every pass and runs the commentary gate
                        (pipeline.gate_match), then sends each commentated moment on, in seq order
   * ExplainerExecutor: one moment in; its SHAP drivers (explainer.ShapExplainer), as a MomentBundle
-  * NarratorExecutor:  one bundle in; Narrator.narrate (facts -> model -> Verifier, one retry with the
+  * NarratorExecutor:  one bundle in; Narrator.narrate (facts -> model -> Verifier, up to two retries with the
                        Verifier's reasons, a 15 s timeout per call; it never raises)
   * VerifierExecutor:  the final gate: verifier.verify on the accepted line once more before anything
                        is shown; yields one MomentOutcome per commentated moment
 
-A moment that fails anywhere (no line after the retry, a timeout, an exception in a step) yields a
+A moment that fails anywhere (no line after the retries, a timeout, an exception in a step) yields a
 MomentOutcome with no line and its reasons, and is logged; it never stops the run or the other moments.
 Messages to one executor are delivered in order, one at a time, so model calls are sequential.
 The minute on a card is Moment.minute_label (clock.match_clock); xP percent is analytics.percent.
@@ -89,7 +89,7 @@ class MomentOutcome:
 
     @property
     def status(self) -> str:
-        """"accepted" (first attempt), "retried" (accepted on the retry) or "rejected" (no line)."""
+        """"accepted" (first attempt), "retried" (accepted on a retry) or "rejected" (no line)."""
         if self.line is None:
             return "rejected"
         return "accepted" if self.attempts <= 1 else "retried"
@@ -137,7 +137,7 @@ class ExplainerExecutor(Executor):
 
 
 class NarratorExecutor(Executor):
-    """Narrator.narrate on one bundle: the model, the Verifier, one retry, the timeout. Never raises."""
+    """Narrator.narrate on one bundle: the model, the Verifier, up to two retries, the timeout. Never raises."""
 
     def __init__(self, narrator: Narrator, id: str = "narrator"):
         super().__init__(id=id)
@@ -226,7 +226,7 @@ def summary(outcomes: Sequence[MomentOutcome], wall_s: float) -> str:
     count = {s: sum(o.status == s for o in outcomes) for s in ("accepted", "retried", "rejected")}
     per = wall_s / n if n else 0.0
     narration = sum(o.latency_s for o in outcomes) / n if n else 0.0
-    return (f"{n} moments: accepted {count['accepted']}, retried {count['retried']} (accepted on the retry), "
+    return (f"{n} moments: accepted {count['accepted']}, retried {count['retried']} (accepted on a retry), "
             f"rejected {count['rejected']}; mean {per:.2f} s per moment ({narration:.2f} s narrating)")
 
 

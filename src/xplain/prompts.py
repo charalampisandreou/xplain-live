@@ -24,7 +24,7 @@ from .explainer import BODY_PART_LABELS, PLAY_PATTERN_LABELS, PRESSURE_LABELS
 from .narration import DIFFICULTY_TIERS, DifficultyTier
 from .phrases import LABEL_PHRASES
 from .schema import BodyPart, PlayPattern
-from .verifier import MAX_WORDS
+from .verifier import WORD_LIMIT, WORD_TARGET
 
 # Driver labels for the ordinary case; the Narrator never narrates them.
 DEFAULT_LABELS: tuple[str, ...] = (
@@ -235,7 +235,7 @@ Languages:
   "βρίσκει συμπαίκτη").
 
 Form:
-- At most {max_en} words in English, {max_es} in Spanish, {max_el} in Greek.
+- About {target} words per line, never more than {limit} words, in English, Spanish and Greek.
 - One sentence per line: no line breaks, no second sentence, no semicolons.
 - "mainly" and "also" are optional; leave them out when the line is long. Every word counts toward
   the limit.
@@ -262,9 +262,8 @@ INSTRUCTIONS: dict[str, str] = {
     mode: NARRATOR_TEMPLATE.format(
         drivers_fact=DRIVERS_FACT[mode],
         driver_rules=DRIVER_RULES[mode],
-        max_en=MAX_WORDS["en"],
-        max_es=MAX_WORDS["es"],
-        max_el=MAX_WORDS["el"],
+        target=WORD_TARGET,
+        limit=WORD_LIMIT,
         defaults=_defaults(mode),
         examples=render_examples(),
     )

@@ -3,7 +3,7 @@ Verifier: checks a NarratorOut against its MomentBundle. Deterministic, no LLM, 
 
 Checks (every failing check adds a reason; all reasons are collected, not just the first):
   * sentence:   each line is non-empty, has no line break and holds one sentence
-  * length:     each line has at most MAX_WORDS[lang] whitespace-separated words
+  * length:     each line has at most MAX_WORDS[lang] (= WORD_LIMIT) whitespace-separated words
   * no_numbers: no line has a digit, a "%" or a NUMBER_WORDS word of its language (percent, minute);
                 the card shows the numbers and the minute, from code
   * difficulty: no line contradicts the moment's difficulty tier (narration.difficulty_tier): an
@@ -44,8 +44,11 @@ from .phrases import (DEPTH_PHRASES, ENGLISH_HEIGHT_HINTS, GREEK_ADJECTIVES, GRE
 
 LANGS: tuple[str, ...] = ("en", "es", "el")
 
-# Word limit per language; one place to change it.
-MAX_WORDS: dict[str, int] = {"en": 18, "es": 22, "el": 22}
+# Word limit: one value for every language (the plate has room for two lines); one place to change it.
+# WORD_TARGET is what the prompt asks for; only WORD_LIMIT is checked.
+WORD_LIMIT = 24
+WORD_TARGET = 18
+MAX_WORDS: dict[str, int] = {lang: WORD_LIMIT for lang in LANGS}
 
 # A sentence end followed by more text means a second sentence. Greek uses ";" (and U+037E) as its question mark.
 SENTENCE_BREAK: dict[str, re.Pattern[str]] = {

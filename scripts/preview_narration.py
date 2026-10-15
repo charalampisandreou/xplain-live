@@ -13,7 +13,7 @@ Prints the phrase mode first (config.phrase_mode, set with XPLAIN_PHRASE_MODE), 
 card fields the UI shows from code (minute_label, xP percent), the difficulty_word and the facts, the
 narrated drivers (rank, direction, label or phrase), the three lines as plain text, one language per
 line, drivers_used, attempts, the Verifier reasons with each rejected candidate's three lines, the notes
-and the latency; then how many were accepted first time, after the retry, or rejected, and how
+and the latency; then how many were accepted first time, after a retry, or rejected, and how
 many accepted lines had no difficulty word, after the template variety: each player's name masked as X,
 "distinct EN templates: X of N" with the three most repeated templates and their counts, then the same
 for ES.

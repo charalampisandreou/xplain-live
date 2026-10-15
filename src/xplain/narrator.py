@@ -36,7 +36,7 @@ from .prompts import narrator_instructions
 from .verifier import verify
 
 NARRATOR_TIMEOUT_S = 15.0   # per model call
-MAX_ATTEMPTS = 2            # the first call and one retry
+MAX_ATTEMPTS = 3            # the first call and up to two retries, each with the Verifier's reasons
 TEMPERATURE = 0.2
 
 
