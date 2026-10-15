@@ -1,23 +1,37 @@
 """
-Scoring API.
+Scoring API and the web page.
 
     uvicorn xplain.api:app --port 8000
 
 POST /score takes one PassEvent and returns its xP (situational pass difficulty), difficulty,
 band, delta and outlier flag. The scorer only ever receives ``event.inputs``.
+
+GET / is the Studio page (src/xplain/web/index.html, its files under /static). It plays a match
+bundle from GET /api/bundle/{name}: <bundle dir>/bundle_{name}.json, name matching ^[a-z0-9_]+$.
+The bundle dir is create_app(bundle_dir=...), else XPLAIN_BUNDLE_DIR, else config.BUNDLE_DIR.
 """
 from __future__ import annotations
 
+import os
 from contextlib import asynccontextmanager
+from pathlib import Path
+from typing import Annotated
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
+from fastapi import Path as PathParam
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import analytics
 from .analytics import Band, Outlier
+from .config import BUNDLE_DIR
 from .features import FEATURE_ORDER
 from .schema import PassEvent
 from .scoring import Scorer, XPassScorer, find_default_model
+
+WEB_DIR = Path(__file__).resolve().parent / "web"
+BUNDLE_NAME = r"^[a-z0-9_]+$"
 
 
 class ScoreResponse(BaseModel):
@@ -41,7 +55,12 @@ class HealthResponse(BaseModel):
     n_features: int
 
 
-def create_app(scorer: Scorer | None = None) -> FastAPI:
+def bundle_dir() -> Path:
+    """Where match bundles are read from: XPLAIN_BUNDLE_DIR, else config.BUNDLE_DIR."""
+    return Path(os.environ.get("XPLAIN_BUNDLE_DIR") or BUNDLE_DIR)
+
+
+def create_app(scorer: Scorer | None = None, bundles: Path | None = None) -> FastAPI:
     """Build the app. Without an injected scorer, the xPass model is loaded once at startup."""
 
     @asynccontextmanager
@@ -77,6 +96,18 @@ def create_app(scorer: Scorer | None = None) -> FastAPI:
             model_version=request.app.state.scorer.model_version,
         )
 
+    @app.get("/", include_in_schema=False)
+    def index() -> FileResponse:
+        return FileResponse(WEB_DIR / "index.html", media_type="text/html")
+
+    @app.get("/api/bundle/{name}")
+    def match_bundle(name: Annotated[str, PathParam(pattern=BUNDLE_NAME, max_length=64)]) -> FileResponse:
+        path = (bundles or bundle_dir()) / f"bundle_{name}.json"
+        if not path.is_file():
+            raise HTTPException(status_code=404, detail=f"no bundle named {name!r}")
+        return FileResponse(path, media_type="application/json")
+
+    app.mount("/static", StaticFiles(directory=WEB_DIR), name="static")
     return app
 
 

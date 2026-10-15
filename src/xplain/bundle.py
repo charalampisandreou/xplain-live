@@ -13,17 +13,22 @@ minutes and calls no model:
   * reports: per half, the moment_ids of pipeline.reports
   * players: pipeline.player_summary at full time for all 22 players (None: no passes)
   * score:   0-0 at the first event, then one entry per goal (ShotEvent.goal), with the score after it
+  * rankings: one snapshot per commentated moment, in order: the top K of its kind and half as it
+             stood at its t (pipeline.timeline), each entry with its rank in the previous snapshot of
+             the same kind and half (None: new); the page shows the latest snapshot with t <= now
+  * tier:    each moment's difficulty tier words (narration.difficulty_tier), for the plate
 
 Narration: by default the Agent Framework workflow (workflow.run_match, needs az login). --no-llm
 calls no model: commentated moments without a stored line are "not_run". A line is written once per
-moment_id: when --out already holds a bundle of the same match_id and model_version, its accepted
-lines are put into the Narrator's cache and the model is not called for them again; the final
+moment_id: when --out already holds a bundle of the same match_id and model_version (schema "1" or
+"2"), its accepted lines are put into the Narrator's cache and the model is not called for them again; the final
 Verifier check still runs on every reused line. --fresh ignores the old file.
 """
 from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import logging
 import sys
 from collections.abc import Sequence
@@ -36,15 +41,16 @@ from . import analytics, clock
 from .analytics import Outlier
 from .config import PHRASE_MODES, AnalyticsConfig, phrase_mode
 from .contracts import MomentBundle, PassMark, PlayerSummary
-from .narration import NarratorOut
+from .narration import NarratorOut, difficulty_tier
 from .narrator import NarrationResult, Narrator
-from .pipeline import analyse_match, ensure_match_file, load_events, player_summary, reports
+from .pipeline import analyse_match, ensure_match_file, load_events, player_summary, reports, timeline
 from .schema import MatchMetaEvent, ShotEvent
 from .scoring import XPassScorer, find_default_model
 from .verifier import verify
 from .workflow import MomentOutcome, run_match
 
-SCHEMA_VERSION = "1"
+SCHEMA_VERSION = "2"
+OLD_SCHEMA_VERSIONS: tuple[str, ...] = ("1",)  # still read for line reuse
 MINUTE_S = 60.0
 NarrationStatus = Literal["accepted", "retried", "rejected", "not_commentated", "not_run"]
 LINE_STATUSES: tuple[str, ...] = ("accepted", "retried")
@@ -66,7 +72,7 @@ class PlayerRef(_Strict):
 
 
 class BundleMeta(_Strict):
-    schema_version: Literal["1"] = SCHEMA_VERSION
+    schema_version: Literal["2"] = SCHEMA_VERSION
     match_id: str
     home: TeamRef
     away: TeamRef
@@ -100,8 +106,18 @@ class Narration(_Strict):
     verdict_notes: list[str] = []
 
 
+class Tier(_Strict):
+    """The moment's difficulty tier words, copied from narration.DIFFICULTY_TIERS."""
+
+    family: Literal["easy", "hard"]
+    en: str
+    es: str
+    el: str
+
+
 class MomentEntry(_Strict):
     bundle: MomentBundle
+    tier: Tier
     line: NarratorOut | None = None
     narration: Narration
 
@@ -145,6 +161,27 @@ class ScoreEntry(_Strict):
     goal: Goal | None = None
 
 
+class RankEntry(_Strict):
+    moment_id: str
+    rank: Annotated[int, Field(ge=1)]
+    previous_rank: Annotated[int, Field(ge=1)] | None = None   # None: not in the previous snapshot (new)
+
+
+class RankingSnapshot(_Strict):
+    """The top K of one kind and half as it stood at t (the t of the commentated moment that made it)."""
+
+    t: float
+    period: Literal[1, 2]
+    kind: Outlier
+    entries: list[RankEntry]
+
+    @model_validator(mode="after")
+    def _check_ranks(self) -> RankingSnapshot:
+        if [e.rank for e in self.entries] != list(range(1, len(self.entries) + 1)):
+            raise ValueError(f"snapshot ranks must run 1..n in order, got {[e.rank for e in self.entries]}")
+        return self
+
+
 class MatchBundle(_Strict):
     meta: BundleMeta
     clock: ClockTrack
@@ -153,6 +190,7 @@ class MatchBundle(_Strict):
     reports: list[ReportIds]
     players: dict[str, PlayerSummary | None]
     score: Annotated[list[ScoreEntry], Field(min_length=1)]
+    rankings: list[RankingSnapshot]
 
     @model_validator(mode="after")
     def _check_links(self) -> MatchBundle:
@@ -164,6 +202,17 @@ class MatchBundle(_Strict):
         missing = [m.moment_id for m in self.marks if m.moment_id is not None and m.moment_id not in ids]
         if missing:
             raise ValueError(f"marks link unknown moments {missing}")
+        by_id = {m.bundle.moment.moment_id: m.bundle.moment for m in self.moments}
+        for snap in self.rankings:
+            for e in snap.entries:
+                m = by_id.get(e.moment_id)
+                if m is None:
+                    raise ValueError(f"ranking snapshot at t={snap.t} names unknown moment {e.moment_id}")
+                if (m.kind, m.period) != (snap.kind, snap.period) or m.t > snap.t:
+                    raise ValueError(f"ranking snapshot at t={snap.t} ({snap.kind}, period {snap.period}) "
+                                     f"holds {e.moment_id} ({m.kind}, period {m.period}, t={m.t})")
+        if [s.t for s in self.rankings] != sorted(s.t for s in self.rankings):
+            raise ValueError("ranking snapshots must be in t order")
         return self
 
 
@@ -210,6 +259,30 @@ def score_track(events: Sequence, meta: MatchMetaEvent, player_names: dict[str, 
     return out
 
 
+def ranking_snapshots(bundles: Sequence[MomentBundle], per_kind: int) -> list[RankingSnapshot]:
+    """One snapshot per commentated moment, in seq order: the top per_kind of its kind and half at its t
+    (pipeline.timeline), with each entry's rank in the previous snapshot of the same kind and half."""
+    previous: dict[tuple[str, int], dict[str, int]] = {}
+    out: list[RankingSnapshot] = []
+    for b in sorted((b for b in bundles if b.qualifies_live), key=lambda b: b.moment.seq):
+        m = b.moment
+        items = sorted((i for i in timeline(bundles, per_kind, m.t)
+                        if i.in_ranking and (i.bundle.moment.kind, i.bundle.moment.period) == (m.kind, m.period)),
+                       key=lambda i: i.rank)
+        before = previous.get((m.kind, m.period), {})
+        entries = [RankEntry(moment_id=i.bundle.moment.moment_id, rank=i.rank,
+                             previous_rank=before.get(i.bundle.moment.moment_id)) for i in items]
+        previous[(m.kind, m.period)] = {e.moment_id: e.rank for e in entries}
+        out.append(RankingSnapshot(t=m.t, period=m.period, kind=m.kind, entries=entries))
+    return out
+
+
+def tier_of(bundle: MomentBundle) -> Tier:
+    """The moment's tier words from narration.difficulty_tier."""
+    t = difficulty_tier(bundle.moment)
+    return Tier(family=t.family, en=t.en, es=t.es, el=t.el)
+
+
 def _narration(bundle: MomentBundle, outcome: MomentOutcome | None) -> tuple[NarratorOut | None, Narration]:
     if not bundle.qualifies_live:
         return None, Narration(status="not_commentated")
@@ -229,7 +302,7 @@ def build_bundle(events: Sequence, scorer: XPassScorer, outcomes: Sequence[Momen
     moments = []
     for b in bundles:
         line, narration = _narration(b, by_id.get(b.moment.moment_id))
-        moments.append(MomentEntry(bundle=b, line=line, narration=narration))
+        moments.append(MomentEntry(bundle=b, tier=tier_of(b), line=line, narration=narration))
     report_ids = [ReportIds(scope=r.scope, highlights={k: [b.moment.moment_id for b in bs]
                                                         for k, bs in r.highlights.items()})
                   for r in reports(bundles, cfg.highlights_per_kind)]
@@ -250,19 +323,24 @@ def build_bundle(events: Sequence, scorer: XPassScorer, outcomes: Sequence[Momen
         reports=report_ids,
         players={p.player_id: player_summary(marks, p.player_id) for p in meta.players},
         score=score_track(events, meta, names),
+        rankings=ranking_snapshots(bundles, cfg.highlights_per_kind),
     )
 
 
 # --- line reuse --------------------------------------------------------------------------------
 
 def stored_lines(path: Path, match_id: str, model_version: str) -> dict[str, NarrationResult]:
-    """The accepted lines of an earlier bundle of the same match and model, by moment_id; {} otherwise."""
+    """The accepted lines of an earlier bundle of the same match and model, by moment_id; {} otherwise.
+
+    A current bundle is validated whole; an older schema (OLD_SCHEMA_VERSIONS) is read for its lines only.
+    """
     if not path.is_file():
         return {}
+    text = path.read_text(encoding="utf-8")
     try:
-        old = MatchBundle.model_validate_json(path.read_text(encoding="utf-8"))
+        old = MatchBundle.model_validate_json(text)
     except (ValidationError, ValueError):
-        return {}
+        return _old_schema_lines(text, match_id, model_version)
     if old.meta.match_id != match_id or old.meta.model_version != model_version:
         return {}
     return {m.bundle.moment.moment_id: NarrationResult(line=m.line, attempts=m.narration.attempts,
@@ -270,6 +348,29 @@ def stored_lines(path: Path, match_id: str, model_version: str) -> dict[str, Nar
                                                         notes=list(m.narration.verdict_notes),
                                                         latency_s=m.narration.latency_s)
             for m in old.moments if m.line is not None}
+
+
+def _old_schema_lines(text: str, match_id: str, model_version: str) -> dict[str, NarrationResult]:
+    """The lines of a bundle in an older schema: each line and its narration record validated, the rest ignored."""
+    try:
+        raw = json.loads(text)
+        meta = raw["meta"]
+        if (meta.get("schema_version") not in OLD_SCHEMA_VERSIONS or meta.get("match_id") != match_id
+                or meta.get("model_version") != model_version):
+            return {}
+        out = {}
+        for m in raw["moments"]:
+            if m.get("line") is None:
+                continue
+            narration = Narration.model_validate(m["narration"])
+            if narration.status not in LINE_STATUSES:
+                continue
+            out[m["bundle"]["moment"]["moment_id"]] = NarrationResult(
+                line=NarratorOut.model_validate(m["line"]), attempts=narration.attempts,
+                reasons=list(narration.reasons), notes=list(narration.verdict_notes), latency_s=narration.latency_s)
+        return out
+    except (ValueError, KeyError, TypeError, AttributeError):
+        return {}
 
 
 async def narrate_match(events: Sequence, scorer: XPassScorer, narrator: Narrator,

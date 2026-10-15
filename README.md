@@ -157,14 +157,43 @@ python -m xplain.bundle --file data/match_seed42.jsonl --out data/bundle_seed42.
 The bundle holds the match meta (teams, players, model and generator versions, phrase mode), a
 clock track (one `minute_label` per match minute of each half, added time included, from the
 match clock), every pass mark, every outlier moment with its line and narration status
-(`accepted`, `retried`, `rejected`, `not_commentated`, `not_run`), the half reports as moment ids,
-each player's full-time pass summary, and the score after each goal.
+(`accepted`, `retried`, `rejected`, `not_commentated`, `not_run`) and its difficulty tier words,
+the half reports as moment ids, each player's full-time pass summary, the score after each goal,
+and the live rankings: one snapshot per commentated moment with the top 3 of its kind and half as
+it stood at that moment (each entry with its previous rank, or none when new). The page never
+ranks anything itself. Schema version 2.
 
 Without `--no-llm` it runs the workflow for the narration (needs `az login`). A line is written
 once per moment: if `--out` already holds a bundle of the same match and model, its lines are
 reused and the model is not called for those moments (the final Verifier check still runs).
+Lines are also read from a schema 1 bundle, so rebuilding after the schema change keeps them.
+With `--no-llm`, a moment whose line was rejected before is written as `not_run`.
 `--fresh` ignores the old file. The command prints a one-line summary with the goals and the
 final score.
+
+## Run the web page
+
+The Studio screen (`src/xplain/web/`: plain HTML, CSS and JS, no build step) is served by the same
+FastAPI app and plays a match bundle on the match clock. In Git Bash, from the repo root with the
+venv active and a bundle in `data/`:
+
+```bash
+export PYTHONPATH=src PYTHONIOENCODING=utf-8
+python -m uvicorn xplain.api:app --port 8000
+```
+
+Then open http://127.0.0.1:8000/ (it plays `data/bundle_seed42.json`). `?match=NAME` plays
+`data/bundle_NAME.json`, `?t=T` starts playback at event time T, `?lang=en|es|el` picks the
+commentary language. T is the bundle's event time `t` in seconds, which runs on through both halves
+(first-half added time included) and is not the minute on the clock: in seed42, `t=2400` is 41',
+the first half ends near `t=2841` (45+3) and the second half starts at `t=2844.15` (46'). The page
+shows the `minute_label` of the clock entry for that t. `GET /api/bundle/NAME` serves the bundle (names match `^[a-z0-9_]+$`);
+`XPLAIN_BUNDLE_DIR` changes the folder. Controls: play/pause, speed 1x / 12x / 60x, previous and
+next pass (left and right arrows), Back to live (L), space for play/pause.
+
+The page only formats: every number, minute and ranking comes from the bundle, and xP is shown as
+a percent with the same rule as the code, round(100 * xP). Analyst and Player modes are not built
+yet.
 
 ## Phrase modes
 

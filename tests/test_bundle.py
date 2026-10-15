@@ -1,6 +1,8 @@
 import asyncio
+import json
 
 import pytest
+from pydantic import ValidationError
 
 from xplain import bundle as bundle_mod
 from xplain import clock
@@ -14,8 +16,9 @@ from xplain.bundle import (
     stored_lines,
     to_json,
 )
+from xplain.narration import difficulty_tier
 from xplain.narrator import Narrator
-from xplain.pipeline import analyse_match, write_jsonl
+from xplain.pipeline import analyse_match, timeline, write_jsonl
 from xplain.schema import MatchMetaEvent, ShotEvent
 
 from .test_pipeline import WIDE, seed42_events, tiny_model, tiny_scorer  # noqa: F401  (fixtures)
@@ -48,7 +51,7 @@ def test_bundle_holds_every_pass_and_outlier(seed42_events, tiny_scorer, offline
     bundles, marks = analyse_match(seed42_events, tiny_scorer, WIDE)
     assert offline.marks == marks
     assert [m.bundle for m in offline.moments] == bundles
-    assert offline.meta.schema_version == "1" and offline.meta.model_version == tiny_scorer.model_version
+    assert offline.meta.schema_version == "2" and offline.meta.model_version == tiny_scorer.model_version
     meta = next(e for e in seed42_events if isinstance(e, MatchMetaEvent))
     assert offline.meta.generator_version == meta.generator_version and len(offline.meta.players) == 22
 
@@ -215,3 +218,92 @@ def test_cli_no_llm_writes_bundle_and_reuses_lines(seed42_events, tiny_scorer, o
     out.write_text(to_json(online), encoding="utf-8")
     assert main(["--file", str(match), "--out", str(out), "--no-llm", "--mode", "hints", "--fresh"]) == 0
     assert "reusing" not in capsys.readouterr().err
+
+
+# --- ranking snapshots and tiers (schema 2) ------------------------------------------------------
+
+def test_one_snapshot_per_commentated_moment_in_order(offline):
+    live = sorted((e.bundle.moment for e in offline.moments if e.bundle.qualifies_live), key=lambda m: m.seq)
+    assert len(live) >= 4
+    assert [(s.t, s.kind, s.period) for s in offline.rankings] == [(m.t, m.kind, m.period) for m in live]
+
+
+def test_snapshot_ranks_match_the_timeline(offline):
+    bundles = [e.bundle for e in offline.moments]
+    for snap in offline.rankings:
+        expected = sorted(((i.rank, i.bundle.moment.moment_id) for i in timeline(bundles, WIDE.highlights_per_kind, snap.t)
+                           if i.in_ranking and i.bundle.moment.kind == snap.kind
+                           and i.bundle.moment.period == snap.period))
+        assert [(e.rank, e.moment_id) for e in snap.entries] == expected
+        assert len(snap.entries) <= WIDE.highlights_per_kind
+
+
+def test_previous_rank_comes_from_the_previous_snapshot_of_the_same_kind_and_half(offline):
+    last: dict = {}
+    seen_new = seen_carried = False
+    for snap in offline.rankings:
+        before = last.get((snap.kind, snap.period), {})
+        for e in snap.entries:
+            assert e.previous_rank == before.get(e.moment_id)
+            seen_new |= e.previous_rank is None
+            seen_carried |= e.previous_rank is not None
+        last[(snap.kind, snap.period)] = {e.moment_id: e.rank for e in snap.entries}
+    assert seen_new and seen_carried
+
+
+def test_rankings_reset_at_half_time(offline):
+    period = {e.bundle.moment.moment_id: e.bundle.moment.period for e in offline.moments}
+    for snap in offline.rankings:
+        assert all(period[e.moment_id] == snap.period for e in snap.entries)
+    firsts = {}
+    for snap in offline.rankings:
+        firsts.setdefault((snap.kind, snap.period), snap)
+    for snap in firsts.values():
+        assert all(e.previous_rank is None for e in snap.entries)
+
+
+def test_tier_words_come_from_difficulty_tier(offline):
+    for e in offline.moments:
+        t = difficulty_tier(e.bundle.moment)
+        assert (e.tier.family, e.tier.en, e.tier.es, e.tier.el) == (t.family, t.en, t.es, t.el)
+
+
+def test_bad_snapshots_are_rejected(offline):
+    data = offline.model_dump(mode="json")
+    snap = next(s for s in data["rankings"] if len(s["entries"]) >= 2)
+    snap["entries"][0]["rank"] = 2
+    with pytest.raises(ValidationError):
+        MatchBundle.model_validate(data)
+    data = offline.model_dump(mode="json")
+    data["rankings"][0]["entries"][0]["moment_id"] = "moment:nope"
+    with pytest.raises(ValidationError):
+        MatchBundle.model_validate(data)
+    data = offline.model_dump(mode="json")
+    other = next(s for s in data["rankings"] if s["kind"] != data["rankings"][0]["kind"])
+    data["rankings"][0]["entries"] = other["entries"]
+    with pytest.raises(ValidationError):
+        MatchBundle.model_validate(data)
+
+
+def as_schema_1(b: MatchBundle) -> str:
+    """The bundle as the schema "1" file it would have been: no rankings, no tier."""
+    data = b.model_dump(mode="json")
+    data["meta"]["schema_version"] = "1"
+    del data["rankings"]
+    for m in data["moments"]:
+        del m["tier"]
+    return json.dumps(data)
+
+
+def test_line_reuse_reads_a_schema_1_file(online, tmp_path):
+    new, old = tmp_path / "v2.json", tmp_path / "v1.json"
+    new.write_text(to_json(online), encoding="utf-8")
+    old.write_text(as_schema_1(online), encoding="utf-8")
+    from_v2 = stored_lines(new, online.meta.match_id, online.meta.model_version)
+    assert from_v2 and stored_lines(old, online.meta.match_id, online.meta.model_version) == from_v2
+    assert stored_lines(old, "other-match", online.meta.model_version) == {}
+    assert stored_lines(old, online.meta.match_id, "other-model") == {}
+    data = json.loads(as_schema_1(online))
+    data["meta"]["schema_version"] = "0"
+    old.write_text(json.dumps(data), encoding="utf-8")
+    assert stored_lines(old, online.meta.match_id, online.meta.model_version) == {}

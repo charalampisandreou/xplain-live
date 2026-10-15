@@ -32,6 +32,9 @@ GENERATOR_VERSION = "0.2.1"
 # The xPass model trained in this repo (python -m xplain.train); XPLAIN_MODEL_PATH overrides it.
 XPASS_MODEL_PATH = Path(__file__).resolve().parents[2] / "models" / "xpass_v2" / "xpass_v2.joblib"
 
+# Match bundles served to the web page (python -m xplain.bundle); XPLAIN_BUNDLE_DIR overrides it.
+BUNDLE_DIR = Path(__file__).resolve().parents[2] / "data"
+
 # Invented clubs as (team_id, name). Checked against web search: none is a real club.
 CLUBS: tuple[tuple[str, str], ...] = (
     ("brk", "Brackmoor Athletic"),
