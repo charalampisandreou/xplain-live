@@ -159,18 +159,22 @@ clock track (one `minute_label` per match minute of each half, added time includ
 match clock), every pass mark, every outlier moment with its line and narration status
 (`accepted`, `retried`, `rejected`, `not_commentated`, `not_run`) and its difficulty tier words,
 the half reports as moment ids, each player's full-time pass summary, the score after each goal,
-and the live rankings: one snapshot per commentated moment with the top 3 of its kind and half as
-it stood at that moment (each entry with its previous rank, or none when new). The page never
-ranks anything itself. Every pass mark also carries display coordinates for one fixed pitch: the
+and the live rankings: for each commentated moment, two snapshots of its kind as they stood at that
+moment, one for scope `all` (the whole match so far) and one for its half (`1` or `2`). Each holds
+the top 3 of all moments of that kind in the scope, by |PVA| with ties to the earlier pass (the
+same sort as the commentary gate), and each entry has its rank in the previous snapshot of the
+same scope and kind (none when new). Every ranked moment was commentated: a moment in the top 3
+of the whole match is also in the top 3 of its half, so it passed the gate when it happened. The
+page never ranks anything itself. Every pass mark also carries display coordinates for one fixed pitch: the
 home team attacks right in the first half and left in the second, the away team the opposite
 (the other team's passes are turned 180 degrees, (x, y) -> (120 - x, 80 - y));
 `meta.attacks_right` names the team attacking right in each half. The stored coordinates, which
-the model uses, stay in the passer's own frame (always attacking toward x = 120). Schema version 3.
+the model uses, stay in the passer's own frame (always attacking toward x = 120). Schema version 4.
 
 Without `--no-llm` it runs the workflow for the narration (needs `az login`). A line is written
 once per moment: if `--out` already holds a bundle of the same match and model, its lines are
 reused and the model is not called for those moments (the final Verifier check still runs).
-Lines are also read from a schema 1 or 2 bundle, so rebuilding after a schema change keeps them.
+Lines are also read from a schema 1, 2 or 3 bundle, so rebuilding after a schema change keeps them.
 With `--no-llm`, a moment whose line was rejected before is written as `not_run`.
 `--fresh` ignores the old file. The command prints a one-line summary with the goals and the
 final score.
@@ -188,20 +192,24 @@ python -m uvicorn xplain.api:app --port 8000
 
 Then open http://127.0.0.1:8000/ (it plays `data/bundle_seed42.json`). `?match=NAME` plays
 `data/bundle_NAME.json`, `?t=T` starts playback at event time T, `?lang=en|es|el` picks the
-commentary language. T is the bundle's event time `t` in seconds, which runs on through both halves
+commentary language and `?scope=all|1|2` the tables' starting scope. T is the bundle's event time `t` in seconds, which runs on through both halves
 (first-half added time included) and is not the minute on the clock: in seed42, `t=2400` is 41',
 the first half ends near `t=2841` (45+3) and the second half starts at `t=2844.15` (46'). The page
 shows the `minute_label` of the clock entry for that t. `GET /api/bundle/NAME` serves the bundle (names match `^[a-z0-9_]+$`);
 `XPLAIN_BUNDLE_DIR` changes the folder. Controls: play/pause, speed 1x / 12x / 60x, previous and
-next pass (left and right arrows), Back to live (L), space for play/pause.
+next pass (left and right arrows), Back to live (L), space for play/pause, and All / 1st / 2nd
+above the tables (default All: the whole match so far; 1st stays frozen after half-time; 2nd says
+"Starts in the 2nd half" until then).
 
 The page only formats: every number, minute and ranking comes from the bundle. The tables and the
 plate show PVA (pass value added, the bundle's `delta` = outcome - xP: 1 - xP when completed, -xP
-when not) with a sign and two decimals; the bar length is |PVA| on a 0..1 scale. xP is shown
-small in the plate as a percent with the same rule as the code, round(100 * xP). The pitch draws
-the display coordinates; the label above it says who attacks which way in the current half, and a
-cyan bar under a team code in the score bug marks the team of the selected pass. Analyst and Player modes are not built
-yet.
+when not) in points of completion chance, e.g. "+85%" or "−94%" (sign, round(100 * |PVA|)); the
+bar length is |PVA| on a 0..1 scale. xP is shown small in the plate as a percent with the same
+rule as the code, round(100 * xP). The pitch draws the display coordinates. A tab on the pitch's
+top edge shows the team of the selected pass on the side it attacks from, with cyan chevrons
+toward the goal it attacks (from `meta.attacks_right`; still under reduced motion). The score bug
+shows the minute and the half. The lower third is a dark plate with the player, the moment's facts
+and the commentator's line in the chosen language. Analyst and Player modes are not built yet.
 
 ## Phrase modes
 

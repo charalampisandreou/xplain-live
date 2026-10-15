@@ -20,6 +20,7 @@
     <span class="code" id="away-code">&nbsp;</span>
     <span class="divider" aria-hidden="true"></span>
     <span class="minute"><span class="live-dot" aria-hidden="true"></span><span id="minute">&nbsp;</span></span>
+    <span class="half" id="half"></span>
   </div>
 
   <!-- product mark + modes -->
@@ -37,14 +38,19 @@
     </div>
   </div>
 
-  <!-- title -->
-  <div class="title">
-    <h1>Expected vs actual</h1>
-    <div class="subtitle" id="subtitle">Every pass scored live</div>
-  </div>
+  <!-- title: its wording lives here only -->
+  <h1 class="title">Expected vs actual</h1>
 
-  <!-- pitch -->
+  <!-- pitch, with the possession tab on its top edge -->
   <div class="pitch">
+    <div class="possession" id="possession" role="status" hidden>
+      <div class="tab" id="tab">
+        <span class="tab-code" id="tab-code"></span>
+        <svg class="chevrons" width="34" height="12" viewBox="0 0 34 12" aria-hidden="true">
+          <path d="M2 1 L7 6 L2 11"></path><path d="M14 1 L19 6 L14 11"></path><path d="M26 1 L31 6 L26 11"></path>
+        </svg>
+      </div>
+    </div>
     <svg viewBox="0 0 120 80" width="780" height="520" role="img" id="pitch-svg" aria-label="Pitch">
       <defs>
         <marker id="arrow-green" viewBox="0 0 6 6" refX="5" refY="3" markerWidth="4" markerHeight="4" orient="auto"><path d="M0 0 L6 3 L0 6 z" fill="#3BD16F"></path></marker>
@@ -61,11 +67,13 @@
       </g>
       <g id="passes"></g>
     </svg>
-    <div class="legend">
-      <span class="ok">Completed</span>
-      <span class="bad">Not completed</span>
-      <span class="dir" id="attack-dir"></span>
-    </div>
+  </div>
+
+  <!-- half selector for the tables -->
+  <div class="seg scope" role="group" aria-label="Moments from" id="scope">
+    <button type="button" data-scope="all" class="on" aria-pressed="true">All</button>
+    <button type="button" data-scope="1" aria-pressed="false">1st</button>
+    <button type="button" data-scope="2" aria-pressed="false">2nd</button>
   </div>
 
   <!-- ranking tables -->
@@ -78,21 +86,21 @@
       <div class="thead"><h2 id="t-succ">Surprise successes</h2><div class="tsub">hard passes completed</div></div>
       <div class="rows" id="rows-surprise_success"></div>
     </section>
-    <div class="footnote">Bars show pass value added (PVA): the result (1 completed, 0 not) minus xP, so a longer bar is a bigger surprise. Rankings update live and reset at half-time.</div>
+    <div class="footnote">PVA: the result minus the chance the pass had (xP), in points. Longer bar, bigger surprise.</div>
   </div>
 
   <!-- lower third -->
-  <div class="lower" id="lower" aria-live="polite">
-    <div class="plate">
+  <div class="lower waiting" id="lower" aria-live="polite">
+    <div class="plate" id="plate">
       <div class="plate-head">
-        <div class="plate-name" id="lower-name">&nbsp;</div>
+        <div class="plate-name" id="lower-name">No commentated moment yet</div>
         <div class="plate-meta" id="lower-meta"></div>
       </div>
       <div class="plate-line" id="lower-line"></div>
     </div>
-    <div class="xpbox">
-      <div class="xpbig" id="lower-xp">&nbsp;</div>
-      <div class="xpsub">pass value added</div>
+    <div class="pvabox">
+      <div class="pvabig" id="lower-pva">–</div>
+      <div class="pvasub">pass value added</div>
     </div>
   </div>
 

@@ -16,9 +16,11 @@ minutes and calls no model:
   * reports: per half, the moment_ids of pipeline.reports
   * players: pipeline.player_summary at full time for all 22 players (None: no passes)
   * score:   0-0 at the first event, then one entry per goal (ShotEvent.goal), with the score after it
-  * rankings: one snapshot per commentated moment, in order: the top K of its kind and half as it
-             stood at its t (pipeline.timeline), each entry with its rank in the previous snapshot of
-             the same kind and half (None: new); the page shows the latest snapshot with t <= now
+  * rankings: per commentated moment, in order, two snapshots of its kind as they stood at its t:
+             scope "all" (the whole match so far) and scope "1" or "2" (its half). Each is the top K
+             of all moments of that kind in the scope with t <= that t (analyst.select_highlights,
+             the gate's sort), each entry with its rank in the previous snapshot of the same scope
+             and kind (None: new); the page shows the latest snapshot with t <= now
   * tier:    each moment's difficulty tier words (narration.difficulty_tier), for the plate
 
 Narration: by default the Agent Framework workflow (workflow.run_match, needs az login). --no-llm
@@ -41,19 +43,21 @@ from typing import Annotated, Literal, get_args
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from . import analytics, clock
+from .analyst import select_highlights
 from .analytics import Outlier
 from .config import PHRASE_MODES, AnalyticsConfig, phrase_mode
 from .contracts import MomentBundle, PassGeometry, PassMark, PlayerSummary
 from .narration import NarratorOut, difficulty_tier
 from .narrator import NarrationResult, Narrator
-from .pipeline import analyse_match, ensure_match_file, load_events, player_summary, reports, timeline
+from .pipeline import analyse_match, ensure_match_file, load_events, player_summary, reports
 from .schema import PITCH_LENGTH, PITCH_WIDTH, MatchMetaEvent, ShotEvent
 from .scoring import XPassScorer, find_default_model
 from .verifier import verify
 from .workflow import MomentOutcome, run_match
 
-SCHEMA_VERSION = "3"
-OLD_SCHEMA_VERSIONS: tuple[str, ...] = ("1", "2")  # still read for line reuse
+SCHEMA_VERSION = "4"
+OLD_SCHEMA_VERSIONS: tuple[str, ...] = ("1", "2", "3")  # still read for line reuse
+RankingScope = Literal["all", "1", "2"]   # the whole match so far, or one half
 MINUTE_S = 60.0
 NarrationStatus = Literal["accepted", "retried", "rejected", "not_commentated", "not_run"]
 LINE_STATUSES: tuple[str, ...] = ("accepted", "retried")
@@ -75,7 +79,7 @@ class PlayerRef(_Strict):
 
 
 class BundleMeta(_Strict):
-    schema_version: Literal["3"] = SCHEMA_VERSION
+    schema_version: Literal["4"] = SCHEMA_VERSION
     match_id: str
     home: TeamRef
     away: TeamRef
@@ -172,10 +176,10 @@ class RankEntry(_Strict):
 
 
 class RankingSnapshot(_Strict):
-    """The top K of one kind and half as it stood at t (the t of the commentated moment that made it)."""
+    """The top K of one kind in one scope as it stood at t (the t of the commentated moment that made it)."""
 
     t: float
-    period: Literal[1, 2]
+    scope: RankingScope
     kind: Outlier
     entries: list[RankEntry]
 
@@ -241,14 +245,17 @@ class MatchBundle(_Strict):
         if missing:
             raise ValueError(f"marks link unknown moments {missing}")
         by_id = {m.bundle.moment.moment_id: m.bundle.moment for m in self.moments}
+        live = {m.bundle.moment.moment_id: m.bundle.qualifies_live for m in self.moments}
         for snap in self.rankings:
             for e in snap.entries:
                 m = by_id.get(e.moment_id)
                 if m is None:
                     raise ValueError(f"ranking snapshot at t={snap.t} names unknown moment {e.moment_id}")
-                if (m.kind, m.period) != (snap.kind, snap.period) or m.t > snap.t:
-                    raise ValueError(f"ranking snapshot at t={snap.t} ({snap.kind}, period {snap.period}) "
-                                     f"holds {e.moment_id} ({m.kind}, period {m.period}, t={m.t})")
+                if (m.kind != snap.kind or m.t > snap.t or not in_scope(m.period, snap.scope)
+                        or not live[e.moment_id]):
+                    raise ValueError(f"ranking snapshot at t={snap.t} ({snap.kind}, scope {snap.scope}) holds "
+                                     f"{e.moment_id} ({m.kind}, period {m.period}, t={m.t}, "
+                                     f"commentated {live[e.moment_id]})")
         if [s.t for s in self.rankings] != sorted(s.t for s in self.rankings):
             raise ValueError("ranking snapshots must be in t order")
         home, away = self.meta.home.team_id, self.meta.away.team_id
@@ -304,21 +311,32 @@ def score_track(events: Sequence, meta: MatchMetaEvent, player_names: dict[str, 
     return out
 
 
+def in_scope(period: int, scope: str) -> bool:
+    return scope == "all" or scope == str(period)
+
+
 def ranking_snapshots(bundles: Sequence[MomentBundle], per_kind: int) -> list[RankingSnapshot]:
-    """One snapshot per commentated moment, in seq order: the top per_kind of its kind and half at its t
-    (pipeline.timeline), with each entry's rank in the previous snapshot of the same kind and half."""
-    previous: dict[tuple[str, int], dict[str, int]] = {}
+    """Per commentated moment, in seq order, a snapshot of its kind for scope "all" and for its half:
+    the top per_kind of all moments of that kind in the scope with t <= its t (select_highlights:
+    |delta| first, ties to the earlier seq), each entry with its rank in the previous snapshot of
+    the same scope and kind.
+
+    Every entry is a commentated moment: a moment in the top per_kind of a set is in the top
+    per_kind of every subset holding it, so also of its half when it happened (the gate's ranking).
+    """
+    moments = sorted((b.moment for b in bundles), key=lambda m: m.seq)
+    previous: dict[tuple[str, str], dict[str, int]] = {}
     out: list[RankingSnapshot] = []
     for b in sorted((b for b in bundles if b.qualifies_live), key=lambda b: b.moment.seq):
         m = b.moment
-        items = sorted((i for i in timeline(bundles, per_kind, m.t)
-                        if i.in_ranking and (i.bundle.moment.kind, i.bundle.moment.period) == (m.kind, m.period)),
-                       key=lambda i: i.rank)
-        before = previous.get((m.kind, m.period), {})
-        entries = [RankEntry(moment_id=i.bundle.moment.moment_id, rank=i.rank,
-                             previous_rank=before.get(i.bundle.moment.moment_id)) for i in items]
-        previous[(m.kind, m.period)] = {e.moment_id: e.rank for e in entries}
-        out.append(RankingSnapshot(t=m.t, period=m.period, kind=m.kind, entries=entries))
+        for scope in ("all", str(m.period)):
+            eligible = [x for x in moments if x.t <= m.t and in_scope(x.period, scope)]
+            top = select_highlights(eligible, per_kind)[m.kind]
+            before = previous.get((scope, m.kind), {})
+            entries = [RankEntry(moment_id=x.moment_id, rank=r, previous_rank=before.get(x.moment_id))
+                       for r, x in enumerate(top, start=1)]
+            previous[(scope, m.kind)] = {e.moment_id: e.rank for e in entries}
+            out.append(RankingSnapshot(t=m.t, scope=scope, kind=m.kind, entries=entries))
     return out
 
 

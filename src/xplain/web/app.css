@@ -2,20 +2,17 @@
 :root {
   --bg: #0A1B2E;
   --surface: #11263D;
+  --surface-deep: #0E2236;
   --inset: #071423;
   --text: #FFFFFF;
+  --text-soft: #D6E2F0;
   --muted: #A9BCD3;
   --hairline: rgba(255, 255, 255, 0.12);
   --accent: #3FD0FF;
   --completed: #3BD16F;
   --failed: #FF4B47;
   --failed-text: #FF6B67;
-  --plate: #FFFFFF;
   --plate-text: #0A1B2E;
-  --plate-muted: #4A5D78;
-  --plate-body: #16273F;
-  --plate-track: #E3EAF3;
-  --plate-accent: #0A84B8;
   --pitch: #10294A;
   --switch-border: rgba(255, 255, 255, 0.10);
   --font: 'Archivo', 'Noto Sans', sans-serif;   /* Noto Sans covers Greek, which Archivo lacks */
@@ -40,15 +37,12 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   padding: 0 16px; background: var(--surface); border: 1px solid var(--switch-border); border-radius: 6px;
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.40); font-weight: 700; font-size: 18px;
 }
-.scorebug .code { letter-spacing: 0.02em; position: relative; }
-/* possession: a cyan bar under the code of the team of the selected pass */
-.scorebug .code.has-ball::after {
-  content: ''; position: absolute; left: 0; right: 0; bottom: -5px; height: 3px; border-radius: 2px;
-  background: var(--accent);
-}
+.scorebug .code { letter-spacing: 0.02em; }
 .scorebug .score { font-size: 24px; font-weight: 800; }
 .scorebug .divider { width: 1px; height: 22px; background: rgba(255, 255, 255, 0.18); }
 .scorebug .minute { display: flex; align-items: center; gap: 8px; }
+.scorebug .half { font-size: 13px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.scorebug .half:empty { display: none; }
 .live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--failed); display: inline-block; }
 .live-dot.big { width: 10px; height: 10px; box-shadow: 0 0 0 3px rgba(255, 75, 71, 0.25); }
 
@@ -66,9 +60,10 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .seg.lang button { width: 42px; padding: 0; font-size: 13px; }
 
 /* title */
-.title { position: absolute; top: 100px; left: 40px; }
-.title h1 { margin: 0; font-weight: 800; font-size: 54px; line-height: 1; letter-spacing: -0.02em; }
-.subtitle { font-weight: 400; font-size: 22px; margin-top: 6px; color: var(--muted); }
+.title {
+  position: absolute; top: 100px; left: 40px; margin: 0;
+  font-weight: 800; font-size: 54px; line-height: 1; letter-spacing: -0.02em;
+}
 
 /* pitch */
 .pitch {
@@ -76,10 +71,29 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.08);
 }
 .pitch svg { display: block; border-radius: 4px; }
-.legend { position: absolute; top: -33px; right: 0; display: flex; gap: 14px; font-size: 16px; font-weight: 600; }
-.legend .ok { color: var(--completed); }
-.legend .bad { color: var(--failed-text); }
-.legend .dir { color: var(--muted); font-weight: 500; }
+
+/* possession: a tab on the pitch's top edge, on the side the team attacks from, chevrons toward
+   the goal it attacks. It slides across when the attacking direction changes. */
+.possession { position: absolute; left: 0; right: 0; top: -30px; height: 30px; pointer-events: none; }
+.possession[hidden] { display: none; }
+.tab {
+  position: absolute; top: 0; left: 0; transform: translateX(0); height: 30px;
+  display: flex; align-items: center; gap: 10px; padding: 0 12px;
+  background: var(--surface); border: 1px solid var(--switch-border); border-bottom: none;
+  border-radius: 4px 4px 0 0; transition: left 250ms ease, transform 250ms ease;
+}
+.tab-code { font-size: 15px; font-weight: 800; letter-spacing: 0.04em; }
+.chevrons path { fill: none; stroke: var(--accent); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.chevrons path { animation: chevron 1.6s ease-in-out infinite; opacity: 0.35; }
+.chevrons path:nth-child(2) { animation-delay: 0.2s; }
+.chevrons path:nth-child(3) { animation-delay: 0.4s; }
+@keyframes chevron { 0%, 100% { opacity: 0.35; } 35% { opacity: 1; } }
+.possession.left .tab { left: 100%; transform: translateX(-100%); flex-direction: row-reverse; }
+.possession.left .chevrons { transform: scaleX(-1); }
+
+/* half selector */
+.seg.scope { position: absolute; top: 150px; right: 40px; padding: 3px; }
+.seg.scope button { height: 28px; padding: 0 14px; font-size: 13px; }
 
 /* ranking tables */
 .tables { position: absolute; top: 196px; left: 860px; width: 540px; display: flex; flex-direction: column; gap: 26px; }
@@ -90,48 +104,46 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .thead h2 { margin: 0; font-weight: 800; font-size: 22px; }
 .tsub { font-size: 15px; color: var(--muted); }
 .row { display: flex; align-items: center; gap: 14px; padding: 10px 12px; border-bottom: 1px solid var(--hairline); }
-.row.sel {
-  background: var(--plate); color: var(--plate-text); border-radius: 6px; border-bottom: none;
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35); margin: 4px 0;
-}
+/* the row of the plate's moment: surface background with a cyan bar on its left edge */
+.row.sel { background: var(--surface); box-shadow: inset 3px 0 0 var(--accent); }
 .row .rank { width: 28px; font-weight: 800; font-size: 20px; }
 .row .who { flex: 1; min-width: 0; }
 .row .player { font-weight: 700; font-size: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .row .meta { font-size: 14px; font-weight: 500; color: var(--muted); }
-.row.sel .meta { color: var(--plate-muted); }
 .row .track { width: 150px; height: 14px; position: relative; border-radius: 2px; background: rgba(255, 255, 255, 0.08); }
-.row.sel .track { background: var(--plate-track); }
 .row .bar { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 2px; }
 .row .bar.neg { background: var(--failed); }
 .row .bar.pos { background: var(--completed); }
 .row .value { width: 64px; text-align: right; font-weight: 800; font-size: 20px; }
 .row .move { width: 44px; text-align: right; font-size: 13px; font-weight: 700; color: var(--muted); }
-.row.sel .move { color: var(--plate-muted); }
 .row .move.new { color: var(--accent); }
-.row.sel .move.new { color: var(--plate-accent); }
 .empty { padding: 14px 12px; font-size: 15px; color: var(--muted); border-bottom: 1px solid var(--hairline); }
 .footnote { font-size: 14px; color: var(--muted); line-height: 1.4; }
 
-/* lower third */
+/* lower third: a dark broadcast plate with the commentator's line */
 .lower {
-  position: absolute; left: 40px; bottom: 40px; width: 1080px; display: flex; align-items: stretch;
-  border-radius: 6px; overflow: hidden; box-shadow: 0 18px 44px rgba(0, 0, 0, 0.50);
+  position: absolute; left: 40px; bottom: 40px; width: 1000px; display: flex; align-items: stretch;
+  background: var(--surface); border: 1px solid var(--switch-border); border-radius: 6px; overflow: hidden;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
 }
-.plate {
-  flex: 1; background: var(--plate); color: var(--plate-text); padding: 14px 24px; min-height: 96px;
-  display: flex; flex-direction: column; justify-content: center; gap: 4px;
-}
-.plate-head { display: flex; align-items: baseline; gap: 14px; }
-.plate-name { font-weight: 800; font-size: 30px; letter-spacing: -0.01em; white-space: nowrap; }
-.plate-meta { font-weight: 600; font-size: 17px; color: var(--plate-muted); }
-.plate-line { font-size: 19px; line-height: 1.3; color: var(--plate-body); }
+.plate { flex: 1; min-width: 0; padding: 12px 20px; display: flex; flex-direction: column; justify-content: center; gap: 3px; min-height: 72px; }
+.plate.swap { animation: swap 150ms ease-out; }
+@keyframes swap { from { opacity: 0; } to { opacity: 1; } }
+.plate-head { display: flex; align-items: baseline; gap: 14px; min-width: 0; }
+.plate-name { font-weight: 800; font-size: 20px; letter-spacing: 0.02em; text-transform: uppercase; white-space: nowrap; }
+.plate-meta { font-weight: 600; font-size: 14px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.plate-line { font-size: 17px; line-height: 1.35; color: var(--text-soft); }
 .plate-line:empty { display: none; }
-.lower.waiting .plate-name { font-size: 22px; font-weight: 600; color: var(--plate-muted); }
-.xpbox { width: 170px; background: var(--surface); display: flex; flex-direction: column; align-items: center; justify-content: center; }
-.xpbig { font-weight: 800; font-size: 44px; line-height: 1; white-space: nowrap; }
-.lower.completed .xpbig { color: var(--completed); }
-.lower.failed .xpbig { color: var(--failed-text); }
-.xpsub { font-weight: 600; font-size: 14px; color: var(--muted); margin-top: 2px; }
+.lower.waiting .plate-name { text-transform: none; letter-spacing: 0; font-weight: 600; font-size: 17px; color: var(--muted); }
+.pvabox {
+  width: 130px; flex: none; background: var(--surface-deep); border-left: 1px solid var(--hairline);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 8px 0;
+}
+.pvabig { font-weight: 800; font-size: 32px; line-height: 1; white-space: nowrap; }
+.lower.completed .pvabig { color: var(--completed); }
+.lower.failed .pvabig { color: var(--failed-text); }
+.lower.waiting .pvabig { color: var(--muted); }
+.pvasub { font-weight: 600; font-size: 12px; color: var(--muted); margin-top: 4px; }
 
 /* controls */
 .controls { position: absolute; right: 40px; bottom: 40px; width: 200px; display: flex; flex-direction: column; gap: 6px; }
@@ -157,4 +169,10 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .status {
   position: absolute; left: 40px; top: 196px; width: 780px; padding: 18px 20px; background: var(--inset);
   border-radius: 4px; color: var(--muted); font-size: 17px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chevrons path { animation: none; opacity: 1; }
+  .tab { transition: none; }
+  .plate.swap { animation: none; }
 }

@@ -19,11 +19,11 @@ from xplain.bundle import (
 )
 from xplain.narration import difficulty_tier
 from xplain.narrator import Narrator
-from xplain.pipeline import analyse_match, timeline, write_jsonl
+from xplain.pipeline import analyse_match, reports, timeline, write_jsonl
 from xplain.contracts import PassMark
 from xplain.schema import MatchMetaEvent, PassEvent, PlayPattern, ShotEvent
 
-from .test_pipeline import WIDE, seed42_events, tiny_model, tiny_scorer  # noqa: F401  (fixtures)
+from .test_pipeline import KINDS, WIDE, seed42_events, tiny_model, tiny_scorer  # noqa: F401  (fixtures)
 from .test_workflow import BAD, GOOD, FakeAgent
 
 
@@ -53,7 +53,7 @@ def test_bundle_holds_every_pass_and_outlier(seed42_events, tiny_scorer, offline
     bundles, marks = analyse_match(seed42_events, tiny_scorer, WIDE)
     assert [PassMark(**m.model_dump(exclude={"display"})) for m in offline.marks] == marks
     assert [m.bundle for m in offline.moments] == bundles
-    assert offline.meta.schema_version == "3" and offline.meta.model_version == tiny_scorer.model_version
+    assert offline.meta.schema_version == "4" and offline.meta.model_version == tiny_scorer.model_version
     meta = next(e for e in seed42_events if isinstance(e, MatchMetaEvent))
     assert offline.meta.generator_version == meta.generator_version and len(offline.meta.players) == 22
 
@@ -222,46 +222,78 @@ def test_cli_no_llm_writes_bundle_and_reuses_lines(seed42_events, tiny_scorer, o
     assert "reusing" not in capsys.readouterr().err
 
 
-# --- ranking snapshots and tiers (schema 2) ------------------------------------------------------
+# --- ranking snapshots (schema 4: scopes all / 1 / 2) and tiers ----------------------------------
 
-def test_one_snapshot_per_commentated_moment_in_order(offline):
+SCOPES = ("all", "1", "2")
+
+
+def in_scope(m, scope):
+    return scope == "all" or str(m.period) == scope
+
+
+def test_two_snapshots_per_commentated_moment_in_order(offline):
     live = sorted((e.bundle.moment for e in offline.moments if e.bundle.qualifies_live), key=lambda m: m.seq)
     assert len(live) >= 4
-    assert [(s.t, s.kind, s.period) for s in offline.rankings] == [(m.t, m.kind, m.period) for m in live]
+    want = [(m.t, scope, m.kind) for m in live for scope in ("all", str(m.period))]
+    assert [(s.t, s.scope, s.kind) for s in offline.rankings] == want
 
 
-def test_snapshot_ranks_match_the_timeline(offline):
-    bundles = [e.bundle for e in offline.moments]
+def test_snapshot_ranks_equal_a_fresh_sort_of_the_eligible_moments(offline):
+    moments = [e.bundle.moment for e in offline.moments]
+    seen = set()
     for snap in offline.rankings:
+        eligible = [m for m in moments if m.kind == snap.kind and m.t <= snap.t and in_scope(m, snap.scope)]
+        fresh = sorted(eligible, key=lambda m: (-abs(m.delta), m.seq))[:WIDE.highlights_per_kind]
+        assert [e.moment_id for e in snap.entries] == [m.moment_id for m in fresh]
+        assert [e.rank for e in snap.entries] == list(range(1, len(fresh) + 1))
+        seen.add(snap.scope)
+    assert seen == set(SCOPES)
+
+
+def test_half_scopes_equal_the_pipeline_timeline(offline):
+    bundles = [e.bundle for e in offline.moments]
+    for snap in (s for s in offline.rankings if s.scope != "all"):
         expected = sorted(((i.rank, i.bundle.moment.moment_id) for i in timeline(bundles, WIDE.highlights_per_kind, snap.t)
                            if i.in_ranking and i.bundle.moment.kind == snap.kind
-                           and i.bundle.moment.period == snap.period))
+                           and str(i.bundle.moment.period) == snap.scope))
         assert [(e.rank, e.moment_id) for e in snap.entries] == expected
-        assert len(snap.entries) <= WIDE.highlights_per_kind
 
 
-def test_previous_rank_comes_from_the_previous_snapshot_of_the_same_kind_and_half(offline):
+def test_previous_rank_comes_from_the_previous_snapshot_of_the_same_scope_and_kind(offline):
     last: dict = {}
     seen_new = seen_carried = False
     for snap in offline.rankings:
-        before = last.get((snap.kind, snap.period), {})
+        before = last.get((snap.scope, snap.kind), {})
         for e in snap.entries:
             assert e.previous_rank == before.get(e.moment_id)
             seen_new |= e.previous_rank is None
             seen_carried |= e.previous_rank is not None
-        last[(snap.kind, snap.period)] = {e.moment_id: e.rank for e in snap.entries}
+        last[(snap.scope, snap.kind)] = {e.moment_id: e.rank for e in snap.entries}
     assert seen_new and seen_carried
-
-
-def test_rankings_reset_at_half_time(offline):
-    period = {e.bundle.moment.moment_id: e.bundle.moment.period for e in offline.moments}
-    for snap in offline.rankings:
-        assert all(period[e.moment_id] == snap.period for e in snap.entries)
     firsts = {}
     for snap in offline.rankings:
-        firsts.setdefault((snap.kind, snap.period), snap)
+        firsts.setdefault((snap.scope, snap.kind), snap)
     for snap in firsts.values():
         assert all(e.previous_rank is None for e in snap.entries)
+
+
+def test_first_half_ranking_is_frozen_after_half_time(seed42_events, tiny_scorer, offline):  # noqa: F811
+    start = clock.second_half_start(seed42_events)
+    final_h1 = reports([e.bundle for e in offline.moments], WIDE.highlights_per_kind)[0]
+    for kind in KINDS:
+        h1 = [s for s in offline.rankings if s.scope == "1" and s.kind == kind]
+        assert h1 and all(s.t < start for s in h1)
+        assert [e.moment_id for e in h1[-1].entries] == [b.moment.moment_id for b in final_h1.highlights[kind]]
+    assert all(s.t >= start for s in offline.rankings if s.scope == "2")
+
+
+def test_all_scope_holds_both_halves_and_only_commentated_moments(offline):
+    by_id = {e.bundle.moment.moment_id: e.bundle for e in offline.moments}
+    for snap in offline.rankings:
+        assert all(by_id[e.moment_id].qualifies_live for e in snap.entries)
+        assert all(in_scope(by_id[e.moment_id].moment, snap.scope) for e in snap.entries)
+    halves = {by_id[e.moment_id].moment.period for s in offline.rankings if s.scope == "all" for e in s.entries}
+    assert halves == {1, 2}
 
 
 def test_tier_words_come_from_difficulty_tier(offline):
@@ -284,6 +316,20 @@ def test_bad_snapshots_are_rejected(offline):
     other = next(s for s in data["rankings"] if s["kind"] != data["rankings"][0]["kind"])
     data["rankings"][0]["entries"] = other["entries"]
     with pytest.raises(ValidationError):
+        MatchBundle.model_validate(data)
+    data = offline.model_dump(mode="json")
+    h2 = next(s for s in data["rankings"] if s["scope"] == "2" and s["entries"])
+    data["rankings"][0]["scope"] = "1"
+    data["rankings"][0]["kind"] = h2["kind"]
+    data["rankings"][0]["entries"] = h2["entries"][:1]
+    with pytest.raises(ValidationError):   # a second-half moment in a first-half table
+        MatchBundle.model_validate(data)
+    data = offline.model_dump(mode="json")
+    quiet = next(m["bundle"]["moment"] for m in data["moments"] if not m["bundle"]["qualifies_live"])
+    snap = next(s for s in data["rankings"] if s["scope"] == "all" and s["kind"] == quiet["kind"]
+                and s["t"] >= quiet["t"])
+    snap["entries"][0]["moment_id"] = quiet["moment_id"]
+    with pytest.raises(ValidationError):   # a moment that was never commentated
         MatchBundle.model_validate(data)
 
 
@@ -400,3 +446,16 @@ def test_wrong_display_geometry_is_rejected(offline):
     data["meta"]["attacks_right"] = {"1": data["meta"]["away"]["team_id"], "2": data["meta"]["home"]["team_id"]}
     with pytest.raises(ValidationError):
         MatchBundle.model_validate(data)
+
+
+def test_line_reuse_reads_a_schema_3_file(online, tmp_path):
+    new, old = tmp_path / "v4.json", tmp_path / "v3.json"
+    new.write_text(to_json(online), encoding="utf-8")
+    data = online.model_dump(mode="json")
+    data["meta"]["schema_version"] = "3"
+    for snap in data["rankings"]:
+        snap["period"] = 1
+        del snap["scope"]
+    old.write_text(json.dumps(data), encoding="utf-8")
+    from_v4 = stored_lines(new, online.meta.match_id, online.meta.model_version)
+    assert from_v4 and stored_lines(old, online.meta.match_id, online.meta.model_version) == from_v4

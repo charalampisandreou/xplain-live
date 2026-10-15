@@ -1,21 +1,25 @@
 // xPlain Live: Studio screen. Plays a match bundle (src/xplain/bundle.py) on the match clock.
 // Every number shown comes from the bundle; the browser only formats xP as a percent with the same
-// rule as analytics.percent, round(100 * x), and shows rank moves from rank and previous_rank.
+// rule as analytics.percent, round(100 * x), PVA in points the same way, and shows rank moves from
+// rank and previous_rank. Rankings come ready-made per scope (all / 1 / 2) from the bundle.
 (function () {
   'use strict';
 
   const SVG = 'http://www.w3.org/2000/svg';
   const KINDS = ['surprise_failure', 'surprise_success'];
   const EMPTY = {
-    surprise_failure: 'No surprise failures yet this half.',
-    surprise_success: 'No surprise successes yet this half.',
+    surprise_failure: 'No surprise failures yet.',
+    surprise_success: 'No surprise successes yet.',
   };
+  const NOT_STARTED = 'Starts in the 2nd half';
+  const HALF_LABEL = { 1: '1st half', 2: '2nd half' };
+  const SCOPES = ['all', '1', '2'];
   const FADED = [0.8, 0.55, 0.35];   // opacity of the 1st, 2nd and 3rd pass before the selected one
 
   const $ = (id) => document.getElementById(id);
   const percent = (x) => Math.round(100 * x);
-  // PVA (the bundle's delta = outcome - xP) as sign + two decimals, with a real minus sign
-  const pva = (x) => (x < 0 ? '−' : '+') + Math.abs(x).toFixed(2);
+  // PVA (the bundle's delta = outcome - xP) in points of completion chance: sign, round(100 * |x|), "%"
+  const pva = (x) => (x < 0 ? '−' : '+') + Math.round(Math.abs(x) * 100) + '%';
   const code = (name) => (name || '').slice(0, 3).toUpperCase();
 
   const state = {
@@ -26,8 +30,10 @@
     follow: true,      // live: the selected pass is the newest pass with t <= now
     selected: -1,      // index into marks when not following
     lang: 'en',
+    scope: 'all',      // which ranking the tables show: whole match so far, or one half
     lastFrame: null,
     renderedKey: '',
+    plateId: null,
   };
   let idx = null;      // lookups built once per bundle
 
@@ -58,7 +64,7 @@
       return;
     }
     const bundle = await res.json();
-    if (!bundle.meta || bundle.meta.schema_version !== '3') {
+    if (!bundle.meta || bundle.meta.schema_version !== '4') {
       showStatus('The match bundle "' + name + '" has an old schema; rebuild it with python -m xplain.bundle.');
       return;
     }
@@ -95,8 +101,9 @@
     const { first_event_t: first, last_event_t: last } = bundle.clock;
     state.now = Number.isFinite(startT) && startT > first ? Math.min(startT, last) : first;
     wire();
-    const lang = new URLSearchParams(location.search).get('lang');
-    if (['en', 'es', 'el'].includes(lang)) setLang(lang);
+    const params = new URLSearchParams(location.search);
+    if (['en', 'es', 'el'].includes(params.get('lang'))) setLang(params.get('lang'));
+    if (SCOPES.includes(params.get('scope'))) setScope(params.get('scope'));
     requestAnimationFrame(frame);
   }
 
@@ -158,6 +165,15 @@
     }
   }
 
+  function setScope(scope) {
+    state.scope = scope;
+    for (const b of $('scope').querySelectorAll('button')) {
+      const on = b.dataset.scope === scope;
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-pressed', String(on));
+    }
+  }
+
   function step(dir) {
     const live = liveIndex();
     if (live < 0) return;
@@ -175,6 +191,9 @@
     }
     for (const b of $('lang').querySelectorAll('button')) {
       b.addEventListener('click', () => setLang(b.dataset.lang));
+    }
+    for (const b of $('scope').querySelectorAll('button')) {
+      b.addEventListener('click', () => setScope(b.dataset.scope));
     }
     $('prev').addEventListener('click', () => step(-1));
     $('next').addEventListener('click', () => step(1));
@@ -198,9 +217,9 @@
     const tick = lastAtOrBefore(idx.tickT, state.now);
     const score = lastAtOrBefore(idx.scoreT, state.now);
     const half = live >= 0 ? idx.marks[live].period : 1;
-    const snaps = KINDS.map((k) => latestSnapshot(k, half));
+    const snaps = KINDS.map((k) => latestSnapshot(k, state.scope));
     const plate = plateMoment(sel);
-    const key = [sel, live, tick, score, half, snaps.map((s) => (s ? s.t : '-')).join('|'),
+    const key = [sel, live, tick, score, half, state.scope, snaps.map((s) => (s ? s.t : '-')).join('|'),
       plate ? plate.bundle.moment.moment_id : '-', state.lang, state.follow].join('/');
     $('live').classList.toggle('is-live', state.follow);
     $('prev').disabled = sel <= 0;
@@ -208,42 +227,40 @@
     if (key === state.renderedKey) return;
     state.renderedKey = key;
 
-    renderScoreBug(tick, score, sel);
-    $('subtitle').textContent = 'Every pass scored live · ' + (half === 2 ? 'second' : 'first') + ' half so far';
-    renderDirection(sel >= 0 ? idx.marks[sel].period : half);
+    renderScoreBug(tick, score, live >= 0 ? half : null);
+    renderPossession(sel);
     renderPitch(sel);
-    KINDS.forEach((k, i) => renderTable(k, snaps[i], plate));
+    const notStarted = state.scope === '2' && half !== 2;
+    KINDS.forEach((k, i) => renderTable(k, snaps[i], plate, notStarted));
     renderPlate(plate);
   }
 
-  function renderScoreBug(tick, score, sel) {
+  function renderScoreBug(tick, score, half) {
     const s = score >= 0 ? idx.score[score] : null;
     $('score').textContent = s ? s.home + '–' + s.away : '–';
     $('minute').textContent = tick >= 0 ? idx.ticks[tick].minute_label + "'" : '';
-    // possession: the team of the selected pass gets the cyan bar under its code
-    const ball = sel >= 0 ? idx.marks[sel].team_id : null;
-    const meta = state.bundle.meta;
-    for (const [id, team] of [['home-code', meta.home], ['away-code', meta.away]]) {
-      const has = team.team_id === ball;
-      $(id).classList.toggle('has-ball', has);
-      $(id).setAttribute('aria-label', team.name + (has ? ', in possession' : ''));
-    }
+    $('half').textContent = half ? HALF_LABEL[half] : '';
   }
 
-  // "DUS →   ← MAR": who attacks right on the display pitch in this half (meta.attacks_right)
-  function renderDirection(period) {
-    const meta = state.bundle.meta;
-    const right = meta.attacks_right[String(period)];
-    const left = right === meta.home.team_id ? meta.away.team_id : meta.home.team_id;
-    $('attack-dir').textContent = teamCode(right) + ' → ← ' + teamCode(left);
+  // Possession tab: the team of the selected pass, on the side of the pitch it attacks from, with
+  // chevrons toward the goal it attacks. Who attacks right in each half is meta.attacks_right.
+  function renderPossession(sel) {
+    const box = $('possession');
+    if (sel < 0) { box.hidden = true; return; }
+    const mark = idx.marks[sel];
+    const right = state.bundle.meta.attacks_right[String(mark.period)] === mark.team_id;
+    const teamCodeText = teamCode(mark.team_id, mark.team_name);
+    $('tab-code').textContent = teamCodeText;
+    box.classList.toggle('left', !right);
+    box.setAttribute('aria-label', teamCodeText + ' in possession, attacking ' + (right ? 'right' : 'left'));
+    box.hidden = false;
   }
 
-  // the latest snapshot of a kind with t <= now in the given half, or null
-  function latestSnapshot(kind, period) {
+  // the latest snapshot of a kind in a scope with t <= now, or null
+  function latestSnapshot(kind, scope) {
     for (let i = lastAtOrBefore(idx.rankT, state.now); i >= 0; i--) {
       const s = idx.rankings[i];
-      if (s.period !== period) return null;   // snapshots are in t order: an earlier half is not this one
-      if (s.kind === kind) return s;
+      if (s.scope === scope && s.kind === kind) return s;
     }
     return null;
   }
@@ -335,9 +352,13 @@
     return d;
   }
 
-  function renderTable(kind, snap, plate) {
+  function renderTable(kind, snap, plate, notStarted) {
     const rows = $('rows-' + kind);
     rows.replaceChildren();
+    if (notStarted) {
+      rows.appendChild(div('empty', NOT_STARTED));
+      return;
+    }
     if (!snap || snap.entries.length === 0) {
       rows.appendChild(div('empty', EMPTY[kind]));
       return;
@@ -369,12 +390,20 @@
     const lower = $('lower');
     lower.classList.remove('completed', 'failed', 'waiting');
     const line = $('lower-line');
+    const id = entry ? entry.bundle.moment.moment_id + '/' + state.lang : '-';
+    if (id !== state.plateId) {   // a short cross-fade when the moment or language changes
+      state.plateId = id;
+      const plate = $('plate');
+      plate.classList.remove('swap');
+      void plate.offsetWidth;
+      plate.classList.add('swap');
+    }
     if (!entry) {
       lower.classList.add('waiting');
       $('lower-name').textContent = 'No commentated moment yet';
       $('lower-meta').textContent = '';
       line.textContent = '';
-      $('lower-xp').textContent = '–';
+      $('lower-pva').textContent = '–';
       return;
     }
     const m = entry.bundle.moment;
@@ -385,7 +414,7 @@
     const text = entry.line ? entry.line['line_' + state.lang] : '';
     line.textContent = text || '';
     line.setAttribute('lang', state.lang);
-    $('lower-xp').textContent = pva(m.delta);
+    $('lower-pva').textContent = pva(m.delta);
   }
 
   // --- stage scaling -------------------------------------------------------------------------
