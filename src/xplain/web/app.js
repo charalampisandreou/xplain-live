@@ -31,6 +31,8 @@
     selected: -1,      // index into marks when not following
     lang: 'en',
     scope: 'all',      // which ranking the tables show: whole match so far, or one half
+    replay: null,      // moment_id being replayed: pitch, plate and tab show it; clock and tables run on
+    tableSig: {},      // per table, what it last drew (rows are rebuilt only when this changes)
     lastFrame: null,
     renderedKey: '',
     plateId: null,
@@ -90,6 +92,7 @@
         .sort((a, b) => a.bundle.moment.seq - b.bundle.moment.seq),
       rankings: bundle.rankings,
       rankT: bundle.rankings.map((s) => s.t),
+      markOf: new Map(bundle.marks.map((m, i) => [m.moment_id, i]).filter(([id]) => id)),
     };
     $('home-code').textContent = code(bundle.meta.home.name);
     $('away-code').textContent = code(bundle.meta.away.name);
@@ -104,6 +107,13 @@
     const params = new URLSearchParams(location.search);
     if (['en', 'es', 'el'].includes(params.get('lang'))) setLang(params.get('lang'));
     if (SCOPES.includes(params.get('scope'))) setScope(params.get('scope'));
+    // ?replay=<moment_id> opens in replay; an unknown or uncommentated id is ignored. A moment later
+    // than the start time moves the clock to it, so the tables never trail the replayed moment.
+    const r = idx.moments.get(params.get('replay'));
+    if (r && r.bundle.qualifies_live && idx.markOf.has(r.bundle.moment.moment_id)) {
+      state.now = Math.max(state.now, r.bundle.moment.t);
+      enterReplay(r.bundle.moment.moment_id);
+    }
     requestAnimationFrame(frame);
   }
 
@@ -131,13 +141,17 @@
   }
 
   function liveIndex() { return lastAtOrBefore(idx.markT, state.now); }
-  function selectedIndex() { return state.follow ? liveIndex() : Math.min(state.selected, liveIndex()); }
+  function selectedIndex() {
+    if (state.replay) return idx.markOf.get(state.replay);
+    return state.follow ? liveIndex() : Math.min(state.selected, liveIndex());
+  }
 
   // --- controls ------------------------------------------------------------------------------
 
   function setPlaying(on) {
     if (on && state.now >= state.bundle.clock.last_event_t) {
       state.now = state.bundle.clock.first_event_t;   // play again from kick-off
+      exitReplay();
       state.follow = true;
     }
     state.playing = on;
@@ -178,11 +192,31 @@
     const live = liveIndex();
     if (live < 0) return;
     const from = selectedIndex();
+    exitReplay();   // stepping from a replayed pass leaves replay and steps on from it
     state.selected = Math.max(0, Math.min(live, from + dir));
     state.follow = false;
   }
 
-  function backToLive() { state.follow = true; }
+  function backToLive() { exitReplay(); state.follow = true; }
+
+  // --- replay: a table row puts its moment on the pitch, the plate and the tab ---
+
+  function enterReplay(id) {
+    if (id === state.replay) return;
+    state.replay = id;
+  }
+
+  function exitReplay() {
+    if (!state.replay) return;
+    state.replay = null;
+    const url = new URL(location.href);
+    if (url.searchParams.has('replay')) {
+      url.searchParams.delete('replay');
+      history.replaceState(null, '', url);
+    }
+  }
+
+  function leaveReplay() { exitReplay(); state.follow = true; }   // back to the live pass
 
   function wire() {
     $('play').addEventListener('click', () => setPlaying(!state.playing));
@@ -198,9 +232,24 @@
     $('prev').addEventListener('click', () => step(-1));
     $('next').addEventListener('click', () => step(1));
     $('live').addEventListener('click', backToLive);
+    for (const kind of KINDS) {
+      const rows = $('rows-' + kind);
+      rows.addEventListener('click', (e) => {
+        const row = e.target.closest('.row[data-moment]');
+        if (row) enterReplay(row.dataset.moment);
+      });
+      rows.addEventListener('keydown', (e) => {
+        const row = e.target.closest('.row[data-moment]');
+        if (row && (e.key === 'Enter' || e.key === ' ')) { enterReplay(row.dataset.moment); e.preventDefault(); }
+      });
+    }
     document.addEventListener('keydown', (e) => {
-      if (e.target.closest && e.target.closest('button') && (e.key === ' ' || e.key === 'Enter')) return;
-      if (e.key === 'ArrowLeft') { step(-1); e.preventDefault(); }
+      const control = e.target.closest && e.target.closest('button, [role="button"]');
+      if (control && (e.key === ' ' || e.key === 'Enter')) return;
+      if (e.key === 'Escape') {   // leaves replay and step mode
+        if (state.replay || !state.follow) { leaveReplay(); e.preventDefault(); }
+      }
+      else if (e.key === 'ArrowLeft') { step(-1); e.preventDefault(); }
       else if (e.key === 'ArrowRight') { step(1); e.preventDefault(); }
       else if (e.key === ' ') { setPlaying(!state.playing); e.preventDefault(); }
       else if (e.key === 'l' || e.key === 'L') backToLive();
@@ -220,19 +269,27 @@
     const snaps = KINDS.map((k) => latestSnapshot(k, state.scope));
     const plate = plateMoment(sel);
     const key = [sel, live, tick, score, half, state.scope, snaps.map((s) => (s ? s.t : '-')).join('|'),
-      plate ? plate.bundle.moment.moment_id : '-', state.lang, state.follow].join('/');
-    $('live').classList.toggle('is-live', state.follow);
+      plate ? plate.bundle.moment.moment_id : '-', state.lang, state.follow, state.replay].join('/');
+    $('live').classList.toggle('is-live', state.follow && !state.replay);
     $('prev').disabled = sel <= 0;
-    $('next').disabled = state.follow || sel >= live;
+    $('next').disabled = (state.follow && !state.replay) || sel >= live;
     if (key === state.renderedKey) return;
     state.renderedKey = key;
 
+    renderBadge(sel);
     renderScoreBug(tick, score, live >= 0 ? half : null);
     renderPossession(sel);
     renderPitch(sel);
     const notStarted = state.scope === '2' && half !== 2;
     KINDS.forEach((k, i) => renderTable(k, snaps[i], plate, notStarted));
     renderPlate(plate);
+  }
+
+  // "REPLAY · 41'": shown whenever the view is not live (a replayed moment, or step mode)
+  function renderBadge(sel) {
+    const off = state.replay || !state.follow;
+    $('replaybar').classList.toggle('on', Boolean(off) && sel >= 0);
+    $('replay-badge').textContent = off && sel >= 0 ? 'Replay · ' + idx.marks[sel].minute_label + "'" : '';
   }
 
   function renderScoreBug(tick, score, half) {
@@ -251,8 +308,15 @@
     const right = state.bundle.meta.attacks_right[String(mark.period)] === mark.team_id;
     const teamCodeText = teamCode(mark.team_id, mark.team_name);
     $('tab-code').textContent = teamCodeText;
+    const label = teamCodeText + ' in possession, attacking ' + (right ? 'right' : 'left');
+    if (label !== box.getAttribute('aria-label')) {   // short cross-fade when the content changes
+      const tab = $('tab');
+      tab.classList.remove('swap');
+      void tab.offsetWidth;
+      tab.classList.add('swap');
+    }
     box.classList.toggle('left', !right);
-    box.setAttribute('aria-label', teamCodeText + ' in possession, attacking ' + (right ? 'right' : 'left'));
+    box.setAttribute('aria-label', label);
     box.hidden = false;
   }
 
@@ -354,6 +418,12 @@
 
   function renderTable(kind, snap, plate, notStarted) {
     const rows = $('rows-' + kind);
+    const selIdNow = plate ? plate.bundle.moment.moment_id : null;
+    const sig = [notStarted, snap ? snap.scope + snap.t : '-', selIdNow, state.replay].join('/');
+    if (state.tableSig[kind] === sig) return;   // unchanged: keep the rows (and keyboard focus)
+    state.tableSig[kind] = sig;
+    const focused = document.activeElement && rows.contains(document.activeElement)
+      ? document.activeElement.dataset.moment : null;
     rows.replaceChildren();
     if (notStarted) {
       rows.appendChild(div('empty', NOT_STARTED));
@@ -367,6 +437,12 @@
     for (const e of snap.entries) {
       const m = idx.moments.get(e.moment_id).bundle.moment;
       const row = div('row' + (e.moment_id === selId ? ' sel' : ''));
+      row.dataset.moment = e.moment_id;
+      row.setAttribute('role', 'button');
+      row.tabIndex = 0;
+      row.setAttribute('aria-pressed', String(e.moment_id === state.replay));
+      row.setAttribute('aria-label', 'Replay ' + playerName(m) + ', ' + teamCode(m.team_id, m.team_name) + ', ' +
+        m.minute_label + "', PVA " + pva(m.delta));
       row.appendChild(div('rank', String(e.rank)));
       const who = div('who');
       who.appendChild(div('player', playerName(m)));
@@ -381,6 +457,7 @@
       const mv = moveText(e);
       row.appendChild(div('move' + (mv.cls ? ' ' + mv.cls : ''), mv.text));
       rows.appendChild(row);
+      if (e.moment_id === focused) row.focus();
     }
   }
 
@@ -393,26 +470,26 @@
     const id = entry ? entry.bundle.moment.moment_id + '/' + state.lang : '-';
     if (id !== state.plateId) {   // a short cross-fade when the moment or language changes
       state.plateId = id;
-      const plate = $('plate');
-      plate.classList.remove('swap');
-      void plate.offsetWidth;
-      plate.classList.add('swap');
+      lower.classList.remove('swap');
+      void lower.offsetWidth;
+      lower.classList.add('swap');
     }
-    if (!entry) {
+    if (!entry) {   // before the first commentated moment: the body only
       lower.classList.add('waiting');
-      $('lower-name').textContent = 'No commentated moment yet';
+      line.textContent = 'No commentated moment yet';
+      line.removeAttribute('lang');
       $('lower-meta').textContent = '';
-      line.textContent = '';
       $('lower-pva').textContent = '–';
       return;
     }
     const m = entry.bundle.moment;
     lower.classList.add(m.completed ? 'completed' : 'failed');
     $('lower-name').textContent = playerName(m);
-    $('lower-meta').textContent = teamCode(m.team_id, m.team_name) + ' · ' + m.minute_label + "' · " +
-      entry.tier.en + ' pass, ' + (m.completed ? 'completed' : 'not completed') + ' · xP ' + percent(m.xp) + '%';
-    const text = entry.line ? entry.line['line_' + state.lang] : '';
-    line.textContent = text || '';
+    $('lower-when').textContent = teamCode(m.team_id, m.team_name) + ' · ' + m.minute_label + "'";
+    $('lower-meta').textContent = entry.tier.en + ' pass, ' + (m.completed ? 'completed' : 'not completed') +
+      ' · xP ' + percent(m.xp) + '%';
+    // no stored line: the line row is empty and hidden (:empty), so no gap is left
+    line.textContent = (entry.line && entry.line['line_' + state.lang]) || '';
     line.setAttribute('lang', state.lang);
     $('lower-pva').textContent = pva(m.delta);
   }

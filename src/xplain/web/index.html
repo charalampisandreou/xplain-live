@@ -6,7 +6,7 @@
 <title>xPlain Live Studio</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=Noto+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&family=Noto+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
@@ -39,7 +39,7 @@
   </div>
 
   <!-- title: its wording lives here only -->
-  <h1 class="title">Expected vs actual</h1>
+  <h1 class="title">Pass outliers</h1>
 
   <!-- pitch, with the possession tab on its top edge -->
   <div class="pitch">
@@ -50,6 +50,9 @@
           <path d="M2 1 L7 6 L2 11"></path><path d="M14 1 L19 6 L14 11"></path><path d="M26 1 L31 6 L26 11"></path>
         </svg>
       </div>
+    </div>
+    <div class="replaybar" id="replaybar" aria-live="polite">
+      <span class="replay-badge" id="replay-badge"></span>
     </div>
     <svg viewBox="0 0 120 80" width="780" height="520" role="img" id="pitch-svg" aria-label="Pitch">
       <defs>
@@ -89,18 +92,22 @@
     <div class="footnote">PVA: the result minus the chance the pass had (xP), in points. Longer bar, bigger surprise.</div>
   </div>
 
-  <!-- lower third -->
+  <!-- lower third: name tab on top of a dark body -->
   <div class="lower waiting" id="lower" aria-live="polite">
-    <div class="plate" id="plate">
-      <div class="plate-head">
-        <div class="plate-name" id="lower-name">No commentated moment yet</div>
-        <div class="plate-meta" id="lower-meta"></div>
-      </div>
-      <div class="plate-line" id="lower-line"></div>
+    <div class="nametab" id="nametab">
+      <span class="tab-name" id="lower-name"></span>
+      <span class="tab-div" aria-hidden="true"></span>
+      <span class="tab-when" id="lower-when"></span>
     </div>
-    <div class="pvabox">
-      <div class="pvabig" id="lower-pva">–</div>
-      <div class="pvasub">pass value added</div>
+    <div class="body">
+      <div class="left">
+        <div class="line" id="lower-line"></div>
+        <div class="meta" id="lower-meta"></div>
+      </div>
+      <div class="right">
+        <div class="pvanum" id="lower-pva">–</div>
+        <div class="pvalabel">PVA</div>
+      </div>
     </div>
   </div>
 

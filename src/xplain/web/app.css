@@ -72,24 +72,38 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 }
 .pitch svg { display: block; border-radius: 4px; }
 
-/* possession: a tab on the pitch's top edge, on the side the team attacks from, chevrons toward
-   the goal it attacks. It slides across when the attacking direction changes. */
+/* possession: a tab fixed at the left end of the pitch's top edge. Its content changes in place:
+   code then chevrons pointing right when attacking right, chevrons pointing left then code when
+   attacking left. A short cross-fade marks a change. */
 .possession { position: absolute; left: 0; right: 0; top: -30px; height: 30px; pointer-events: none; }
 .possession[hidden] { display: none; }
 .tab {
-  position: absolute; top: 0; left: 0; transform: translateX(0); height: 30px;
+  position: absolute; top: 0; left: 0; height: 30px;
   display: flex; align-items: center; gap: 10px; padding: 0 12px;
   background: var(--surface); border: 1px solid var(--switch-border); border-bottom: none;
-  border-radius: 4px 4px 0 0; transition: left 250ms ease, transform 250ms ease;
+  border-radius: 4px 4px 0 0;
 }
+.tab.swap { animation: swap 150ms ease-out; }
 .tab-code { font-size: 15px; font-weight: 800; letter-spacing: 0.04em; }
 .chevrons path { fill: none; stroke: var(--accent); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
 .chevrons path { animation: chevron 1.6s ease-in-out infinite; opacity: 0.35; }
 .chevrons path:nth-child(2) { animation-delay: 0.2s; }
 .chevrons path:nth-child(3) { animation-delay: 0.4s; }
 @keyframes chevron { 0%, 100% { opacity: 0.35; } 35% { opacity: 1; } }
-.possession.left .tab { left: 100%; transform: translateX(-100%); flex-direction: row-reverse; }
+.possession.left .tab { flex-direction: row-reverse; }
 .possession.left .chevrons { transform: scaleX(-1); }
+
+/* replay badge: above the pitch's top-right corner, on the possession tab's row; shown whenever the
+   view is not live (a replayed moment or step mode). Leaving is the bottom-right Back to live. */
+/* the same tab as the possession tab (size, shape, border, type), mirrored to the right end */
+.replaybar { position: absolute; right: 0; top: -30px; height: 30px; display: none; }
+.replaybar.on { display: block; }
+.replay-badge {
+  height: 30px; display: flex; align-items: center; padding: 0 12px;
+  background: var(--surface); border: 1px solid var(--switch-border); border-bottom: none;
+  border-radius: 4px 4px 0 0;
+  font-size: 15px; font-weight: 500; letter-spacing: 0.02em; color: var(--accent);
+}
 
 /* half selector */
 .seg.scope { position: absolute; top: 150px; right: 40px; padding: 3px; }
@@ -106,6 +120,10 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .row { display: flex; align-items: center; gap: 14px; padding: 10px 12px; border-bottom: 1px solid var(--hairline); }
 /* the row of the plate's moment: surface background with a cyan bar on its left edge */
 .row.sel { background: var(--surface); box-shadow: inset 3px 0 0 var(--accent); }
+/* rows are buttons: a click replays the moment */
+.row[role="button"] { cursor: pointer; }
+.row[role="button"]:hover:not(.sel) { background: rgba(17, 38, 61, 0.6); }
+.row[role="button"]:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .row .rank { width: 28px; font-weight: 800; font-size: 20px; }
 .row .who { flex: 1; min-width: 0; }
 .row .player { font-weight: 700; font-size: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -120,30 +138,39 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .empty { padding: 14px 12px; font-size: 15px; color: var(--muted); border-bottom: 1px solid var(--hairline); }
 .footnote { font-size: 14px; color: var(--muted); line-height: 1.4; }
 
-/* lower third: a dark broadcast plate with the commentator's line */
+/* lower third: a cyan name tab on top of a dark body (left: the line and the facts; right: PVA) */
 .lower {
-  position: absolute; left: 40px; bottom: 40px; width: 1000px; display: flex; align-items: stretch;
-  background: var(--surface); border: 1px solid var(--switch-border); border-radius: 6px; overflow: hidden;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  position: absolute; left: 40px; bottom: 40px; width: 920px; display: flex; flex-direction: column; align-items: flex-start;
 }
-.plate { flex: 1; min-width: 0; padding: 12px 20px; display: flex; flex-direction: column; justify-content: center; gap: 3px; min-height: 72px; }
-.plate.swap { animation: swap 150ms ease-out; }
+.lower.swap { animation: swap 150ms ease-out; }
 @keyframes swap { from { opacity: 0; } to { opacity: 1; } }
-.plate-head { display: flex; align-items: baseline; gap: 14px; min-width: 0; }
-.plate-name { font-weight: 800; font-size: 20px; letter-spacing: 0.02em; text-transform: uppercase; white-space: nowrap; }
-.plate-meta { font-weight: 600; font-size: 14px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.plate-line { font-size: 17px; line-height: 1.35; color: var(--text-soft); }
-.plate-line:empty { display: none; }
-.lower.waiting .plate-name { text-transform: none; letter-spacing: 0; font-weight: 600; font-size: 17px; color: var(--muted); }
-.pvabox {
-  width: 130px; flex: none; background: var(--surface-deep); border-left: 1px solid var(--hairline);
-  display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 8px 0;
+.nametab {
+  height: 30px; padding: 0 14px; display: flex; align-items: center; gap: 12px;
+  background: var(--accent); color: var(--plate-text); border-radius: 4px 4px 0 0;
 }
-.pvabig { font-weight: 800; font-size: 32px; line-height: 1; white-space: nowrap; }
-.lower.completed .pvabig { color: var(--completed); }
-.lower.failed .pvabig { color: var(--failed-text); }
-.lower.waiting .pvabig { color: var(--muted); }
-.pvasub { font-weight: 600; font-size: 12px; color: var(--muted); margin-top: 4px; }
+.lower.waiting .nametab { display: none; }
+.tab-name { font-size: 16px; font-weight: 800; font-stretch: 78%; letter-spacing: 0.04em; text-transform: uppercase; white-space: nowrap; }
+.tab-div { width: 1px; height: 14px; background: rgba(10, 27, 46, 0.35); }
+.tab-when { font-size: 14px; font-weight: 700; font-stretch: 78%; letter-spacing: 0.04em; white-space: nowrap; }
+.body {
+  width: 100%; min-height: 64px; display: flex; align-items: stretch; background: var(--surface);
+  border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 0 4px 4px 4px; box-shadow: 0 10px 28px rgba(0, 0, 0, 0.40);
+}
+.lower.waiting .body { border-radius: 4px; }
+.left { flex: 1; min-width: 0; padding: 12px 18px 13px; display: flex; flex-direction: column; justify-content: center; gap: 5px; }
+.line { font-size: 18px; font-weight: 500; line-height: 1.35; color: #E6EEF7; }
+.line:empty { display: none; }
+.meta { font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.lower.waiting .line { color: var(--muted); font-weight: 400; }
+.right {
+  width: 116px; flex: none; border-left: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+}
+.lower.waiting .right { display: none; }
+.pvanum { font-size: 30px; font-weight: 800; font-stretch: 85%; line-height: 1; white-space: nowrap; }
+.lower.completed .pvanum { color: var(--completed); }
+.lower.failed .pvanum { color: var(--failed-text); }
+.pvalabel { font-size: 11px; font-weight: 700; letter-spacing: 0.12em; color: var(--muted); }
 
 /* controls */
 .controls { position: absolute; right: 40px; bottom: 40px; width: 200px; display: flex; flex-direction: column; gap: 6px; }
@@ -173,6 +200,6 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 @media (prefers-reduced-motion: reduce) {
   .chevrons path { animation: none; opacity: 1; }
-  .tab { transition: none; }
-  .plate.swap { animation: none; }
+  .tab.swap { animation: none; }
+  .lower.swap { animation: none; }
 }

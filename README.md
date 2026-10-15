@@ -199,7 +199,13 @@ shows the `minute_label` of the clock entry for that t. `GET /api/bundle/NAME` s
 `XPLAIN_BUNDLE_DIR` changes the folder. Controls: play/pause, speed 1x / 12x / 60x, previous and
 next pass (left and right arrows), Back to live (L), space for play/pause, and All / 1st / 2nd
 above the tables (default All: the whole match so far; 1st stays frozen after half-time; 2nd says
-"Starts in the 2nd half" until then).
+"Starts in the 2nd half" until then). Clicking a table row (or Enter/Space on it) replays that moment:
+the pitch, the plate and the possession tab show it while the clock, score and tables keep
+running. A "Replay · 41'" badge above the pitch's top-right shows whenever the view is not live
+(a replayed moment, or step mode with the arrows, showing the selected pass's minute). The
+bottom-right Back to live, L or Esc return to the live pass. `?replay=MOMENT_ID` (e.g.
+`?replay=moment:m42-00817`) opens in replay; if the moment is later than the start time, the
+clock starts at it.
 
 The page only formats: every number, minute and ranking comes from the bundle. The tables and the
 plate show PVA (pass value added, the bundle's `delta` = outcome - xP: 1 - xP when completed, -xP
@@ -208,8 +214,10 @@ bar length is |PVA| on a 0..1 scale. xP is shown small in the plate as a percent
 rule as the code, round(100 * xP). The pitch draws the display coordinates. A tab on the pitch's
 top edge shows the team of the selected pass on the side it attacks from, with cyan chevrons
 toward the goal it attacks (from `meta.attacks_right`; still under reduced motion). The score bug
-shows the minute and the half. The lower third is a dark plate with the player, the moment's facts
-and the commentator's line in the chosen language. Analyst and Player modes are not built yet.
+shows the minute and the half; the possession tab stays at the pitch's top-left, with the code
+then right-pointing chevrons when attacking right and left-pointing chevrons then the code when
+attacking left. The lower third is a cyan name tab (player, team code and minute) on a dark body
+with the commentator's line in the chosen language, the tier and xP, and PVA on the right. Analyst and Player modes are not built yet.
 
 ## Phrase modes
 
