@@ -1,0 +1,12 @@
+# What the container needs to serve the Studio page, /api/bundle, /health and /score.
+# Every pin must equal the one in requirements.txt (tests/test_requirements_runtime.py checks it).
+# Python 3.13.
+xgboost==3.3.0
+scikit-learn==1.9.0
+scipy==1.18.1
+joblib==1.5.3
+pandas==3.0.3
+numpy==2.3.4
+fastapi==0.143.0
+uvicorn==0.54.0
+pydantic==2.14.0

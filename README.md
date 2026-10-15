@@ -190,7 +190,8 @@ export PYTHONPATH=src PYTHONIOENCODING=utf-8
 python -m uvicorn xplain.api:app --port 8000
 ```
 
-Then open http://127.0.0.1:8000/ (it plays `data/bundle_seed42.json`). `?match=NAME` plays
+Then open http://127.0.0.1:8000/ (it plays `data/bundle_seed3001.json`, the demo match; the
+development 0-0 match is `?match=seed42`). `?match=NAME` plays
 `data/bundle_NAME.json`, `?t=T` starts playback at event time T, `?lang=en|es|el` picks the
 commentary language and `?scope=all|1|2` the tables' starting scope. T is the bundle's event time `t` in seconds, which runs on through both halves
 (first-half added time included) and is not the minute on the clock: in seed42, `t=2400` is 41',
@@ -218,6 +219,21 @@ shows the minute and the half; the possession tab stays at the pitch's top-left,
 then right-pointing chevrons when attacking right and left-pointing chevrons then the code when
 attacking left. The lower third is a cyan name tab (player, team code and minute) on a dark body
 with the commentator's line in the chosen language, the tier and xP, and PVA on the right. Analyst and Player modes are not built yet.
+
+## Docker
+
+The image serves the Studio page, `/api/bundle` and `/score`. It needs the trained model
+(`models/xpass_v2/`, git-ignored: train it first) and the demo bundle `data/bundle_seed3001.json`;
+no Azure or OpenAI settings are needed to serve. Build and run from this folder:
+
+```bash
+docker build -t xplain-live:local .
+docker run --rm -p 8000:8000 xplain-live:local
+```
+
+Then open http://localhost:8000/. Runtime pins are in `requirements-runtime.txt` (a test keeps them
+equal to `requirements.txt`); `XPLAIN_BUNDLE_DIR` (default `/app/data` in the image) is the bundle
+folder.
 
 ## Phrase modes
 

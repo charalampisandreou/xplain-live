@@ -42,8 +42,8 @@
   // --- loading -------------------------------------------------------------------------------
 
   function matchName() {
-    const name = new URLSearchParams(location.search).get('match') || 'seed42';
-    return /^[a-z0-9_]+$/.test(name) ? name : 'seed42';
+    const name = new URLSearchParams(location.search).get('match') || 'seed3001';
+    return /^[a-z0-9_]+$/.test(name) ? name : 'seed3001';
   }
 
   function showStatus(text) {
