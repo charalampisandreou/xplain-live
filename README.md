@@ -9,8 +9,8 @@ overlay cards that a graphics system can render alongside the match.
 > repository (xpass_v2) behind a scoring API (`/score`), replay, an offline deterministic analysis
 > pipeline (outlier moments, SHAP-based drivers, per-half commentary gate, half reports, timeline,
 > pass marks), the Narrator with a code Verifier, and a first Agent Framework workflow that runs
-> them end to end (Analyst -> Explainer -> Narrator -> Verifier). Not built yet: personalization,
-> the live overlay UI and the Azure deployment.
+> them end to end (Analyst -> Explainer -> Narrator -> Verifier), and a per-match JSON bundle
+> for the web page. Not built yet: personalization, the web page and the Azure deployment.
 > Results, demo and deployment sections are filled in as they are measured.
 
 ## What it does
@@ -144,6 +144,27 @@ Per moment it prints the minute, player, xP percent (from code), the EN/ES/EL li
 Verifier verdict (accepted, retried, or rejected with reasons), then a summary. A moment that is
 rejected, times out or fails gets no line and never stops the others. `--mode strict|free|hints`
 overrides `XPLAIN_PHRASE_MODE`.
+
+## Match bundle
+
+`src/xplain/bundle.py` writes one JSON file per match for the web page, which plays it on the
+match clock without calling any model and without computing numbers or minutes:
+
+```bash
+python -m xplain.bundle --file data/match_seed42.jsonl --out data/bundle_seed42.json --no-llm
+```
+
+The bundle holds the match meta (teams, players, model and generator versions, phrase mode), a
+clock track (one `minute_label` per match minute of each half, added time included, from the
+match clock), every pass mark, every outlier moment with its line and narration status
+(`accepted`, `retried`, `rejected`, `not_commentated`, `not_run`), the half reports as moment ids,
+each player's full-time pass summary, and the score after each goal.
+
+Without `--no-llm` it runs the workflow for the narration (needs `az login`). A line is written
+once per moment: if `--out` already holds a bundle of the same match and model, its lines are
+reused and the model is not called for those moments (the final Verifier check still runs).
+`--fresh` ignores the old file. The command prints a one-line summary with the goals and the
+final score.
 
 ## Phrase modes
 

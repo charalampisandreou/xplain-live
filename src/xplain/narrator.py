@@ -148,6 +148,11 @@ class Narrator:
     def stored(self, moment_id: str) -> NarrationResult | None:
         return self._results.get(moment_id)
 
+    def remember(self, moment_id: str, result: NarrationResult) -> None:
+        """Store an earlier result for this moment, so narrate returns it without calling the model.
+        The workflow's final Verifier check still runs on its line."""
+        self._results[moment_id] = result
+
     async def narrate(self, bundle: MomentBundle) -> NarrationResult:
         """The stored result for this moment, or a new one (stored before it is returned). Never raises."""
         moment_id = bundle.moment.moment_id
