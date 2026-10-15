@@ -1,5 +1,6 @@
 import asyncio
 import json
+import math
 
 import pytest
 from pydantic import ValidationError
@@ -19,7 +20,8 @@ from xplain.bundle import (
 from xplain.narration import difficulty_tier
 from xplain.narrator import Narrator
 from xplain.pipeline import analyse_match, timeline, write_jsonl
-from xplain.schema import MatchMetaEvent, ShotEvent
+from xplain.contracts import PassMark
+from xplain.schema import MatchMetaEvent, PassEvent, PlayPattern, ShotEvent
 
 from .test_pipeline import WIDE, seed42_events, tiny_model, tiny_scorer  # noqa: F401  (fixtures)
 from .test_workflow import BAD, GOOD, FakeAgent
@@ -49,9 +51,9 @@ def test_json_round_trips(offline, online):
 
 def test_bundle_holds_every_pass_and_outlier(seed42_events, tiny_scorer, offline):  # noqa: F811
     bundles, marks = analyse_match(seed42_events, tiny_scorer, WIDE)
-    assert offline.marks == marks
+    assert [PassMark(**m.model_dump(exclude={"display"})) for m in offline.marks] == marks
     assert [m.bundle for m in offline.moments] == bundles
-    assert offline.meta.schema_version == "2" and offline.meta.model_version == tiny_scorer.model_version
+    assert offline.meta.schema_version == "3" and offline.meta.model_version == tiny_scorer.model_version
     meta = next(e for e in seed42_events if isinstance(e, MatchMetaEvent))
     assert offline.meta.generator_version == meta.generator_version and len(offline.meta.players) == 22
 
@@ -307,3 +309,94 @@ def test_line_reuse_reads_a_schema_1_file(online, tmp_path):
     data["meta"]["schema_version"] = "0"
     old.write_text(json.dumps(data), encoding="utf-8")
     assert stored_lines(old, online.meta.match_id, online.meta.model_version) == {}
+
+
+def as_schema_2(b: MatchBundle) -> str:
+    """The bundle as the schema "2" file it would have been: no display geometry, no attacks_right."""
+    data = b.model_dump(mode="json")
+    data["meta"]["schema_version"] = "2"
+    del data["meta"]["attacks_right"]
+    for m in data["marks"]:
+        del m["display"]
+    return json.dumps(data)
+
+
+def test_line_reuse_reads_a_schema_2_file(online, tmp_path):
+    new, old = tmp_path / "v3.json", tmp_path / "v2.json"
+    new.write_text(to_json(online), encoding="utf-8")
+    old.write_text(as_schema_2(online), encoding="utf-8")
+    from_v3 = stored_lines(new, online.meta.match_id, online.meta.model_version)
+    assert from_v3 and stored_lines(old, online.meta.match_id, online.meta.model_version) == from_v3
+
+
+# --- PVA and the display frame (schema 3) --------------------------------------------------------
+
+def test_pva_is_outcome_minus_xp(offline):
+    for e in offline.moments:
+        m = e.bundle.moment
+        assert m.delta == pytest.approx((1.0 if m.completed else 0.0) - m.xp, abs=1e-12)
+    for m in offline.marks:
+        assert m.delta == pytest.approx((1.0 if m.completed else 0.0) - m.xp, abs=1e-12)
+
+
+RESTARTS = {PlayPattern.CORNER, PlayPattern.GOAL_KICK, PlayPattern.THROW_IN, PlayPattern.FREE_KICK,
+            PlayPattern.KICK_OFF}
+LINE_UP_TOLERANCE = 0.05   # metres; on seed42 every open-play turnover lines up to 0.00
+
+
+def turnover_gaps(seed42_events, offline):  # noqa: F811
+    """(display gap, stored gap) from a failed pass's end to the next pass's start, at each change of
+    team within a half where the next pass is not a restart."""
+    pattern = {e.event_id: e.inputs.play_pattern for e in seed42_events if isinstance(e, PassEvent)}
+    out = []
+    for p, n in zip(offline.marks, offline.marks[1:], strict=False):
+        if p.period != n.period or p.team_id == n.team_id or p.completed or pattern[n.event_id] in RESTARTS:
+            continue
+        d = math.dist((p.display.end_x, p.display.end_y), (n.display.start_x, n.display.start_y))
+        raw = math.dist((p.pass_geometry.end_x, p.pass_geometry.end_y),
+                        (n.pass_geometry.start_x, n.pass_geometry.start_y))
+        out.append((d, raw))
+    return out
+
+
+def test_display_lines_up_at_turnovers(seed42_events, offline):  # noqa: F811
+    gaps = turnover_gaps(seed42_events, offline)
+    assert len(gaps) >= 50
+    assert max(d for d, _ in gaps) <= LINE_UP_TOLERANCE
+    # without the display frame the same pairs are far apart: the test has teeth
+    assert sorted(r for _, r in gaps)[len(gaps) // 2] > 20
+
+
+def test_display_rotates_the_right_team_in_each_half(offline):
+    home, away = offline.meta.home.team_id, offline.meta.away.team_id
+    assert offline.meta.attacks_right == {"1": home, "2": away}
+    seen = set()
+    for m in offline.marks:
+        g, d = m.pass_geometry, m.display
+        rotated = (m.team_id == home) == (m.period == 2)
+        want = ((120 - g.start_x, 80 - g.start_y, 120 - g.end_x, 80 - g.end_y) if rotated
+                else (g.start_x, g.start_y, g.end_x, g.end_y))
+        assert (d.start_x, d.start_y, d.end_x, d.end_y) == pytest.approx(want)
+        seen.add((m.team_id, m.period, rotated))
+    assert seen == {(home, 1, False), (away, 1, True), (home, 2, True), (away, 2, False)}
+
+
+def test_display_leaves_model_inputs_unchanged(seed42_events, tiny_scorer, offline):  # noqa: F811
+    before = [e.inputs for e in seed42_events if isinstance(e, PassEvent)]
+    bundles, marks = analyse_match(seed42_events, tiny_scorer, WIDE)
+    again = build_bundle(seed42_events, tiny_scorer, None, "hints", WIDE)
+    assert [e.inputs for e in seed42_events if isinstance(e, PassEvent)] == before
+    assert [m.pass_geometry for m in again.marks] == [m.pass_geometry for m in marks]
+    assert [(e.bundle.moment.evidence, e.bundle.explanation) for e in again.moments] == \
+        [(b.moment.evidence, b.explanation) for b in bundles]
+
+
+def test_wrong_display_geometry_is_rejected(offline):
+    data = offline.model_dump(mode="json")
+    data["marks"][0]["display"]["end_x"] += 1.0
+    with pytest.raises(ValidationError):
+        MatchBundle.model_validate(data)
+    data = offline.model_dump(mode="json")
+    data["meta"]["attacks_right"] = {"1": data["meta"]["away"]["team_id"], "2": data["meta"]["home"]["team_id"]}
+    with pytest.raises(ValidationError):
+        MatchBundle.model_validate(data)

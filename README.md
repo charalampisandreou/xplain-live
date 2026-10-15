@@ -161,12 +161,16 @@ match clock), every pass mark, every outlier moment with its line and narration 
 the half reports as moment ids, each player's full-time pass summary, the score after each goal,
 and the live rankings: one snapshot per commentated moment with the top 3 of its kind and half as
 it stood at that moment (each entry with its previous rank, or none when new). The page never
-ranks anything itself. Schema version 2.
+ranks anything itself. Every pass mark also carries display coordinates for one fixed pitch: the
+home team attacks right in the first half and left in the second, the away team the opposite
+(the other team's passes are turned 180 degrees, (x, y) -> (120 - x, 80 - y));
+`meta.attacks_right` names the team attacking right in each half. The stored coordinates, which
+the model uses, stay in the passer's own frame (always attacking toward x = 120). Schema version 3.
 
 Without `--no-llm` it runs the workflow for the narration (needs `az login`). A line is written
 once per moment: if `--out` already holds a bundle of the same match and model, its lines are
 reused and the model is not called for those moments (the final Verifier check still runs).
-Lines are also read from a schema 1 bundle, so rebuilding after the schema change keeps them.
+Lines are also read from a schema 1 or 2 bundle, so rebuilding after a schema change keeps them.
 With `--no-llm`, a moment whose line was rejected before is written as `not_run`.
 `--fresh` ignores the old file. The command prints a one-line summary with the goals and the
 final score.
@@ -191,8 +195,12 @@ shows the `minute_label` of the clock entry for that t. `GET /api/bundle/NAME` s
 `XPLAIN_BUNDLE_DIR` changes the folder. Controls: play/pause, speed 1x / 12x / 60x, previous and
 next pass (left and right arrows), Back to live (L), space for play/pause.
 
-The page only formats: every number, minute and ranking comes from the bundle, and xP is shown as
-a percent with the same rule as the code, round(100 * xP). Analyst and Player modes are not built
+The page only formats: every number, minute and ranking comes from the bundle. The tables and the
+plate show PVA (pass value added, the bundle's `delta` = outcome - xP: 1 - xP when completed, -xP
+when not) with a sign and two decimals; the bar length is |PVA| on a 0..1 scale. xP is shown
+small in the plate as a percent with the same rule as the code, round(100 * xP). The pitch draws
+the display coordinates; the label above it says who attacks which way in the current half, and a
+cyan bar under a team code in the score bug marks the team of the selected pass. Analyst and Player modes are not built
 yet.
 
 ## Phrase modes

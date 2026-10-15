@@ -8,7 +8,10 @@ Everything the page shows is computed here, by existing code; the page computes 
 minutes and calls no model:
   * clock:   one {t, minute_label} per match-minute boundary of each period, added time included,
              labelled by clock.match_clock; the page shows the label of the last entry with t <= now
-  * marks:   every PassMark (pipeline.analyse_match)
+  * marks:   every PassMark (pipeline.analyse_match) plus its display geometry: the pass drawn on
+             one fixed pitch where the home team attacks right in the first half and left in the
+             second (the away team the opposite); stored and model coordinates stay in the
+             passer's own frame. meta.attacks_right names the team attacking right per half
   * moments: every outlier's MomentBundle, with its line (or None) and its narration record
   * reports: per half, the moment_ids of pipeline.reports
   * players: pipeline.player_summary at full time for all 22 players (None: no passes)
@@ -40,17 +43,17 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 from . import analytics, clock
 from .analytics import Outlier
 from .config import PHRASE_MODES, AnalyticsConfig, phrase_mode
-from .contracts import MomentBundle, PassMark, PlayerSummary
+from .contracts import MomentBundle, PassGeometry, PassMark, PlayerSummary
 from .narration import NarratorOut, difficulty_tier
 from .narrator import NarrationResult, Narrator
 from .pipeline import analyse_match, ensure_match_file, load_events, player_summary, reports, timeline
-from .schema import MatchMetaEvent, ShotEvent
+from .schema import PITCH_LENGTH, PITCH_WIDTH, MatchMetaEvent, ShotEvent
 from .scoring import XPassScorer, find_default_model
 from .verifier import verify
 from .workflow import MomentOutcome, run_match
 
-SCHEMA_VERSION = "2"
-OLD_SCHEMA_VERSIONS: tuple[str, ...] = ("1",)  # still read for line reuse
+SCHEMA_VERSION = "3"
+OLD_SCHEMA_VERSIONS: tuple[str, ...] = ("1", "2")  # still read for line reuse
 MINUTE_S = 60.0
 NarrationStatus = Literal["accepted", "retried", "rejected", "not_commentated", "not_run"]
 LINE_STATUSES: tuple[str, ...] = ("accepted", "retried")
@@ -72,7 +75,7 @@ class PlayerRef(_Strict):
 
 
 class BundleMeta(_Strict):
-    schema_version: Literal["2"] = SCHEMA_VERSION
+    schema_version: Literal["3"] = SCHEMA_VERSION
     match_id: str
     home: TeamRef
     away: TeamRef
@@ -80,6 +83,7 @@ class BundleMeta(_Strict):
     model_version: str
     generator_version: str
     phrase_mode: str
+    attacks_right: dict[Literal["1", "2"], str]   # half -> team_id attacking right on the display pitch
 
 
 class ClockTick(_Strict):
@@ -182,10 +186,44 @@ class RankingSnapshot(_Strict):
         return self
 
 
+class DisplayGeometry(_Strict):
+    """A pass on the display pitch (see display_geometry); for drawing only, never for the model."""
+
+    start_x: float
+    start_y: float
+    end_x: float
+    end_y: float
+
+
+class BundleMark(PassMark):
+    """A PassMark with its display geometry."""
+
+    display: DisplayGeometry
+
+
+def display_rotated(team_id: str, period: int, home_team_id: str) -> bool:
+    """True when the team's passes are turned 180 degrees for display: the home team in the second
+    half, the away team in the first (stored passes always attack toward x = 120, i.e. right)."""
+    return (team_id == home_team_id) == (period == 2)
+
+
+def display_geometry(g: PassGeometry, team_id: str, period: int, home_team_id: str) -> DisplayGeometry:
+    """The pass on the display pitch: unchanged, or rotated 180 degrees, (x, y) -> (120 - x, 80 - y)."""
+    if not display_rotated(team_id, period, home_team_id):
+        return DisplayGeometry(start_x=g.start_x, start_y=g.start_y, end_x=g.end_x, end_y=g.end_y)
+    return DisplayGeometry(start_x=PITCH_LENGTH - g.start_x, start_y=PITCH_WIDTH - g.start_y,
+                           end_x=PITCH_LENGTH - g.end_x, end_y=PITCH_WIDTH - g.end_y)
+
+
+def display_mark(mark: PassMark, home_team_id: str) -> BundleMark:
+    return BundleMark(**dict(mark), display=display_geometry(mark.pass_geometry, mark.team_id, mark.period,
+                                                             home_team_id))
+
+
 class MatchBundle(_Strict):
     meta: BundleMeta
     clock: ClockTrack
-    marks: list[PassMark]
+    marks: list[BundleMark]
     moments: list[MomentEntry]
     reports: list[ReportIds]
     players: dict[str, PlayerSummary | None]
@@ -213,6 +251,13 @@ class MatchBundle(_Strict):
                                      f"holds {e.moment_id} ({m.kind}, period {m.period}, t={m.t})")
         if [s.t for s in self.rankings] != sorted(s.t for s in self.rankings):
             raise ValueError("ranking snapshots must be in t order")
+        home, away = self.meta.home.team_id, self.meta.away.team_id
+        if self.meta.attacks_right != {"1": home, "2": away}:
+            raise ValueError(f"attacks_right must be {{'1': {home!r}, '2': {away!r}}}, got {self.meta.attacks_right}")
+        wrong = [m.event_id for m in self.marks
+                 if m.display != display_geometry(m.pass_geometry, m.team_id, m.period, home)]
+        if wrong:
+            raise ValueError(f"marks with a wrong display geometry: {wrong[:5]}")
         return self
 
 
@@ -316,9 +361,10 @@ def build_bundle(events: Sequence, scorer: XPassScorer, outcomes: Sequence[Momen
             model_version=scorer.model_version,
             generator_version=meta.generator_version,
             phrase_mode=mode or phrase_mode(),
+            attacks_right={"1": meta.home_team_id, "2": meta.away_team_id},
         ),
         clock=clock_track(events),
-        marks=marks,
+        marks=[display_mark(m, meta.home_team_id) for m in marks],
         moments=moments,
         reports=report_ids,
         players={p.player_id: player_summary(marks, p.player_id) for p in meta.players},

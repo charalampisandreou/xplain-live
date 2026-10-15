@@ -14,6 +14,8 @@
 
   const $ = (id) => document.getElementById(id);
   const percent = (x) => Math.round(100 * x);
+  // PVA (the bundle's delta = outcome - xP) as sign + two decimals, with a real minus sign
+  const pva = (x) => (x < 0 ? '−' : '+') + Math.abs(x).toFixed(2);
   const code = (name) => (name || '').slice(0, 3).toUpperCase();
 
   const state = {
@@ -56,7 +58,7 @@
       return;
     }
     const bundle = await res.json();
-    if (!bundle.meta || bundle.meta.schema_version !== '2') {
+    if (!bundle.meta || bundle.meta.schema_version !== '3') {
       showStatus('The match bundle "' + name + '" has an old schema; rebuild it with python -m xplain.bundle.');
       return;
     }
@@ -206,17 +208,34 @@
     if (key === state.renderedKey) return;
     state.renderedKey = key;
 
-    renderScoreBug(tick, score);
+    renderScoreBug(tick, score, sel);
     $('subtitle').textContent = 'Every pass scored live · ' + (half === 2 ? 'second' : 'first') + ' half so far';
+    renderDirection(sel >= 0 ? idx.marks[sel].period : half);
     renderPitch(sel);
     KINDS.forEach((k, i) => renderTable(k, snaps[i], plate));
     renderPlate(plate);
   }
 
-  function renderScoreBug(tick, score) {
+  function renderScoreBug(tick, score, sel) {
     const s = score >= 0 ? idx.score[score] : null;
     $('score').textContent = s ? s.home + '–' + s.away : '–';
     $('minute').textContent = tick >= 0 ? idx.ticks[tick].minute_label + "'" : '';
+    // possession: the team of the selected pass gets the cyan bar under its code
+    const ball = sel >= 0 ? idx.marks[sel].team_id : null;
+    const meta = state.bundle.meta;
+    for (const [id, team] of [['home-code', meta.home], ['away-code', meta.away]]) {
+      const has = team.team_id === ball;
+      $(id).classList.toggle('has-ball', has);
+      $(id).setAttribute('aria-label', team.name + (has ? ', in possession' : ''));
+    }
+  }
+
+  // "DUS →   ← MAR": who attacks right on the display pitch in this half (meta.attacks_right)
+  function renderDirection(period) {
+    const meta = state.bundle.meta;
+    const right = meta.attacks_right[String(period)];
+    const left = right === meta.home.team_id ? meta.away.team_id : meta.home.team_id;
+    $('attack-dir').textContent = teamCode(right) + ' → ← ' + teamCode(left);
   }
 
   // the latest snapshot of a kind with t <= now in the given half, or null
@@ -252,21 +271,16 @@
     return node;
   }
 
-  // Coordinates are in the passing team's frame (attacking toward x = 120). A pass by the other
-  // team is mirrored into the selected pass's frame so that "Attack →" holds for the whole picture.
-  function geometry(mark, teamId) {
-    const g = mark.pass_geometry;
-    if (mark.team_id === teamId) return [g.start_x, g.start_y, g.end_x, g.end_y];
-    return [120 - g.start_x, 80 - g.start_y, 120 - g.end_x, 80 - g.end_y];
-  }
-
-  function drawPass(parent, mark, teamId, selected, opacity) {
-    const [sx, sy, ex, ey] = geometry(mark, teamId);
+  // Passes are drawn in the bundle's display coordinates (mark.display): one fixed pitch per half,
+  // home attacking right in the first half and left in the second. The page does no mirroring.
+  function drawPass(parent, mark, selected, opacity) {
+    const d = mark.display;
+    const [sx, sy, ex, ey] = [d.start_x, d.start_y, d.end_x, d.end_y];
     const g = el('g', { opacity: String(opacity) });
     const width = selected ? 0.75 : 0.45;
     const colour = mark.completed ? '#3BD16F' : '#FF4B47';
     if (selected) {
-      g.appendChild(el('circle', { cx: sx, cy: sy, r: 1.6, fill: '#10294A', stroke: colour, 'stroke-width': 0.45 }));
+      g.appendChild(el('circle', { cx: sx, cy: sy, r: 1.6, fill: '#10294A', stroke: '#3FD0FF', 'stroke-width': 0.45 }));
     }
     if (mark.completed) {
       g.appendChild(el('line', { x1: sx, y1: sy, x2: ex, y2: ey, stroke: colour, 'stroke-width': width,
@@ -293,9 +307,11 @@
     }
     const mark = idx.marks[sel];
     for (let back = 3; back >= 1; back--) {
-      if (sel - back >= 0) drawPass(layer, idx.marks[sel - back], mark.team_id, false, FADED[back - 1]);
+      const prev = idx.marks[sel - back];
+      // only passes of the same half: the display pitch turns round at half-time
+      if (prev && prev.period === mark.period) drawPass(layer, prev, false, FADED[back - 1]);
     }
-    drawPass(layer, mark, mark.team_id, true, 1);
+    drawPass(layer, mark, true, 1);
     svg.setAttribute('aria-label', 'Pitch with the selected pass by ' + playerName(mark) + ' drawn as ' +
       (mark.completed ? 'a green solid arrow, because it was completed'
         : 'a red dashed line ending in a cross, because it was not completed') +
@@ -336,11 +352,11 @@
       who.appendChild(div('meta', teamCode(m.team_id, m.team_name) + ' · ' + m.minute_label + "'"));
       row.appendChild(who);
       const track = div('track');
-      const bar = div('bar ' + kind);
-      bar.style.width = percent(m.xp) + '%';
+      const bar = div('bar ' + (m.delta < 0 ? 'neg' : 'pos'));
+      bar.style.width = (100 * Math.abs(m.delta)) + '%';   // |PVA| on a 0..1 track
       track.appendChild(bar);
       row.appendChild(track);
-      row.appendChild(div('value', percent(m.xp) + '%'));
+      row.appendChild(div('value', pva(m.delta)));
       const mv = moveText(e);
       row.appendChild(div('move' + (mv.cls ? ' ' + mv.cls : ''), mv.text));
       rows.appendChild(row);
@@ -365,11 +381,11 @@
     lower.classList.add(m.completed ? 'completed' : 'failed');
     $('lower-name').textContent = playerName(m);
     $('lower-meta').textContent = teamCode(m.team_id, m.team_name) + ' · ' + m.minute_label + "' · " +
-      entry.tier.en + ' pass, ' + (m.completed ? 'completed' : 'not completed');
+      entry.tier.en + ' pass, ' + (m.completed ? 'completed' : 'not completed') + ' · xP ' + percent(m.xp) + '%';
     const text = entry.line ? entry.line['line_' + state.lang] : '';
     line.textContent = text || '';
     line.setAttribute('lang', state.lang);
-    $('lower-xp').textContent = percent(m.xp) + '%';
+    $('lower-xp').textContent = pva(m.delta);
   }
 
   // --- stage scaling -------------------------------------------------------------------------

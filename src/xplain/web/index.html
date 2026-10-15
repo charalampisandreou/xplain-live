@@ -64,7 +64,7 @@
     <div class="legend">
       <span class="ok">Completed</span>
       <span class="bad">Not completed</span>
-      <span class="dir">Attack →</span>
+      <span class="dir" id="attack-dir"></span>
     </div>
   </div>
 
@@ -78,12 +78,11 @@
       <div class="thead"><h2 id="t-succ">Surprise successes</h2><div class="tsub">hard passes completed</div></div>
       <div class="rows" id="rows-surprise_success"></div>
     </section>
-    <div class="footnote">Bars show xP: how often a pass like this is completed. Rankings update live and reset at half-time.</div>
+    <div class="footnote">Bars show pass value added (PVA): the result (1 completed, 0 not) minus xP, so a longer bar is a bigger surprise. Rankings update live and reset at half-time.</div>
   </div>
 
   <!-- lower third -->
   <div class="lower" id="lower" aria-live="polite">
-    <div class="edge" id="lower-edge"></div>
     <div class="plate">
       <div class="plate-head">
         <div class="plate-name" id="lower-name">&nbsp;</div>
@@ -93,7 +92,7 @@
     </div>
     <div class="xpbox">
       <div class="xpbig" id="lower-xp">&nbsp;</div>
-      <div class="xpsub">should complete</div>
+      <div class="xpsub">pass value added</div>
     </div>
   </div>
 
