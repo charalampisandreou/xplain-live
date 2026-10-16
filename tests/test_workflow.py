@@ -1,5 +1,6 @@
 import asyncio
 import json
+import re
 
 import pytest
 
@@ -166,8 +167,9 @@ def test_outcome_lines_and_summary(seed42_events, tiny_scorer):  # noqa: F811
     assert f"xP {analytics.percent(m.xp)}%" in rejected[0]                       # the percent from code
     assert "  (no line)" in rejected
     assert retried[1:4] == [f"  EN: {NEUTRAL.line_en}", f"  ES: {NEUTRAL.line_es}", f"  EL: {NEUTRAL.line_el}"]
-    assert summary(outcomes, 3.0) == ("3 moments: accepted 1, retried 1 (accepted on a retry), rejected 1; "
-                                      "mean 1.00 s per moment (0.00 s narrating)")
+    # narrating time is measured wall clock: check its format, not its value
+    assert re.fullmatch(r"3 moments: accepted 1, retried 1 \(accepted on a retry\), rejected 1; "
+                        r"mean 1\.00 s per moment \(\d+\.\d\d s narrating\)", summary(outcomes, 3.0))
     assert summary([], 0.0).startswith("0 moments: accepted 0")
 
 
