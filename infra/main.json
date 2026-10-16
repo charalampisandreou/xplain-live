@@ -1,0 +1,92 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "description": "Standard (workload profiles, Consumption) Container Apps environment + the Studio app. environmentMode is deliberately not set. The app pulls from ACR with the user-assigned identity (AcrPull); the workspace key is read with listKeys() inside the template and never passes through the CLI."
+  },
+  "parameters": {
+    "location": {
+      "type": "string",
+      "defaultValue": "germanywestcentral",
+      "allowedValues": [ "germanywestcentral" ]
+    },
+    "environmentName": { "type": "string", "defaultValue": "cae-xplain-std" },
+    "appName": { "type": "string", "defaultValue": "xplain-studio" },
+    "workspaceName": { "type": "string", "defaultValue": "workspace-rgplhackdesV2i" },
+    "identityName": { "type": "string", "defaultValue": "id-xplain-live" },
+    "registryServer": { "type": "string", "defaultValue": "xplainlive.azurecr.io" },
+    "image": { "type": "string", "defaultValue": "xplainlive.azurecr.io/xplain-live:591db22" }
+  },
+  "variables": {
+    "workspaceId": "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName'))]",
+    "identityId": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('identityName'))]",
+    "environmentId": "[resourceId('Microsoft.App/managedEnvironments', parameters('environmentName'))]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.App/managedEnvironments",
+      "apiVersion": "2026-07-01",
+      "name": "[parameters('environmentName')]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "workloadProfiles": [
+          { "name": "Consumption", "workloadProfileType": "Consumption" }
+        ],
+        "appLogsConfiguration": {
+          "destination": "log-analytics",
+          "logAnalyticsConfiguration": {
+            "customerId": "[reference(variables('workspaceId'), '2023-09-01').customerId]",
+            "sharedKey": "[listKeys(variables('workspaceId'), '2023-09-01').primarySharedKey]"
+          }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.App/containerApps",
+      "apiVersion": "2026-07-01",
+      "name": "[parameters('appName')]",
+      "location": "[parameters('location')]",
+      "dependsOn": [ "[variables('environmentId')]" ],
+      "identity": {
+        "type": "UserAssigned",
+        "userAssignedIdentities": {
+          "[variables('identityId')]": {}
+        }
+      },
+      "properties": {
+        "environmentId": "[variables('environmentId')]",
+        "workloadProfileName": "Consumption",
+        "configuration": {
+          "activeRevisionsMode": "Single",
+          "ingress": {
+            "external": true,
+            "targetPort": 8000,
+            "allowInsecure": false
+          },
+          "registries": [
+            {
+              "server": "[parameters('registryServer')]",
+              "identity": "[variables('identityId')]"
+            }
+          ]
+        },
+        "template": {
+          "containers": [
+            {
+              "name": "xplain-studio",
+              "image": "[parameters('image')]",
+              "resources": { "cpu": "[json('0.5')]", "memory": "1Gi" }
+            }
+          ],
+          "scale": { "minReplicas": 0, "maxReplicas": 1 }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "fqdn": {
+      "type": "string",
+      "value": "[reference(parameters('appName'), '2026-07-01').configuration.ingress.fqdn]"
+    }
+  }
+}
