@@ -5,13 +5,19 @@ Expectation versus outcome, live. A studio copilot for the Microsoft
 expected with what happened, explains the gap, and emits timed, machine-readable
 overlay cards that a graphics system can render alongside the match.
 
-> Status: work in progress. Built: the synthetic match generator, the pass model trained in this
-> repository (xpass_v2) behind a scoring API (`/score`), replay, an offline deterministic analysis
-> pipeline (outlier moments, SHAP-based drivers, per-half commentary gate, half reports, timeline,
-> pass marks), the Narrator with a code Verifier, and a first Agent Framework workflow that runs
-> them end to end (Analyst -> Explainer -> Narrator -> Verifier), and a per-match JSON bundle
-> for the web page. Not built yet: personalization, the web page and the Azure deployment.
-> Results, demo and deployment sections are filled in as they are measured.
+> Status: work in progress. **Live demo:** the Studio page playing a synthetic match (seed 3001) at
+> https://xplain-studio.whiteocean-b5bbd7fb.germanywestcentral.azurecontainerapps.io/
+>
+> Built: the synthetic match generator, the pass model trained in this repository (xpass_v2) behind a
+> scoring API (`/score`), replay, an offline deterministic analysis pipeline (outlier moments,
+> SHAP-based drivers, per-half commentary gate, half reports, timeline, pass marks), the Narrator with
+> a code Verifier, an Agent Framework workflow that runs them end to end (Analyst -> Explainer ->
+> Narrator -> Verifier), a per-match JSON bundle, the Studio web page that plays the bundle on the
+> match clock, and its Azure deployment (Container Apps from an ARM template, see "Deploy to Azure").
+> The deployed page serves a precomputed bundle: its lines were generated with Foundry and checked by
+> the Verifier when the bundle was built. Not built yet: personalization modes, the Analyst and Player
+> screens, a recap agent, and live mode (the deployed app calling Foundry itself).
+> Results and demo sections are filled in as they are measured.
 
 ## What it does
 
