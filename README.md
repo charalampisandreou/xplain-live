@@ -235,6 +235,44 @@ Then open http://localhost:8000/. Runtime pins are in `requirements-runtime.txt`
 equal to `requirements.txt`); `XPLAIN_BUNDLE_DIR` (default `/app/data` in the image) is the bundle
 folder.
 
+## Deploy to Azure
+
+The Studio runs on Azure Container Apps in `germanywestcentral`:
+https://xplain-studio.whiteocean-b5bbd7fb.germanywestcentral.azurecontainerapps.io/
+
+`infra/main.json` (ARM, Microsoft.App API 2026-07-01) describes the environment `cae-xplain-std` and the
+app `xplain-studio` (0.5 vCPU / 1 GiB, 0 to 1 replicas, so it scales to zero). The app pulls
+`xplainlive.azurecr.io/xplain-live:<tag>` with the user-assigned identity `id-xplain-live` (AcrPull role),
+so it holds no registry password, token or other secret. Logs go to the Log Analytics workspace
+`workspace-rgplhackdesV2i` (daily ingestion cap 0.1 GB). The template reads the workspace key with
+`listKeys()` itself, so the key never passes through the CLI.
+
+One command deploys the current commit. It needs `az login`, Docker running and a clean working tree:
+
+```powershell
+./scripts/deploy_azure.ps1
+```
+
+The script builds the image with local Docker as a single linux/amd64 manifest, tags it with the git short
+sha and pushes it to the registry. It then prints a what-if preview and asks y/n before running
+`az deployment group create`, and ends by printing the URL and `/health`. ACR Tasks (`az acr build`) is
+not used, because it is paused on credit subscriptions. The model and the demo bundle are git-ignored and
+are copied from the local checkout.
+
+**Warning:** the full `az deployment group what-if` output contains the evaluated workspace key. The
+script prints it with `--result-format ResourceIdOnly`; if you run what-if by hand, do the same.
+
+Measured on 2026-10-16: a request after scale to zero (cold start) took 4.95 s; warm requests take under 1 s.
+
+The environment runs in Container Apps **Express** mode (the platform picks it even though the template
+does not set `environmentMode`). Express facts that matter here:
+- no custom domains; the app uses its `azurecontainerapps.io` URL;
+- user-assigned managed identities only (no system-assigned);
+- pulling from ACR with the identity works when the identity and the registry are sent in one PUT, as the
+  template does; adding the registry to an existing app afterwards failed with `BuildFailed: Authentication failed`;
+- `az containerapp logs show` (Azure CLI 2.91) fails on Express apps, so read logs with a query on
+  `ContainerAppConsoleLogs_CL` in the workspace.
+
 ## Phrase modes
 
 `XPLAIN_PHRASE_MODE` (or `--mode` on the workflow CLI) sets how the Narrator model is briefed. The
