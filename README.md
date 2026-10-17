@@ -11,12 +11,21 @@ overlay cards that a graphics system can render alongside the match.
 > Built: the synthetic match generator, the pass model trained in this repository (xpass_v2) behind a
 > scoring API (`/score`), replay, an offline deterministic analysis pipeline (outlier moments,
 > SHAP-based drivers, per-half commentary gate, half reports, timeline, pass marks), the Narrator with
-> a code Verifier, an Agent Framework workflow that runs them end to end (Analyst -> Explainer ->
-> Narrator -> Verifier), a per-match JSON bundle, the Studio web page that plays the bundle on the
-> match clock, and its Azure deployment (Container Apps from an ARM template, see "Deploy to Azure").
-> The deployed page serves a precomputed bundle: its lines were generated with Foundry and checked by
-> the Verifier when the bundle was built. Not built yet: personalization modes, the Analyst and Player
-> screens, a recap agent, and live mode (the deployed app calling Foundry itself).
+> a code Verifier (five rotating sentence frames, see "Narration contract"), an Agent Framework
+> workflow that runs them end to end (Analyst -> Explainer -> Narrator -> Verifier), a per-match JSON
+> bundle, the Studio web page that plays the bundle on the match clock (goal flash, stepping through
+> narrated moments, an in-plate narration language switch), a script that compares Narrator models
+> (`scripts/compare_models.py`, see "Model comparison"), and the Azure deployment (Container Apps from
+> an ARM template, see "Deploy to Azure"). The deployed page serves a precomputed bundle: its lines were
+> generated with Foundry (gpt-4.1-mini) and checked by the Verifier when the bundle was built.
+> The model files and the demo bundle are published in the open-licence release
+> [data-v1](https://github.com/charalampisandreou/xplain-live/releases/tag/data-v1) (model files MIT,
+> bundle CC BY 4.0). The bundle there was replaced after the narration retune; its SHA-256 is
+> `1674038d40202b7ac1a16bd4343407af2e41eaedee2fa45620dd57f48e56d864`.
+>
+> Not built yet: the Recap Editor, the agent trace (planned for the Analyst screen), the Analyst and
+> Player screens, personalization modes (analyst, casual fan, player focus, favourite club or player),
+> and live mode (the deployed app calling Foundry itself).
 > Results and demo sections are filled in as they are measured.
 
 ## What it does
@@ -42,6 +51,9 @@ _To be written once the end-to-end demo works. It will lead with measured result
   author (a native Greek speaker). The Spanish lines and the Spanish phrase table were drafted with
   an AI assistant and have not been reviewed by a native speaker. The code checks difficulty
   wording and unsupported claims in all three languages, but it cannot judge naturalness.
+- **Greek is checked for correctness, not polished.** The author, a native Greek speaker, reviews the
+  Greek phrase table and tier words for correctness; the generated Greek lines are not edited line by
+  line and may still read stiffly.
 - **The outcome-cause check is a heuristic.** A causal word must sit next to a difficulty word to
   be accepted; the check can miss some phrasings and paraphrases, and does not read the sentence.
 
@@ -226,6 +238,18 @@ then right-pointing chevrons when attacking right and left-pointing chevrons the
 attacking left. The lower third is a cyan name tab (player, team code and minute) on a dark body
 with the commentator's line in the chosen language, the tier and xP, and PVA on the right. Analyst and Player modes are not built yet.
 
+Also in the Studio:
+
+- **Goal flash.** The score bug pulses and the plate shows "GOAL · team · minute" (minute from the score
+  track) until play restarts, for at least four seconds of real time at any speed.
+- **Stepping through narrated moments.** Chevrons with a counter, or the `[` and `]` keys, move to the
+  previous or next narrated moment; only moments the match has already reached are offered, so nothing
+  is spoiled.
+- **Fixed-size plate** that does not jump with line length, and a **NARRATION EN / ES / EL switch inside
+  the plate** (the header no longer has a language switch).
+- **PVA column in every state** (a dash while waiting for a pass, "GOAL" over the minute on a goal) and
+  "xP" written with that casing throughout.
+
 ## Docker
 
 The image serves the Studio page, `/api/bundle` and `/score`. It needs the trained model
@@ -302,6 +326,23 @@ moment id, so the same moment always gets the same nudge.
   a **concession** ("not completed, even though it was along the ground"). It never gives a cause
   of the outcome. Drivers explain why the *model* rated the pass as it did, not why the pass
   succeeded or failed.
+- **Five sentence frames.** Each moment gets one frame, chosen in code (not by the model) and rotated
+  through the match from a start fixed by the match id, so neighbouring lines never share a frame and
+  a re-run gives the same frames: `reason` (the pass, its difficulty and the reason for the rating, then
+  the outcome), `concession` (the pass and outcome, then what it was conceded against), `concession_first`
+  (opens with the concession), `player_first` (the player as the subject, concession last) and
+  `tier_first` (opens with the difficulty word and its reason, then a contrast word, then the outcome).
+  The two frames that start with the pass alternate between two openers ("X's pass" / "The pass from X";
+  Spanish and Greek have their own pair), and the outcome phrase rotates through four per kind
+  (for example "does not find a teammate", "is lost", "goes astray", "does not reach a teammate").
+  The difficulty tier words are fixed per language; the Greek ones are πολύ εύκολη, εύκολη, περίπλοκη,
+  δύσκολη and πολύ δύσκολη.
+- **Repetition, measured** with `scripts/line_variety.py` (share of near-duplicate lines within a
+  bundle) on two synthetic matches, one run each: on seed 3001 (17 commentated moments), near-duplicate
+  lines fell from 76% / 76% / 88% (EN / ES / EL) before the frames to 24% / 53% / 47% after; 17 of 17
+  lines were accepted on the first try and none rejected. On seed 42, 16 of 17 were accepted on the
+  first try and none rejected. These are measurements on two generated matches, not a general claim
+  about the Narrator.
 - A code Verifier (deterministic, no LLM) checks every line before it is shown. It rejects a line
   that:
   - is not one non-empty sentence, or is over the word limit of its language;
@@ -316,12 +357,33 @@ moment id, so the same moment always gets the same nudge.
   - uses "mainly" or a similar word without driver 1 declared, or declares no driver although one
     points the way of the rating;
   - uses a causal word (because, due to, thanks to and their Spanish and Greek equivalents) away
-    from a difficulty word, which reads as a cause of the outcome.
+    from a difficulty word, which reads as a cause of the outcome;
+  - (hints mode) leaves a declared driver unnamed in any language, gives the drivers a different role
+    (reason for the rating or concession on the outcome) in the three languages, names a position driver
+    by both its depth and its width, or puts a concession and a causal marker in one clause;
+  - opens with the difficulty word (the `tier_first` frame) without a contrast word before the outcome;
+  - says "success" or its Spanish and Greek forms (con éxito, επιτυχ*); the card shows the outcome.
+  Phrase-table facts such as a zone ("in the middle third") are accepted only as facts of a declared driver.
 - A rejected line is retried up to twice, each time with the Verifier's reasons (three attempts in
   all). If every attempt is rejected, or the model times out or fails, the moment simply has no
   line. The card is still shown.
 - Length: the prompt asks for about 18 words; the Verifier rejects more than 24 words in any
   language (`verifier.WORD_LIMIT`, one value; the plate has room for two lines).
+
+## Model comparison
+
+`scripts/compare_models.py` narrates the same 17 commentated moments of seed 3001 with several Foundry
+deployments (same prompt, frames, phrase table and Verifier, hints mode, up to 3 attempts) and writes
+`reports/model_compare/report.md`: first try / retried / rejected, repetition, latency, tokens, a rough
+cost and every line side by side. It is a measurement only; it changes nothing in the Narrator. Results:
+gpt-4.1-mini, gpt-4.1 and gpt-6.1-sol all gave 17 accepted on the first try, 0 retried and 0 rejected.
+gpt-4.1 produced nearly identical lines at about five times the estimated cost per bundle (0.13 against
+0.03 USD, from the script's price table), so the Narrator still uses gpt-4.1-mini. gpt-6.1-sol has no
+price in the script and is to be re-tested. Caveats: one run per model, and the same model gives
+different repetition numbers in different runs (gpt-4.1-mini: 24% / 65% / 65% near-duplicates in this
+run, 24% / 53% / 47% in the run above), so small differences between models mean little; and gpt-6.1-sol
+rejects any temperature but 1 (it ran with `reasoning_effort=low`) while the gpt-4.1 models ran at 0.2,
+so that row is not a like-for-like comparison.
 
 ## How moments are chosen
 
