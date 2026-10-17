@@ -59,6 +59,73 @@ def test_bundle_dir_env_override(bundle_dir, monkeypatch):
         assert c.get("/api/bundle/demo_1").status_code == 200
 
 
+def test_narration_nav_is_on_the_page(client):
+    html = client.get("/").text
+    assert 'id="narrnav"' in html and 'hidden' in html.split('id="narrnav"')[1].split(">")[0]
+    assert 'id="narr-prev" aria-label="Previous narrated moment"' in html
+    assert 'id="narr-next" aria-label="Next narrated moment"' in html
+    assert 'id="narr-count" aria-live="polite"' in html
+
+
+def test_narration_keys_and_replay_are_wired(client):
+    js = client.get("/static/app.js").text
+    assert "e.key === '['" in js and "narrStep(-1)" in js
+    assert "e.key === ']'" in js and "narrStep(1)" in js
+    assert "enterReplay(target.bundle.moment.moment_id)" in js   # the chevrons reuse replay mode
+
+
+def test_goal_state_text_uses_the_minute_label(client):
+    js = client.get("/static/app.js").text
+    body = js.split("function goalTabText(s)")[1].split("}")[0]
+    assert "s.minute_label" in body and "'Goal · '" in body
+    # fires only from the playback advance in frame(); the goal plate only while live
+    frame = js.split("function frame(ts)")[1].split("function isLive")[0]
+    assert "goalFlash(after, ts)" in frame and "state.goal.restartT" in frame
+    flash = js.split("function goalFlash(i, ts)")[1].split("function pulse(")[0]
+    assert flash.index("pulse(3") < flash.index("if (!isLive()) return") < flash.index("state.goal = {")
+
+
+def test_xp_keeps_its_casing(client):
+    html = client.get("/").text
+    js = client.get("/static/app.js").text
+    css = client.get("/static/app.css").text
+    for text in (html, js):
+        assert "XP " not in text and "XP<" not in text and "'XP" not in text
+    assert ".xp { text-transform: none; }" in css
+    assert '<span class="xp">xP</span>' in html.split('id="lower-xp"')[1]   # the upper-case plate meta
+    plate = js.split("function renderPlate(entry)")[1].split("async function fitLines")[0]
+    assert "' · xP" not in plate and "'xP" not in plate   # the meta no longer writes xP as text
+
+
+def test_plate_has_one_fixed_height(client):
+    css = client.get("/static/app.css").text
+    js = client.get("/static/app.js").text
+    body = css.split(".body {")[1].split("}")[0]
+    assert "height: 96px" in body and "min-height" not in body
+    assert "line-height: 24px" in css.split(".line {")[1].split("}")[0]
+    assert "MIN_LINE_PX = 15" in js and "TWO_LINES_PX = 48" in js
+
+
+def test_plate_transitions_are_light(client):
+    js = client.get("/static/app.js").text
+    css = client.get("/static/app.css").text
+    assert "offsetWidth" not in js   # no forced layout to restart a fade
+    plate = js.split("function renderPlate(entry)")[1].split("// --- stage scaling")[0]
+    assert "innerHTML" not in plate and "textContent" in plate
+    assert "prefers-reduced-motion: reduce" in js and "reducedMotion.matches" in js
+    assert "tabular-nums" in css and "min-width: 7ch" in css
+
+
+def test_pitch_is_pinned_and_plate_columns_are_scoped(client):
+    css = client.get("/static/app.css").text
+    # a bare .left rule also styled .possession.left and pushed the pitch drawing down
+    assert "\n.left {" not in css and "\n.right {" not in css
+    assert ".body > .left {" in css and ".body > .right {" in css
+    assert "position: absolute; top: 0; left: 0;" in css.split(".pitch > #pitch-svg {")[1].split("}")[0]
+    # a rule for every svg in .pitch also caught the possession tab's chevrons
+    assert ".pitch svg" not in css
+
+
 def test_health_and_score_routes_are_kept(client):
     assert client.get("/health").json()["status"] == "ok"
     assert any(getattr(r, "path", None) == "/score" for r in client.app.routes)

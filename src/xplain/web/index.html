@@ -15,6 +15,7 @@
 
   <!-- score bug -->
   <div class="scorebug" id="scorebug">
+    <span class="goal-ring" id="goal-ring" aria-hidden="true"></span>
     <span class="code" id="home-code">&nbsp;</span>
     <span class="score" id="score">&nbsp;</span>
     <span class="code" id="away-code">&nbsp;</span>
@@ -89,10 +90,11 @@
       <div class="thead"><h2 id="t-succ">Surprise successes</h2><div class="tsub">hard passes completed</div></div>
       <div class="rows" id="rows-surprise_success"></div>
     </section>
-    <div class="footnote">PVA: the result minus the chance the pass had (xP), in points. Longer bar, bigger surprise.</div>
+    <div class="footnote">PVA: the result minus the chance the pass had (<span class="xp">xP</span>), in points. Longer bar, bigger surprise.</div>
   </div>
 
-  <!-- lower third: name tab on top of a dark body -->
+  <!-- lower third: name tab on top of a dark body; the narration nav sits on the name tab's row -->
+  <div class="plate" id="plate">
   <div class="lower waiting" id="lower" aria-live="polite">
     <div class="nametab" id="nametab">
       <span class="tab-name" id="lower-name"></span>
@@ -102,13 +104,19 @@
     <div class="body">
       <div class="left">
         <div class="line" id="lower-line"></div>
-        <div class="meta" id="lower-meta"></div>
+        <div class="meta"><span id="lower-meta"></span><span id="lower-xp" hidden> · <span class="xp">xP</span> <span id="lower-xp-val"></span></span></div>
       </div>
       <div class="right">
         <div class="pvanum" id="lower-pva">–</div>
         <div class="pvalabel">PVA</div>
       </div>
     </div>
+  </div>
+  <div class="narrnav" id="narrnav" role="group" aria-label="Narrated moments" hidden>
+    <button type="button" id="narr-prev" aria-label="Previous narrated moment"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"></path></svg></button>
+    <span class="narr-count" id="narr-count" aria-live="polite"></span>
+    <button type="button" id="narr-next" aria-label="Next narrated moment"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"></path></svg></button>
+  </div>
   </div>
 
   <!-- controls -->

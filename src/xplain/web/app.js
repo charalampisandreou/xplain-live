@@ -15,6 +15,13 @@
   const HALF_LABEL = { 1: '1st half', 2: '2nd half' };
   const SCOPES = ['all', '1', '2'];
   const FADED = [0.8, 0.55, 0.35];   // opacity of the 1st, 2nd and 3rd pass before the selected one
+  const FADE_MS = 150;               // the one cross-fade for every plate and tab change
+  const GOAL_MIN_MS = 4000;          // the goal plate holds at least this long in real time, at any speed
+  const PULSE_MS = 830;              // one ring pulse; three of them round the score plate
+  const SOFT_PULSE_EVERY = 4000;     // then one softer pulse this often while the goal plate holds
+  const LANGS = ['en', 'es', 'el'];
+  const LINE_PX = 18, MIN_LINE_PX = 15, TWO_LINES_PX = 48;   // the line's font size, its floor, 2 x 24px
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 
   const $ = (id) => document.getElementById(id);
   const percent = (x) => Math.round(100 * x);
@@ -36,6 +43,9 @@
     lastFrame: null,
     renderedKey: '',
     plateId: null,
+    goal: null,        // while the plate shows a goal: { score index, restartT, minUntil, nextPulse }
+    fit: new Map(),    // "moment_id/lang" -> a smaller font size for a line that needs it (fitLines)
+    fades: new Map(),  // element -> { anim, at }: its running cross-fade and when it started
   };
   let idx = null;      // lookups built once per bundle
 
@@ -94,6 +104,10 @@
       rankT: bundle.rankings.map((s) => s.t),
       markOf: new Map(bundle.marks.map((m, i) => [m.moment_id, i]).filter(([id]) => id)),
     };
+    // narrated moments (commentated, with a stored line), for the plate's prev / next control
+    idx.narr = idx.live.filter((m) => m.line);
+    idx.narrT = idx.narr.map((m) => m.bundle.moment.t);
+    idx.narrSeq = idx.narr.map((m) => m.bundle.moment.seq);
     $('home-code').textContent = code(bundle.meta.home.name);
     $('away-code').textContent = code(bundle.meta.away.name);
     $('scorebug').setAttribute('aria-label', bundle.meta.home.name + ' against ' + bundle.meta.away.name);
@@ -105,7 +119,7 @@
     state.now = Number.isFinite(startT) && startT > first ? Math.min(startT, last) : first;
     wire();
     const params = new URLSearchParams(location.search);
-    if (['en', 'es', 'el'].includes(params.get('lang'))) setLang(params.get('lang'));
+    if (LANGS.includes(params.get('lang'))) setLang(params.get('lang'));
     if (SCOPES.includes(params.get('scope'))) setScope(params.get('scope'));
     // ?replay=<moment_id> opens in replay; an unknown or uncommentated id is ignored. A moment later
     // than the start time moves the clock to it, so the tables never trail the replayed moment.
@@ -115,6 +129,7 @@
       enterReplay(r.bundle.moment.moment_id);
     }
     requestAnimationFrame(frame);
+    fitLines();
   }
 
   // --- time ----------------------------------------------------------------------------------
@@ -132,13 +147,23 @@
   function frame(ts) {
     if (state.lastFrame !== null && state.playing) {
       const end = state.bundle.clock.last_event_t;
+      const before = lastAtOrBefore(idx.scoreT, state.now);
       state.now = Math.min(end, state.now + ((ts - state.lastFrame) / 1000) * state.speed);
       if (state.now >= end) setPlaying(false);
+      // a goal flashes only when live playback crosses it: never on ?t, replay, step mode or language
+      const after = lastAtOrBefore(idx.scoreT, state.now);
+      if (after > before && idx.score[after].goal) goalFlash(after, ts);
+    }
+    if (state.goal) {   // held until play restarts after the goal, and at least GOAL_MIN_MS
+      if (state.now >= state.goal.restartT && ts >= state.goal.minUntil) state.goal = null;
+      else if (ts >= state.goal.nextPulse) { pulse(1, 0.45); state.goal.nextPulse += SOFT_PULSE_EVERY; }
     }
     state.lastFrame = ts;
     render();
     requestAnimationFrame(frame);
   }
+
+  function isLive() { return state.follow && !state.replay; }
 
   function liveIndex() { return lastAtOrBefore(idx.markT, state.now); }
   function selectedIndex() {
@@ -151,6 +176,7 @@
   function setPlaying(on) {
     if (on && state.now >= state.bundle.clock.last_event_t) {
       state.now = state.bundle.clock.first_event_t;   // play again from kick-off
+      state.goal = null;
       exitReplay();
       state.follow = true;
     }
@@ -195,6 +221,27 @@
     exitReplay();   // stepping from a replayed pass leaves replay and steps on from it
     state.selected = Math.max(0, Math.min(live, from + dir));
     state.follow = false;
+    state.goal = null;
+  }
+
+  // Narrated moments the live clock has reached, and where the selected pass sits among them:
+  // pos = how many are at or before it (the plate shows narr[pos - 1]), 0 when none yet.
+  function narration(sel) {
+    const reached = lastAtOrBefore(idx.narrT, state.now) + 1;
+    const pos = sel < 0 ? 0 : Math.min(reached, lastAtOrBefore(idx.narrSeq, idx.marks[sel].seq) + 1);
+    return {
+      reached,
+      pos,
+      prev: pos >= 2 ? idx.narr[pos - 2] : null,
+      next: pos < reached ? idx.narr[pos] : null,   // never past the latest reached: no spoilers
+    };
+  }
+
+  // chevrons and [ ]: replay the previous / next narrated moment (the match keeps running)
+  function narrStep(dir) {
+    const n = narration(selectedIndex());
+    const target = dir < 0 ? n.prev : n.next;
+    if (target) enterReplay(target.bundle.moment.moment_id);
   }
 
   function backToLive() { exitReplay(); state.follow = true; }
@@ -204,6 +251,7 @@
   function enterReplay(id) {
     if (id === state.replay) return;
     state.replay = id;
+    state.goal = null;
   }
 
   function exitReplay() {
@@ -232,6 +280,8 @@
     $('prev').addEventListener('click', () => step(-1));
     $('next').addEventListener('click', () => step(1));
     $('live').addEventListener('click', backToLive);
+    $('narr-prev').addEventListener('click', () => narrStep(-1));
+    $('narr-next').addEventListener('click', () => narrStep(1));
     for (const kind of KINDS) {
       const rows = $('rows-' + kind);
       rows.addEventListener('click', (e) => {
@@ -251,6 +301,8 @@
       }
       else if (e.key === 'ArrowLeft') { step(-1); e.preventDefault(); }
       else if (e.key === 'ArrowRight') { step(1); e.preventDefault(); }
+      else if (e.key === '[') { narrStep(-1); e.preventDefault(); }
+      else if (e.key === ']') { narrStep(1); e.preventDefault(); }
       else if (e.key === ' ') { setPlaying(!state.playing); e.preventDefault(); }
       else if (e.key === 'l' || e.key === 'L') backToLive();
     });
@@ -268,21 +320,108 @@
     const half = live >= 0 ? idx.marks[live].period : 1;
     const snaps = KINDS.map((k) => latestSnapshot(k, state.scope));
     const plate = plateMoment(sel);
+    const narr = narration(sel);
+    const goal = state.goal && isLive() ? state.goal.score : -1;
     const key = [sel, live, tick, score, half, state.scope, snaps.map((s) => (s ? s.t : '-')).join('|'),
-      plate ? plate.bundle.moment.moment_id : '-', state.lang, state.follow, state.replay].join('/');
-    $('live').classList.toggle('is-live', state.follow && !state.replay);
-    $('prev').disabled = sel <= 0;
-    $('next').disabled = (state.follow && !state.replay) || sel >= live;
-    if (key === state.renderedKey) return;
+      plate ? plate.bundle.moment.moment_id : '-', state.lang, state.follow, state.replay,
+      narr.reached, narr.pos, goal].join('/');
+    if (key === state.renderedKey) return;   // every DOM write below runs in this one animation frame
     state.renderedKey = key;
 
+    $('live').classList.toggle('is-live', isLive());
+    $('prev').disabled = sel <= 0;
+    $('next').disabled = isLive() || sel >= live;
     renderBadge(sel);
     renderScoreBug(tick, score, live >= 0 ? half : null);
     renderPossession(sel);
     renderPitch(sel);
     const notStarted = state.scope === '2' && half !== 2;
     KINDS.forEach((k, i) => renderTable(k, snaps[i], plate, notStarted));
-    renderPlate(plate);
+    renderNarrNav(narr);
+    if (goal >= 0) renderGoalPlate(goal); else renderPlate(plate);
+  }
+
+  // --- transitions ---------------------------------------------------------------------------
+
+  // The one cross-fade (opacity, FADE_MS) for a content change. Latest wins: a change that comes
+  // while a fade is still running cancels it and shows the newest content at once, so fast
+  // stepping never queues fades, shows an older line or blinks the plate empty.
+  // A change within FADE_MS of the previous one (holding ] or an arrow) is a plain swap.
+  function crossFade(node) {
+    const t = performance.now();
+    const last = state.fades.get(node);
+    state.fades.set(node, { anim: null, at: t });
+    if (last && last.anim) last.anim.cancel();
+    if ((last && t - last.at < FADE_MS) || reducedMotion.matches || !node.animate) return;
+    state.fades.get(node).anim = node.animate([{ opacity: 0 }, { opacity: 1 }], { duration: FADE_MS, easing: 'ease-out' });
+  }
+
+  // --- goal ---
+
+  // The score bug always shows the live match, so it pulses on every goal crossed in playback (three
+  // rings, the scoring team's colour when the bundle has one, else the accent). The plate shows the
+  // goal only when live: until play restarts (the first pass after the goal; none: until full time),
+  // and at least GOAL_MIN_MS, with a softer pulse every SOFT_PULSE_EVERY meanwhile.
+  function goalFlash(i, ts) {
+    const ring = $('goal-ring');
+    const team = [state.bundle.meta.home, state.bundle.meta.away].find((t) => t.team_id === idx.score[i].goal.team_id);
+    const colour = team && (team.colour || team.color);
+    if (colour) ring.style.setProperty('--ring', colour); else ring.style.removeProperty('--ring');
+    pulse(3, 0.9);
+    if (!isLive()) return;
+    const next = lastAtOrBefore(idx.markT, idx.score[i].t) + 1;
+    state.goal = {
+      score: i,
+      restartT: next < idx.markT.length ? idx.markT[next] : state.bundle.clock.last_event_t,
+      minUntil: ts + GOAL_MIN_MS,
+      nextPulse: ts + SOFT_PULSE_EVERY,
+    };
+  }
+
+  // ring pulses round the score plate (opacity and scale only); none with reduced motion
+  function pulse(times, peak) {
+    const ring = $('goal-ring');
+    if (reducedMotion.matches || !ring.animate) return;
+    ring.getAnimations().forEach((a) => a.cancel());
+    ring.animate([
+      { opacity: 0, transform: 'scale(1)' },
+      { opacity: peak, transform: 'scale(1.02)', offset: 0.35 },
+      { opacity: 0, transform: 'scale(1.05)' },
+    ], { duration: PULSE_MS, iterations: times, easing: 'ease-out' });
+  }
+
+  // "GOAL · DSK · 90+4'": the minute is the score track's minute_label, never computed here
+  function goalTabText(s) {
+    return 'Goal · ' + teamCode(s.goal.team_id, '') + ' · ' + s.minute_label + "'";
+  }
+
+  function renderGoalPlate(i) {
+    const id = 'goal/' + i;
+    if (id === state.plateId) return;
+    state.plateId = id;
+    const s = idx.score[i];
+    const lower = $('lower');
+    lower.classList.remove('completed', 'failed', 'waiting');
+    lower.classList.add('goal');
+    $('lower-name').textContent = goalTabText(s);
+    $('lower-when').textContent = '';
+    const line = $('lower-line');
+    line.textContent = s.goal.player_name || idx.teams[s.goal.team_id] || '';
+    line.removeAttribute('lang');
+    line.style.fontSize = '';
+    $('lower-meta').textContent = idx.teams[s.goal.team_id] || '';
+    $('lower-xp').hidden = true;
+    $('lower-pva').textContent = '';
+    crossFade(lower);
+  }
+
+  // --- narration nav: "7 / 12" between two chevrons; hidden until a narrated moment is reached ---
+
+  function renderNarrNav(n) {
+    $('narrnav').hidden = n.reached === 0;
+    $('narr-count').textContent = (n.pos > 0 ? n.pos : '–') + ' / ' + n.reached;
+    $('narr-prev').disabled = !n.prev;
+    $('narr-next').disabled = !n.next;
   }
 
   // "REPLAY · 41'": shown whenever the view is not live (a replayed moment, or step mode)
@@ -309,12 +448,7 @@
     const teamCodeText = teamCode(mark.team_id, mark.team_name);
     $('tab-code').textContent = teamCodeText;
     const label = teamCodeText + ' in possession, attacking ' + (right ? 'right' : 'left');
-    if (label !== box.getAttribute('aria-label')) {   // short cross-fade when the content changes
-      const tab = $('tab');
-      tab.classList.remove('swap');
-      void tab.offsetWidth;
-      tab.classList.add('swap');
-    }
+    if (label !== box.getAttribute('aria-label')) crossFade($('tab'));   // the same cross-fade as the plate
     box.classList.toggle('left', !right);
     box.setAttribute('aria-label', label);
     box.hidden = false;
@@ -463,22 +597,23 @@
 
   // --- lower third ---
 
+  // Text is set in place on the existing nodes; nothing is written when the moment and language are
+  // unchanged, so stepping through passes that keep the same moment never re-animates the plate.
   function renderPlate(entry) {
-    const lower = $('lower');
-    lower.classList.remove('completed', 'failed', 'waiting');
-    const line = $('lower-line');
     const id = entry ? entry.bundle.moment.moment_id + '/' + state.lang : '-';
-    if (id !== state.plateId) {   // a short cross-fade when the moment or language changes
-      state.plateId = id;
-      lower.classList.remove('swap');
-      void lower.offsetWidth;
-      lower.classList.add('swap');
-    }
+    if (id === state.plateId) return;
+    state.plateId = id;
+    const lower = $('lower');
+    lower.classList.remove('completed', 'failed', 'waiting', 'goal');
+    const line = $('lower-line');
+    crossFade(lower);
     if (!entry) {   // before the first commentated moment: the body only
       lower.classList.add('waiting');
       line.textContent = 'No commentated moment yet';
       line.removeAttribute('lang');
+      line.style.fontSize = '';
       $('lower-meta').textContent = '';
+      $('lower-xp').hidden = true;
       $('lower-pva').textContent = '–';
       return;
     }
@@ -486,12 +621,44 @@
     lower.classList.add(m.completed ? 'completed' : 'failed');
     $('lower-name').textContent = playerName(m);
     $('lower-when').textContent = teamCode(m.team_id, m.team_name) + ' · ' + m.minute_label + "'";
-    $('lower-meta').textContent = entry.tier.en + ' pass, ' + (m.completed ? 'completed' : 'not completed') +
-      ' · xP ' + percent(m.xp) + '%';
+    $('lower-meta').textContent = entry.tier.en + ' pass, ' + (m.completed ? 'completed' : 'not completed');
+    $('lower-xp-val').textContent = percent(m.xp) + '%';   // " · xP 92%", xP in its own span
+    $('lower-xp').hidden = false;
     // no stored line: the line row is empty and hidden (:empty), so no gap is left
     line.textContent = (entry.line && entry.line['line_' + state.lang]) || '';
     line.setAttribute('lang', state.lang);
+    line.style.fontSize = state.fit.get(id) || '';
     $('lower-pva').textContent = pva(m.delta);
+  }
+
+  // Once at load, after the fonts: the font size each narrated line needs to fit in two lines of the
+  // fixed plate (LINE_PX, down in 1px steps to MIN_LINE_PX). Only lines that need less than LINE_PX
+  // are stored; the plate then sets the size with no layout read. The count of shrunk lines is left
+  // on <html data-line-fit="shrunk/total"> for checks.
+  async function fitLines() {
+    try {
+      await Promise.all(['500 18px Archivo', '500 18px "Noto Sans"'].map((f) => document.fonts.load(f, 'Aa Αα Ññ')));
+      await document.fonts.ready;
+    } catch (e) { /* fonts unavailable: measure with the fallback */ }
+    const probe = div('line measure');
+    $('lower').querySelector('.left').appendChild(probe);
+    let shrunk = 0, total = 0;
+    for (const m of idx.narr) {
+      for (const lang of LANGS) {
+        const text = m.line['line_' + lang];
+        if (!text) continue;
+        total++;
+        probe.textContent = text;
+        probe.setAttribute('lang', lang);
+        let size = LINE_PX;
+        probe.style.fontSize = size + 'px';
+        while (size > MIN_LINE_PX && probe.offsetHeight > TWO_LINES_PX) probe.style.fontSize = --size + 'px';
+        if (size < LINE_PX) { state.fit.set(m.bundle.moment.moment_id + '/' + lang, size + 'px'); shrunk++; }
+      }
+    }
+    probe.remove();
+    document.documentElement.dataset.lineFit = shrunk + '/' + total;
+    if (state.fit.has(state.plateId)) $('lower-line').style.fontSize = state.fit.get(state.plateId);
   }
 
   // --- stage scaling -------------------------------------------------------------------------
