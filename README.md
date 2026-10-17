@@ -351,6 +351,12 @@ to stay within the published rules on third-party data, the fitted weights were 
 scoring model was retrained from scratch on generated data. The earlier commits remain in the
 repository history. The generator is now fully designed (version 0.2.1).
 
+The trained model and the demo match bundle are published openly in the
+[data-v1 release](https://github.com/charalampisandreou/xplain-live/releases/tag/data-v1): the model
+files (`xpass_v2.joblib`, `feature_list.json`, `metrics.json`) under the MIT licence and the demo
+bundle (`bundle_seed3001.json`) under CC BY 4.0. Everything is synthetic, produced by generator
+0.2.1, and can be regenerated and retrained from this repository (`python -m xplain.train`).
+
 An earlier personal pass-model project (xPass, June 2026) informed the choice of start-only
 features: the 17-column feature list (`xplain.features.FEATURE_ORDER`) and its angle-to-goal
 definition follow that project's design, and the pitch frame and category names follow the common
@@ -373,7 +379,9 @@ pytest
 ```
 
 The xPass model is trained in this repo on generated matches and is not in git (see
-`models/README.md`). To build it (about 40 s):
+`models/README.md`). The published model and demo data are in the
+[data-v1 release](https://github.com/charalampisandreou/xplain-live/releases/tag/data-v1). To build
+it yourself (about 40 s):
 
 ```powershell
 python scripts/make_dataset.py
