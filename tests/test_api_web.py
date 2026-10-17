@@ -155,6 +155,20 @@ def test_language_switch_keeps_its_behaviour(client):
     assert "lower-line" in fade and "lang" not in fade.replace("lower-line", "")
 
 
+def test_pva_column_shows_a_dash_or_the_goal(client):
+    html = client.get("/").text
+    js = client.get("/static/app.js").text
+    css = client.get("/static/app.css").text
+    assert '<div class="pvalabel" id="lower-pva-label">PVA</div>' in html
+    goal = js.split("function renderGoalPlate(i)")[1].split("function renderNarrNav")[0]
+    assert "$('lower-pva').textContent = 'GOAL'" in goal
+    assert "$('lower-pva-label').textContent = s.minute_label + \"'\"" in goal   # never computed here
+    plate = js.split("function renderPlate(entry)")[1].split("async function fitLines")[0]
+    assert "$('lower-pva').textContent = '–'" in plate and plate.count("'lower-pva-label').textContent = 'PVA'") == 2
+    # the column is visible in every state (it used to be hidden while waiting and on a goal)
+    assert ".body > .right { visibility: hidden" not in css and ".right { visibility: hidden" not in css
+
+
 def test_health_and_score_routes_are_kept(client):
     assert client.get("/health").json()["status"] == "ok"
     assert any(getattr(r, "path", None) == "/score" for r in client.app.routes)
