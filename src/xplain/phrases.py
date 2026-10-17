@@ -29,7 +29,7 @@ Phrase = dict[str, str]   # {"en": ..., "es": ..., "el": ...}
 
 DEPTH_PHRASES: dict[str, Phrase] = {
     "defensive_third": {"en": "from their own defensive third", "es": "desde su propio tercio defensivo",
-                        "el": "στην άμυνα"},
+                        "el": "από την άμυνα"},
     "middle_third": {"en": "in the middle third", "es": "en el tercio medio", "el": "στο κέντρο"},
     "attacking_third": {"en": "in the attacking third", "es": "desde el tercio de ataque", "el": "στο επιθετικό τρίτο"},
     "near_goal": {"en": "close to the opposition goal", "es": "cerca de la portería rival",
@@ -95,7 +95,30 @@ ENGLISH_HEIGHT_HINTS: dict[str, list[str]] = {
 }
 
 # Hints mode: a second Greek suggestion for two depth zones (after the DEPTH_PHRASES one).
-GREEK_DEPTH_HINTS: dict[str, str] = {"defensive_third": "από την άμυνα", "middle_third": "από το κέντρο"}
+GREEK_DEPTH_HINTS: dict[str, str] = {"middle_third": "από το κέντρο"}   # defensive third: the phrase is "από την άμυνα"
+
+# Hints mode: more natural English and Spanish suggestions per zone, after the approved phrase. The Greek extras
+# are GREEK_DEPTH_HINTS. "centrally" is listed so the Verifier sees it when the model says it.
+DEPTH_HINTS: dict[str, dict[str, list[str]]] = {
+    "defensive_third": {"en": ["from deep", "from the back"], "es": ["desde atrás"]},
+    "middle_third": {"en": ["in midfield"], "es": ["en el centro del campo"]},
+    "attacking_third": {"en": ["in the final third"], "es": ["en el último tercio"]},
+}
+WIDTH_HINTS: dict[str, dict[str, list[str]]] = {"central": {"en": ["centrally"]}}
+
+# Wordings the Verifier recognises for a driver but never suggests to the model: the bare zone nouns (a line that
+# says "the middle third" names a position fact), "header", and two Greek forms from the owner's example lines
+# (S1 "λόγω του ύψους της", F2 "από το αμυντικό τρίτο").
+RECOGNISED_LABEL_FORMS: dict[str, dict[str, list[str]]] = {
+    "lofted high": {"el": ["ύψους"]},
+    "with a header": {"en": ["header"]},
+}
+RECOGNISED_DEPTH_FORMS: dict[str, dict[str, list[str]]] = {
+    "defensive_third": {"en": ["defensive third"], "es": ["tercio defensivo"], "el": ["αμυντικό τρίτο"]},
+    "middle_third": {"en": ["middle third"], "es": ["tercio medio"]},
+    "attacking_third": {"en": ["attacking third", "final third"], "es": ["tercio de ataque", "último tercio"],
+                        "el": ["επιθετικό τρίτο"]},
+}
 
 
 def position_phrase(depth: str, width: str) -> Phrase:
@@ -120,20 +143,43 @@ def narrated(drivers: list[Driver]) -> list[Driver]:
 
 def suggestions(driver: Driver) -> dict:
     """Hints-mode suggestions. A position driver: {"depth": {lang: [...]}, "width": {lang: [...]}}, the two
-    pieces (the Greek depth with its second hint for two zones). Any other driver: {lang: [...]}, the label's
-    phrase, with the English adjective / post-noun pair and the Greek adjective form for a height label."""
+    pieces, each with its extra hints (DEPTH_HINTS, WIDTH_HINTS, GREEK_DEPTH_HINTS). Any other driver:
+    {lang: [...]}, the label's phrase, with the English adjective / post-noun pair and the Greek adjective form for
+    a height label."""
     if driver.feature == "position":
         depth, width = str(driver.value).split("|")
-        depth_hints = {lang: [p] for lang, p in DEPTH_PHRASES[depth].items()}
+        depth_hints = {lang: [p, *DEPTH_HINTS.get(depth, {}).get(lang, [])] for lang, p in DEPTH_PHRASES[depth].items()}
         if depth in GREEK_DEPTH_HINTS:
             depth_hints["el"].append(GREEK_DEPTH_HINTS[depth])
-        return {"depth": depth_hints, "width": {lang: [p] for lang, p in WIDTH_PHRASES[width].items()}}
+        width_hints = {lang: [p, *WIDTH_HINTS.get(width, {}).get(lang, [])] for lang, p in WIDTH_PHRASES[width].items()}
+        return {"depth": depth_hints, "width": width_hints}
     out = {lang: [phrase] for lang, phrase in LABEL_PHRASES[driver.label].items()}
     if driver.label in ENGLISH_HEIGHT_HINTS:
         out["en"] = list(ENGLISH_HEIGHT_HINTS[driver.label])
     if driver.label in GREEK_ADJECTIVES:
         out["el"].append(GREEK_ADJECTIVES[driver.label])
     return out
+
+
+def wordings(driver: Driver) -> dict[str, dict[str, list[str]]]:
+    """Every wording the Verifier accepts for a driver, per part and language: {"all": {lang: [...]}} for any
+    driver, plus "depth" and "width" for a position driver (its pieces alone). A wording is the approved phrase
+    (and, for a position, its composed form and pieces), a hints suggestion, or a recognised form."""
+    langs = ("en", "es", "el")
+    if driver.feature == "position":
+        depth, width = str(driver.value).split("|")
+        hints = suggestions(driver)
+        parts = {
+            "depth": {lang: [*hints["depth"][lang], *RECOGNISED_DEPTH_FORMS.get(depth, {}).get(lang, [])]
+                      for lang in langs},
+            "width": {lang: list(hints["width"][lang]) for lang in langs},
+        }
+        composed = position_phrase(depth, width)
+        return {"all": {lang: [composed[lang], *parts["depth"][lang], *parts["width"][lang]] for lang in langs},
+                **parts}
+    hints = suggestions(driver)
+    extra = RECOGNISED_LABEL_FORMS.get(driver.label, {})
+    return {"all": {lang: [LABEL_PHRASES[driver.label][lang], *hints[lang], *extra.get(lang, [])] for lang in langs}}
 
 
 def driver_phrases(driver: Driver) -> dict[str, Phrase]:

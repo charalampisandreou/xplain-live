@@ -16,7 +16,7 @@ from xplain.verifier import MAX_WORDS, WORD_LIMIT, WORD_TARGET
 
 from .test_verifier import make_bundle, make_driver, make_out
 
-BAD = make_out(line_en="Weso Wendez's easy 95% pass along the ground goes astray.")  # a number in the line
+BAD = make_out(line_en="Weso Wendez's easy 95% pass goes astray, even though it was along the ground.")  # a number
 BAD_REASON = "no_numbers: line_en has '95%'"
 
 
@@ -210,7 +210,9 @@ def test_strict_facts_carry_the_approved_phrases():
 def test_difficulty_word_comes_from_the_tier():
     assert build_facts(make_bundle(xp=0.97))["difficulty_word"]["en"] == "very easy"
     assert build_facts(make_bundle(xp=0.15, completed=True))["difficulty_word"] == {
-        "en": "very difficult", "es": "muy difícil", "el": "εξαιρετικά δύσκολη"}
+        "en": "very difficult", "es": "muy difícil", "el": "πολύ δύσκολη"}
+    assert build_facts(make_bundle(xp=0.25, completed=True))["difficulty_word"]["el"] == "δύσκολη"
+    assert build_facts(make_bundle(xp=0.32, completed=True))["difficulty_word"]["el"] == "περίπλοκη"
 
 
 @pytest.mark.parametrize("mode", PHRASE_MODES)
@@ -258,7 +260,7 @@ def test_foundry_config_reads_env(monkeypatch):
 # --- no numbers and difficulty through the Narrator ---------------------------------------------
 
 def test_minute_word_in_greek_is_retried_with_the_reason():
-    bad = make_out(line_el="Στο τελευταίο λεπτό, η εύκολη πάσα του Weso Wendez, συρτά, χάνεται.")
+    bad = make_out(line_el="Στο τελευταίο λεπτό, η εύκολη πάσα του Weso Wendez χάνεται, παρόλο που πήγε συρτά.")
     agent = FakeAgent(bad, make_out())
     result = narrate(agent)
     assert result.line == make_out()
@@ -266,7 +268,7 @@ def test_minute_word_in_greek_is_retried_with_the_reason():
 
 
 def test_contradicting_difficulty_every_time_gives_no_line():
-    bad = make_out(line_es="El pase difícil y raso de Weso Wendez se pierde.")
+    bad = make_out(line_es="El pase difícil de Weso Wendez se pierde, aunque iba raso.")
     result = narrate(FakeAgent(bad, bad, bad))
     assert result.line is None
     assert result.reasons == [
@@ -275,7 +277,7 @@ def test_contradicting_difficulty_every_time_gives_no_line():
 
 
 def test_line_without_difficulty_word_is_accepted_with_a_note():
-    plain = make_out(line_en="Weso Wendez's ball along the ground goes astray.")
+    plain = make_out(line_en="Weso Wendez's pass goes astray, even though it was along the ground.")
     result = narrate(FakeAgent(plain))
     assert result.line == plain and result.attempts == 1
     assert result.notes == ["difficulty: line_en has no difficulty word"]
@@ -341,8 +343,8 @@ def test_free_prompt_asks_for_natural_wording_and_guards_the_meaning():
     text = INSTRUCTIONS["free"]
     for rule in ("natural, idiomatic wording in each language", "Do not translate the driver labels word by word",
                  "never midfield", '"out wide" means near the sideline', "is not the penalty box",
-                 "Do not give every line the same shape", "Mention at most two situation facts",
-                 "adjective before πάσα (συρτή, ψηλή, χαμηλή)",
+                 "Follow the frame", "Mention at most two situation facts",
+                 "a height adjective (συρτή, ψηλή, χαμηλή) goes inside the reason or the concession clause",
                  "Mention only the drivers you list in drivers_used"):
         assert rule in text, rule
     for strict_only in ("verbatim", "phrase.en", "depth or width", 'call the pass "pase"'):
@@ -353,7 +355,7 @@ def test_free_prompt_asks_for_natural_wording_and_guards_the_meaning():
 # --- free mode and rejected candidates ----------------------------------------------------------
 
 def test_free_mode_accepts_natural_wording_strict_mode_does_not():
-    natural = make_out(line_es="El pase fácil por el suelo de Weso Wendez se pierde.")   # not the phrase "raso"
+    natural = make_out(line_es="El pase fácil de Weso Wendez se pierde, aunque iba por el suelo.")   # not "raso"
     assert narrate(FakeAgent(natural), mode="free").line == natural
     strict = narrate(FakeAgent(natural, natural), mode="strict")
     assert strict.line is None

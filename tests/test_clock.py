@@ -120,7 +120,8 @@ def test_other_seeds_have_a_second_half_start_matching_the_truth():
 def test_added_time_label_in_a_line_is_rejected():
     # the card shows minute_label ("45+2"); the lines never carry the minute
     bundle = make_bundle(minute=45, added=2)
-    out = NarratorOut(line_en="In 45+2, Wendez's easy pass goes astray.",
-                      line_es="En el tiempo añadido, el pase fácil de Wendez se pierde.",
-                      line_el="Στις καθυστερήσεις, η εύκολη πάσα του Wendez χάνεται.", drivers_used=[1])
+    out = NarratorOut(line_en="In 45+2, Wendez's easy pass goes astray, even though it was along the ground.",
+                      line_es="En el tiempo añadido, el pase fácil de Wendez se pierde, aunque iba raso.",
+                      line_el="Στις καθυστερήσεις, η εύκολη πάσα του Wendez χάνεται, παρόλο που πήγε συρτά.",
+                      drivers_used=[1])
     assert verify(out, bundle).reasons == ["no_numbers: line_en has '45'", "no_numbers: line_en has '2'"]

@@ -6,8 +6,9 @@ Workflow: the existing steps as one Agent Framework workflow, Analyst -> Explain
 
 Each executor is a thin wrapper around code that already exists; none adds rules of its own:
   * AnalystExecutor:   a match's events in; scores every pass and runs the commentary gate
-                       (pipeline.gate_match), then sends each commentated moment on, in seq order
-  * ExplainerExecutor: one moment in; its SHAP drivers (explainer.ShapExplainer), as a MomentBundle
+                       (pipeline.gate_match), then sends each commentated moment on, in seq order, with its
+                       slot (its index among the commentated moments, for the Narrator's frame rotation)
+  * ExplainerExecutor: one moment in; its SHAP drivers (explainer.ShapExplainer), as a MomentBundle, with the slot
   * NarratorExecutor:  one bundle in; Narrator.narrate (facts -> model -> Verifier, up to two retries with the
                        Verifier's reasons, a 15 s timeout per call; it never raises)
   * VerifierExecutor:  the final gate: verifier.verify on the accepted line once more before anything
@@ -61,6 +62,15 @@ class GatedMoment:
     event: PassEvent
     moment: Moment
     qualified_by: tuple[QualifiedBy, ...]
+    slot: int | None = None   # index among the match's commentated moments (narrator.frame_for)
+
+
+@dataclass(frozen=True)
+class Explained:
+    """Explainer -> Narrator: the bundle and the moment's slot."""
+
+    bundle: MomentBundle
+    slot: int | None = None
 
 
 @dataclass(frozen=True)
@@ -112,7 +122,8 @@ class AnalystExecutor(Executor):
 
     @handler
     async def analyse(self, request: MatchRequest, ctx: WorkflowContext[GatedMoment]) -> None:
-        live = [GatedMoment(e, m, why) for e, m, why in gate_match(request.events, self.scorer, self.cfg) if why]
+        gated = [(e, m, why) for e, m, why in gate_match(request.events, self.scorer, self.cfg) if why]
+        live = [GatedMoment(e, m, why, slot) for slot, (e, m, why) in enumerate(gated)]
         for gated in live[:request.max_moments]:
             await ctx.send_message(gated)
 
@@ -125,7 +136,7 @@ class ExplainerExecutor(Executor):
         self.explainer = ShapExplainer(scorer.boosters)
 
     @handler
-    async def explain(self, gated: GatedMoment, ctx: WorkflowContext[MomentBundle, MomentOutcome]) -> None:
+    async def explain(self, gated: GatedMoment, ctx: WorkflowContext[Explained, MomentOutcome]) -> None:
         try:
             explanation = self.explainer.explain(gated.event, gated.moment)
             bundle = MomentBundle(moment=gated.moment, explanation=explanation,
@@ -133,7 +144,7 @@ class ExplainerExecutor(Executor):
         except Exception as exc:  # noqa: BLE001  (one moment must not stop the others)
             await ctx.yield_output(_failed(gated.moment, "explainer", exc))
             return
-        await ctx.send_message(bundle)
+        await ctx.send_message(Explained(bundle, gated.slot))
 
 
 class NarratorExecutor(Executor):
@@ -144,9 +155,10 @@ class NarratorExecutor(Executor):
         self.narrator = narrator
 
     @handler
-    async def narrate(self, bundle: MomentBundle, ctx: WorkflowContext[Narrated, MomentOutcome]) -> None:
+    async def narrate(self, item: Explained, ctx: WorkflowContext[Narrated, MomentOutcome]) -> None:
+        bundle = item.bundle
         try:
-            narration = await self.narrator.narrate(bundle)
+            narration = await self.narrator.narrate(bundle, item.slot)
         except Exception as exc:  # noqa: BLE001  (narrate catches its own errors; this is a last guard)
             await ctx.yield_output(_failed(bundle.moment, "narrator", exc, bundle))
             return

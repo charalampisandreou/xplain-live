@@ -12,20 +12,29 @@ from xplain.workflow import MomentOutcome, main, outcome_lines, run_match, summa
 
 from .test_pipeline import WIDE, seed42_events, tiny_model, tiny_scorer  # noqa: F401  (fixtures)
 
-# A line that passes the Verifier for any moment: no number, no difficulty word (a note only), no driver
-# phrase; it cites the first driver pointing the tier's way, when there is one (needs_driver).
+# A line that passes the Verifier for any moment: no number, no difficulty word (a note only). It cites the
+# first driver pointing the tier's way, when there is one (needs_driver), and concedes it in every language
+# with its first suggested wording (driver_expressed, role_parity; facts in hints mode).
 NEUTRAL = NarratorOut(line_en="The ball moves on.", line_es="El balón sigue su camino.",
                       line_el="Η μπάλα συνεχίζει.", drivers_used=[])
 
 
 def GOOD(facts: dict) -> NarratorOut:
     wanted = "raises" if facts["kind"] == "surprise_failure" else "lowers"
-    ranks = [d["rank"] for d in facts["drivers"] if d["direction"] == wanted]
-    return NEUTRAL.model_copy(update={"drivers_used": ranks[:1]})
+    used = [d for d in facts["drivers"] if d["direction"] == wanted][:1]
+    if not used:
+        return NEUTRAL
+    d = used[0]
+    hint = d["pieces"]["depth"]["suggested"] if "pieces" in d else d["suggested"]   # a position: its depth piece
+    return NarratorOut(line_en=f"The ball moves on, even though it was {hint['en'][0]}.",
+                       line_es=f"El balón sigue su camino, aunque fue {hint['es'][0]}.",
+                       line_el=f"Η μπάλα συνεχίζει, παρόλο που ήταν {hint['el'][0]}.",
+                       drivers_used=[used[0]["rank"]])
 
 
-def BAD(facts: dict) -> NarratorOut:   # a number: always rejected
-    return GOOD(facts).model_copy(update={"line_en": "A 95% pass moves on."})
+def BAD(facts: dict) -> NarratorOut:   # GOOD with a number: always rejected, for the number only
+    good = GOOD(facts)
+    return good.model_copy(update={"line_en": good.line_en.replace("The ball", "The 95% ball")})
 
 
 class FakeAgent:
@@ -126,11 +135,11 @@ class RaisingNarrator(Narrator):
 
     raised = False
 
-    async def narrate(self, bundle):
+    async def narrate(self, bundle, slot=None):
         if not self.raised:
             self.raised = True
             raise RuntimeError("narrator down")
-        return await super().narrate(bundle)
+        return await super().narrate(bundle, slot)
 
 
 def test_narrator_error_does_not_stop_the_next(seed42_events, tiny_scorer):  # noqa: F811
@@ -145,7 +154,7 @@ def test_narrator_error_does_not_stop_the_next(seed42_events, tiny_scorer):  # n
 class UncheckedNarrator(Narrator):
     """Returns BAD as if it had been accepted, so only the Verifier step can catch it."""
 
-    async def narrate(self, bundle):
+    async def narrate(self, bundle, slot=None):
         return NarrationResult(line=BAD(build_facts(bundle, "hints")), attempts=1, reasons=[], latency_s=0.0)
 
 
@@ -166,7 +175,9 @@ def test_outcome_lines_and_summary(seed42_events, tiny_scorer):  # noqa: F811
     assert rejected[0].startswith(f"{m.minute_label:>5}' | ")                    # the minute from clock.match_clock
     assert f"xP {analytics.percent(m.xp)}%" in rejected[0]                       # the percent from code
     assert "  (no line)" in rejected
-    assert retried[1:4] == [f"  EN: {NEUTRAL.line_en}", f"  ES: {NEUTRAL.line_es}", f"  EL: {NEUTRAL.line_el}"]
+    good = outcomes[1].line
+    assert good == GOOD(build_facts(outcomes[1].bundle, "hints"))
+    assert retried[1:4] == [f"  EN: {good.line_en}", f"  ES: {good.line_es}", f"  EL: {good.line_el}"]
     # narrating time is measured wall clock: check its format, not its value
     assert re.fullmatch(r"3 moments: accepted 1, retried 1 \(accepted on a retry\), rejected 1; "
                         r"mean 1\.00 s per moment \(\d+\.\d\d s narrating\)", summary(outcomes, 3.0))

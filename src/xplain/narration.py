@@ -49,9 +49,9 @@ DIFFICULTY_TIERS: dict[Outlier, tuple[tuple[float, DifficultyTier], ...]] = {
         (0.00, DifficultyTier("easy", "easy", "fácil", "εύκολη")),
     ),
     "surprise_success": (
-        (0.30, DifficultyTier("hard", "tricky", "complicado", "δύσκολη")),
-        (0.20, DifficultyTier("hard", "difficult", "difícil", "πολύ δύσκολη")),
-        (0.00, DifficultyTier("hard", "very difficult", "muy difícil", "εξαιρετικά δύσκολη")),
+        (0.30, DifficultyTier("hard", "tricky", "complicado", "περίπλοκη")),
+        (0.20, DifficultyTier("hard", "difficult", "difícil", "δύσκολη")),
+        (0.00, DifficultyTier("hard", "very difficult", "muy difícil", "πολύ δύσκολη")),
     ),
 }
 

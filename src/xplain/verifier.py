@@ -25,6 +25,17 @@ Checks (every failing check adds a reason; all reasons are collected, not just t
                 hints suggestion, for any label) found in a line must belong to a driver in drivers_used
   * lead_driver: "mainly" and its kin (LEAD_WORDS) only when driver 1 is narrated and in drivers_used
   * needs_driver: drivers_used is not empty when a narrated driver points the way of the tier
+  * driver_expressed: hints mode (strict has the phrases check; free mode shows the model only English labels):
+                every driver in drivers_used is named in every line by one of its wordings (phrases.wordings:
+                phrase, pieces, hints, recognised forms)
+  * role_parity: when drivers_used is not empty, every line gives the drivers a role: a reason for the rating
+                (CAUSAL_MARKERS, which outcome_cause keeps next to a difficulty word) or a concession on the
+                outcome (CONCESSION_MARKERS); the three lines give the same role
+  * one_position_piece: free and hints modes: a line names a position driver by its depth or its width, not both
+  * one_role_per_clause: no clause (text between commas, semicolons, colons or dashes) holds both a concession
+                marker and a causal marker ("even though it was very easy because it came from deep")
+  * tier_first_contrast: a line that opens with its difficulty word ("Easy because ...") has a contrast word
+                before the outcome (CONTRAST_WORDS: yet / but, pero, αλλά)
 
 Reasons start with the check name, e.g. "no_numbers: line_en has '94%'". Notes are observations that
 do not fail a line, e.g. "difficulty: line_en has no difficulty word".
@@ -39,8 +50,9 @@ from pydantic import BaseModel, ConfigDict
 from .config import phrase_mode
 from .contracts import Driver, MomentBundle
 from .narration import NarratorOut, difficulty_tier
-from .phrases import (DEPTH_PHRASES, ENGLISH_HEIGHT_HINTS, GREEK_ADJECTIVES, GREEK_DEPTH_HINTS, LABEL_PHRASES,
-                      WIDTH_PHRASES, driver_phrases, narrated, suggestions)
+from .phrases import (DEPTH_HINTS, DEPTH_PHRASES, ENGLISH_HEIGHT_HINTS, GREEK_ADJECTIVES, GREEK_DEPTH_HINTS,
+                      LABEL_PHRASES, RECOGNISED_DEPTH_FORMS, RECOGNISED_LABEL_FORMS, WIDTH_HINTS, WIDTH_PHRASES,
+                      driver_phrases, narrated, wordings)
 
 LANGS: tuple[str, ...] = ("en", "es", "el")
 
@@ -76,7 +88,7 @@ EASY_WORDS: dict[str, tuple[str, ...]] = {
 HARD_WORDS: dict[str, tuple[str, ...]] = {
     "en": (r"\btough\w*", r"\bdifficult\w*", r"\bhard(er|est)?\b", r"\btricky\b", r"\bdemanding\b"),
     "es": (r"\bdif[ií]cil\w*", r"\bcomplicad\w*", r"\bcomplej\w*", r"\bexigente\w*"),
-    "el": (r"δ[υύ]σκολ\w*", r"ζόρικ\w*", r"απαιτητικ\w*"),
+    "el": (r"δ[υύ]σκολ\w*", r"ζόρικ\w*", r"απαιτητικ\w*", r"περίπλοκ\w*"),
 }
 
 # Banned claims per language, matched case-insensitively. Keep each list short; add a pattern to ban a phrase.
@@ -93,6 +105,7 @@ BANNED: dict[str, tuple[str, ...]] = {
         r"\bleft\b", r"\bright\b",
         r"\bshap\b", r"\bbaseline\b", r"\braw score\b", r"\bexpected pass value\b",
         r"\bthrow(?!-ins?\b)\w*",  # "throw-in" is a play pattern, not a throw
+        r"\bsuccess\w*",           # the brief forbids "success"; the card shows the outcome
         r"\banother part of the body\b", r"\banother kind of play\b",
         # verbs of intent, effort or credit (the model rates difficulty; it does not judge the player)
         r"\btr(y|ies|ied|ying)\b", r"\battempt(s|ed|ing)?\b", r"\bpull(s|ed|ing)? off\b",
@@ -106,6 +119,7 @@ BANNED: dict[str, tuple[str, ...]] = {
         r"\bizquierd[ao]s?\b", r"\bderech[ao]s?\b",
         r"\bshap\b", r"\bl[ií]nea base\b", r"\bpuntuaci[oó]n bruta\b", r"\bvalor esperado del? pase\b",
         r"\botra parte del cuerpo\b", r"\botro tipo de jugada\b",
+        r"\bcon [eé]xito\b", r"\b[eé]xit\w*",
         # verbs of intent, effort or credit; "se trata de" (it is a ...) is not one
         r"\bintent(a|an|ó|aba|ando|ar)\b", r"(?<!\bse )\btrat(a|an|ó|aba|ando|ar) de\b",
         r"\blogr(a|an|ó|aba|ando|ar)\b",
@@ -118,6 +132,8 @@ BANNED: dict[str, tuple[str, ...]] = {
         r"\bshap\b", r"γραμμή βάσης", r"ακατέργαστ\w* βαθμολογ\w*", r"αναμενόμεν\w* αξία",
         r"ρίχν\w*", r"πετάει",
         r"\bάλλο μέρος του σώματος\b", r"\bάλλο είδος φάσης\b",
+        r"επιτυχ\w*",
+        r"\bλόγω ότι\b",            # the owner's note: "λόγω του ότι"
         # verbs of intent, effort or credit (present, participle and past forms)
         r"\bεπιχειρ(εί|ούν|ώντας)\b", r"\bεπιχείρησε\b", r"\bπροσπαθ(εί|ούν|ώντας)\b", r"\bπροσπάθησε\b",
         r"\bκαταφέρν(ει|ουν|οντας)\b", r"\bκατάφερε\b",
@@ -128,10 +144,20 @@ BANNED: dict[str, tuple[str, ...]] = {
 # Causal markers per language. A marker may give a reason for the model's rating ("difficult because it was
 # lofted high"), never for the outcome ("goes astray because ..."); concessions ("even though") are fine.
 CAUSAL_MARKERS: dict[str, tuple[str, ...]] = {
-    "en": (r"\bbecause\b", r"\bdue to\b", r"\bowing to\b", r"\bthanks to\b", r"\bwhat makes\b"),
+    "en": (r"\bbecause\b", r"\bdue to\b", r"\bowing to\b", r"\bthanks to\b", r"\bwhat makes\b",
+           r"\bwhich ma(de|kes) it\b"),
     "es": (r"\bporque\b", r"\bdebido a\b", r"\ba causa de\b", r"\bgracias a\b", r"\bpor culpa de\b",
-           r"\blo que hace\b", r"\bya que\b", r"\bpuesto que\b"),
-    "el": (r"\bλόγω\b", r"\bεξαιτίας\b", r"\bεπειδή\b", r"\bγιατί\b", r"\bχάρη σ\w*", r"\bαφού\b", r"\bδιότι\b"),
+           r"\blo que hace\b", r"\blo que lo hac(e|ía)\b", r"\bya que\b", r"\bpuesto que\b"),
+    "el": (r"\bλόγω\b", r"\bεξαιτίας\b", r"\bεπειδή\b", r"\bγιατί\b", r"\bχάρη σ\w*", r"\bαφού\b", r"\bδιότι\b",
+           r"\bπου την (έκανε|κάνει)\b"),
+}
+# Concession markers per language: the driver is conceded against the outcome ("even though it was played along
+# the ground"). With CAUSAL_MARKERS they give a driver its role (role_parity).
+CONCESSION_MARKERS: dict[str, tuple[str, ...]] = {
+    "en": (r"\beven though\b", r"\balthough\b", r"\bthough\b", r"\bdespite\b", r"\bin spite of\b"),
+    "es": (r"\baunque\b", r"\ba pesar de\b", r"\bpese a\b"),
+    "el": (r"\bπαρ[όο]λο που\b", r"\bπαρ['’ʼ] ?[όο]λο που\b", r"\bαν και\b", r"\bπαρά\b",
+           r"\bμολονότι\b", r"\bενώ\b"),
 }
 CAUSE_GAP = 2   # at most this many words between a causal marker and a difficulty word
 
@@ -154,13 +180,29 @@ def _compile(table: dict[str, tuple[str, ...]]) -> dict[str, list[re.Pattern[str
 _BANNED_RE = _compile(BANNED)
 _NUMBER_WORDS_RE = _compile(NUMBER_WORDS)
 _FAMILY_RE = {"easy": _compile(EASY_WORDS), "hard": _compile(HARD_WORDS)}
+# A line that opens with its difficulty word (the tier_first frame) needs one of these before the outcome.
+CONTRAST_WORDS: dict[str, tuple[str, ...]] = {
+    "en": (r"\byet\b", r"\bbut\b"), "es": (r"\bpero\b",), "el": (r"\bαλλά\b",),
+}
+# Intensifiers that may come before an opening difficulty word ("Very easy because ...").
+OPENING_INTENSIFIERS: dict[str, str] = {
+    "en": r"(?:very|especially|extremely|particularly|really|quite)\s+",
+    "es": r"(?:muy|especialmente|realmente|bastante)\s+",
+    "el": r"(?:πολύ|εξαιρετικά|ιδιαίτερα|αρκετά)\s+",
+}
+CLAUSE_BREAK = re.compile(r"[,;:\u2013\u2014]")
+
 _CAUSAL_RE = _compile(CAUSAL_MARKERS)
+_CONCESSION_RE = _compile(CONCESSION_MARKERS)
+_CONTRAST_RE = _compile(CONTRAST_WORDS)
+_OPENING_RE = {lang: re.compile(rf"^\W*(?:{p})?", re.IGNORECASE) for lang, p in OPENING_INTENSIFIERS.items()}
 _LEAD_RE = _compile(LEAD_WORDS)
 
 
 def _table_phrases() -> dict[str, list[str]]:
     """Every phrase of the phrase table per language, longest first: label phrases (VAGUE_LABELS left out),
-    depth and width pieces, and the extra hints wordings (English height forms, Greek adjectives and depths)."""
+    depth and width pieces, the extra hints wordings (English height forms, Greek adjectives, depth and width
+    hints) and the recognised forms (zone nouns, "header", the Greek forms of the owner's examples)."""
     out: dict[str, set[str]] = {lang: set() for lang in LANGS}
     labels = {k: v for k, v in LABEL_PHRASES.items() if k not in VAGUE_LABELS}
     for table in (DEPTH_PHRASES, WIDTH_PHRASES, labels):
@@ -170,6 +212,10 @@ def _table_phrases() -> dict[str, list[str]]:
     out["en"].update(w for words in ENGLISH_HEIGHT_HINTS.values() for w in words)
     out["el"].update(GREEK_ADJECTIVES.values())
     out["el"].update(GREEK_DEPTH_HINTS.values())
+    for table in (DEPTH_HINTS, WIDTH_HINTS, RECOGNISED_LABEL_FORMS, RECOGNISED_DEPTH_FORMS):
+        for per_lang in table.values():
+            for lang, words in per_lang.items():
+                out[lang].update(words)
     return {lang: sorted(phrases, key=lambda p: (-len(p), p)) for lang, phrases in out.items()}
 
 
@@ -340,12 +386,9 @@ def _phrase_spans(line: str, phrase: str) -> list[tuple[int, int]]:
 
 
 def _driver_wordings(driver: Driver, lang: str) -> list[str]:
-    """Every approved wording of one driver in one language: its phrase (and pieces) and its hints suggestions."""
-    wordings = [p[lang] for p in driver_phrases(driver).values()]
-    hints = suggestions(driver)
-    for options in (hints.values() if driver.feature == "position" else [hints]):
-        wordings += options[lang]
-    return wordings
+    """Every accepted wording of one driver in one language (phrases.wordings): its phrase (and pieces), its hints
+    suggestions and its recognised forms."""
+    return wordings(driver)["all"][lang]
 
 
 def check_unsupported_facts(out: NarratorOut, bundle: MomentBundle) -> list[str]:
@@ -385,10 +428,97 @@ def check_needs_driver(out: NarratorOut, bundle: MomentBundle) -> list[str]:
             f"({wanted}) and the pass is rated {tier.family} ({tier.en})"]
 
 
+def _used_drivers(out: NarratorOut, bundle: MomentBundle) -> list[Driver]:
+    drivers = narrated_drivers(bundle)
+    return [drivers[r] for r in dict.fromkeys(out.drivers_used) if r in drivers]
+
+
+def check_driver_expressed(out: NarratorOut, bundle: MomentBundle) -> list[str]:
+    """Every driver in drivers_used is named in every line by one of its wordings (phrases.wordings). Hints mode,
+    whose facts list those wordings; strict mode has the stricter phrases check, and free mode shows the model only
+    the English labels. A paraphrase that is not listed is rejected and retried."""
+    reasons = []
+    for d in _used_drivers(out, bundle):
+        for lang, line in _lines(out).items():
+            if not any(has_phrase(line, w) for w in _driver_wordings(d, lang)):
+                reasons.append(f"driver_expressed: line_{lang} lists driver {d.rank} ({d.label}) but does not name "
+                               f"it; every line names every driver in drivers_used")
+    return reasons
+
+
+def line_roles(lang: str, line: str) -> set[str]:
+    """The roles a line gives its drivers: "reason" (a causal marker) and/or "concession" (a concession marker)."""
+    roles = set()
+    if any(p.search(line) for p in _CAUSAL_RE[lang]):
+        roles.add("reason")
+    if any(p.search(line) for p in _CONCESSION_RE[lang]):
+        roles.add("concession")
+    return roles
+
+
+def check_role_parity(out: NarratorOut, bundle: MomentBundle) -> list[str]:
+    """When a line uses drivers, each line gives them a role (the reason for the rating, or a concession on the
+    outcome), and the three lines give the same one: a driver is never a bare description in one language
+    ("Η ψηλή πάσα ... βρίσκει συμπαίκτη") while another language gives the reason."""
+    if not _used_drivers(out, bundle):
+        return []
+    roles = {lang: line_roles(lang, line) for lang, line in _lines(out).items()}
+    reasons = [f"role_parity: line_{lang} names a driver but gives it no role: say it as the reason for the rating "
+               f"(next to the difficulty word) or as a concession (even though)"
+               for lang, r in roles.items() if not r]
+    given = {lang: r for lang, r in roles.items() if r}
+    if len({frozenset(r) for r in given.values()}) > 1:
+        said = ", ".join(f"line_{lang} {'+'.join(sorted(r))}" for lang, r in given.items())
+        reasons.append(f"role_parity: the lines give the drivers different roles ({said}); all three take the "
+                       f"same one")
+    return reasons
+
+
+def check_one_position_piece(out: NarratorOut, bundle: MomentBundle) -> list[str]:
+    """A position driver is named by its depth or by its width, not both, in each line (free and hints modes)."""
+    reasons = []
+    for d in _used_drivers(out, bundle):
+        if d.feature != "position":
+            continue
+        parts = wordings(d)
+        for lang, line in _lines(out).items():
+            if all(any(has_phrase(line, w) for w in parts[piece][lang]) for piece in ("depth", "width")):
+                reasons.append(f"one_position_piece: line_{lang} names both the depth and the width of driver "
+                               f"{d.rank}; use one of them")
+    return reasons
+
+
+def check_one_role_per_clause(out: NarratorOut) -> list[str]:
+    """No clause gives a concession and a reason at once: "even though it was very easy because it came from deep"
+    is rejected; "Even though it was lofted high, the pass was difficult because ..." keeps them in two clauses."""
+    reasons = []
+    for lang, line in _lines(out).items():
+        for clause in CLAUSE_BREAK.split(line):
+            if any(p.search(clause) for p in _CONCESSION_RE[lang]) and any(p.search(clause) for p in _CAUSAL_RE[lang]):
+                reasons.append(f"one_role_per_clause: line_{lang} gives a concession and a reason in one clause "
+                               f"({clause.strip()!r}); one role per clause")
+    return reasons
+
+
+def check_tier_first_contrast(out: NarratorOut) -> list[str]:
+    """A line that opens with a difficulty word ("Easy because it was played along the ground, yet ...") has a
+    contrast word (CONTRAST_WORDS) before the outcome."""
+    reasons = []
+    for lang, line in _lines(out).items():
+        rest = line[_OPENING_RE[lang].match(line).end():]
+        opens_with_tier = any(p.match(rest) for table in _FAMILY_RE.values() for p in table[lang])
+        if opens_with_tier and not any(p.search(line) for p in _CONTRAST_RE[lang]):
+            words = " / ".join(w.replace("\\b", "") for w in CONTRAST_WORDS[lang])
+            reasons.append(f"tier_first_contrast: line_{lang} opens with the difficulty word but has no contrast "
+                           f"word ({words}) before the outcome")
+    return reasons
+
+
 def verify(out: NarratorOut, bundle: MomentBundle, mode: str | None = None) -> VerifierResult:
     """Run every check and collect every failing reason; ok when there are none. Notes never fail a line.
 
-    mode is the phrase mode (default config.phrase_mode()); the phrases check runs in "strict" mode only.
+    mode is the phrase mode (default config.phrase_mode()); the phrases check runs in "strict" mode only,
+    driver_expressed in "hints" mode, one_position_piece in "free" and "hints" modes.
     """
     mode = mode or phrase_mode()
     difficulty_reasons, notes = check_difficulty(out, bundle)
@@ -405,5 +535,10 @@ def verify(out: NarratorOut, bundle: MomentBundle, mode: str | None = None) -> V
         *check_unsupported_facts(out, bundle),
         *check_lead_driver(out, bundle),
         *check_needs_driver(out, bundle),
+        *(check_driver_expressed(out, bundle) if mode == "hints" else []),
+        *check_role_parity(out, bundle),
+        *(check_one_position_piece(out, bundle) if mode != "strict" else []),
+        *check_one_role_per_clause(out),
+        *check_tier_first_contrast(out),
     ]
     return VerifierResult(ok=not reasons, reasons=reasons, notes=notes)
