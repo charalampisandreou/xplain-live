@@ -32,11 +32,6 @@
       <button type="button" disabled aria-disabled="true" title="Coming soon">Analyst</button>
       <button type="button" disabled aria-disabled="true" title="Coming soon">Player</button>
     </div>
-    <div class="seg lang" role="group" aria-label="Commentary language" id="lang">
-      <button type="button" data-lang="en" class="on" aria-pressed="true">EN</button>
-      <button type="button" data-lang="es" aria-pressed="false">ES</button>
-      <button type="button" data-lang="el" aria-pressed="false">EL</button>
-    </div>
   </div>
 
   <!-- title: its wording lives here only -->
@@ -104,7 +99,19 @@
     <div class="body">
       <div class="left">
         <div class="line" id="lower-line"></div>
-        <div class="meta"><span id="lower-meta"></span><span id="lower-xp" hidden> · <span class="xp">xP</span> <span id="lower-xp-val"></span></span></div>
+        <div class="rule" aria-hidden="true"></div>
+        <!-- meta row: the facts on the left, the narration language switch on the right -->
+        <div class="metarow">
+          <div class="meta" id="lower-facts"><span id="lower-meta"></span><span id="lower-xp" hidden> · <span class="xp">xP</span> <span id="lower-xp-val"></span></span></div>
+          <div class="narrlang" role="group" aria-label="Narration language">
+            <span class="narrlang-label" aria-hidden="true">Narration</span>
+            <div class="seg lang" id="lang">
+              <button type="button" data-lang="en" class="on" aria-pressed="true">EN</button>
+              <button type="button" data-lang="es" aria-pressed="false">ES</button>
+              <button type="button" data-lang="el" aria-pressed="false">EL</button>
+            </div>
+          </div>
+        </div>
       </div>
       <div class="right">
         <div class="pvanum" id="lower-pva">–</div>
