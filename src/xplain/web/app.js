@@ -418,7 +418,8 @@
     line.style.fontSize = '';
     $('lower-meta').textContent = idx.teams[s.goal.team_id] || '';
     $('lower-xp').hidden = true;
-    $('lower-pva').textContent = '';
+    $('lower-pva').textContent = 'GOAL';   // the PVA column: "GOAL" over the score track's minute_label
+    $('lower-pva-label').textContent = s.minute_label + "'";
     fadePlate();
   }
 
@@ -621,7 +622,8 @@
       line.style.fontSize = '';
       $('lower-meta').textContent = '';
       $('lower-xp').hidden = true;
-      $('lower-pva').textContent = '–';
+      $('lower-pva').textContent = '–';   // the PVA column: a dash over "PVA"
+      $('lower-pva-label').textContent = 'PVA';
       return;
     }
     const m = entry.bundle.moment;
@@ -636,6 +638,7 @@
     line.setAttribute('lang', state.lang);
     line.style.fontSize = state.fit.get(id) || '';
     $('lower-pva').textContent = pva(m.delta);
+    $('lower-pva-label').textContent = 'PVA';
   }
 
   // Once at load, after the fonts: the font size each narrated line needs to fit in two lines of the

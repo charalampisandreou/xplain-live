@@ -155,8 +155,6 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 /* hidden but keeping its row, so the narration nav always sits on the name tab's line */
 .lower.waiting .nametab { visibility: hidden; }
 .lower.goal .tab-div, .lower.goal .tab-when { display: none; }
-/* no PVA in the goal and waiting states: the column keeps its width, so the switch never moves */
-.lower.goal .body > .right, .lower.waiting .body > .right { visibility: hidden; }
 
 /* narration nav: chevrons and "7 / 12", right-aligned on the name tab's row, no boxes */
 .narrnav { position: absolute; top: 0; right: 0; height: 30px; display: flex; align-items: center; }
@@ -223,6 +221,10 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .pvanum { font-size: 30px; font-weight: 800; font-stretch: 85%; line-height: 1; white-space: nowrap; }
 .lower.completed .pvanum { color: var(--completed); }
 .lower.failed .pvanum { color: var(--failed-text); }
+/* the same column in every state: a muted dash over "PVA" while waiting, "GOAL" over the minute on a goal */
+.lower.waiting .pvanum { color: var(--muted); }
+.lower.goal .pvanum { color: var(--accent); letter-spacing: 0.02em; }
+.lower.goal .pvalabel { font-size: 13px; letter-spacing: 0.06em; color: var(--text-soft); }
 .pvalabel { font-size: 11px; font-weight: 700; letter-spacing: 0.12em; color: var(--muted); }
 
 /* controls */
