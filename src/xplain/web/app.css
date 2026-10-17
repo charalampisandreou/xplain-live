@@ -51,7 +51,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--failed); display: inline-block; }
 .live-dot.big { width: 10px; height: 10px; box-shadow: 0 0 0 3px rgba(255, 75, 71, 0.25); }
 
-/* product mark + switches */
+/* product mark + mode switch */
 .topright { position: absolute; top: 28px; right: 40px; display: flex; align-items: center; gap: 18px; }
 .mark { font-weight: 800; font-size: 22px; letter-spacing: -0.01em; }
 .mark span { font-weight: 500; color: var(--accent); }
@@ -62,7 +62,6 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 }
 .seg button.on { background: var(--accent); color: var(--plate-text); font-weight: 700; }
 .seg button:disabled { color: var(--muted); opacity: 0.55; }
-.seg.lang button { width: 42px; padding: 0; font-size: 13px; }
 
 /* title */
 .title {
@@ -155,7 +154,9 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 }
 /* hidden but keeping its row, so the narration nav always sits on the name tab's line */
 .lower.waiting .nametab { visibility: hidden; }
-.lower.goal .tab-div, .lower.goal .tab-when, .lower.goal .right { display: none; }
+.lower.goal .tab-div, .lower.goal .tab-when { display: none; }
+/* no PVA in the goal and waiting states: the column keeps its width, so the switch never moves */
+.lower.goal .body > .right, .lower.waiting .body > .right { visibility: hidden; }
 
 /* narration nav: chevrons and "7 / 12", right-aligned on the name tab's row, no boxes */
 .narrnav { position: absolute; top: 0; right: 0; height: 30px; display: flex; align-items: center; }
@@ -172,32 +173,53 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .tab-name { font-size: 16px; font-weight: 800; font-stretch: 78%; letter-spacing: 0.04em; text-transform: uppercase; white-space: nowrap; }
 .tab-div { width: 1px; height: 14px; background: rgba(10, 27, 46, 0.35); }
 .tab-when { font-size: 14px; font-weight: 700; font-stretch: 78%; letter-spacing: 0.04em; white-space: nowrap; }
-/* One fixed height in every state (one or two lines, goal, waiting, any language): the two-line
-   height, 12 + 2 x 24 + 5 + 16 + 13 padding/rows + 2 border. One line sits centred. A line that
-   would need three lines is set smaller by app.js (down to 15px), never clipped. */
+/* One fixed height in every state (one or two lines, goal, waiting, any language): 2 border +
+   5 + 48 (two lines) + 4 + 1 (rule) + 4 + 34 (meta row: the switch) + 4 = 102, the most that fits
+   between the pitch (12px gap) and the controls' bottom edge. A line that would need three lines
+   is set smaller by app.js (down to 15px), never clipped. */
 .body {
-  width: 100%; height: 96px; display: flex; align-items: stretch; background: var(--surface);
+  width: 100%; height: 102px; display: flex; align-items: stretch; background: var(--surface);
   border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 0 4px 4px 4px; box-shadow: 0 10px 28px rgba(0, 0, 0, 0.40);
 }
 .lower.waiting .body { border-radius: 4px; }
 /* scoped to the plate body: .possession.left also carries the class "left" */
 .body > .left {
-  position: relative; flex: 1; min-width: 0; padding: 12px 18px 13px;
-  display: flex; flex-direction: column; justify-content: center; gap: 5px;
+  position: relative; flex: 1; min-width: 0; padding: 5px 18px 4px;
+  display: flex; flex-direction: column; gap: 4px;
 }
-.line { font-size: 18px; font-weight: 500; line-height: 24px; color: #E6EEF7; }
-.line:empty { display: none; }
+/* the line's slot is always two lines high (one line sits centred in it), so the rule and the
+   meta row below never move */
+.line {
+  font-size: 18px; font-weight: 500; line-height: 24px; color: #E6EEF7;
+  height: 48px; flex: none; display: flex; align-items: center;
+}
 /* off-screen copy of the line, used once at load to find a font size that fits two lines */
-.lower .line.measure { font-weight: 500; position: absolute; left: 18px; right: 18px; top: 0; visibility: hidden; pointer-events: none; }
+.lower .line.measure {
+  font-weight: 500; position: absolute; left: 18px; right: 18px; top: 0; height: auto; display: block;
+  visibility: hidden; pointer-events: none;
+}
+.rule { height: 1px; flex: none; background: var(--hairline); }
+.metarow { height: 34px; flex: none; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .meta { font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
-.lower .meta { line-height: 16px; }
+.lower .meta {
+  font-size: 13px; font-weight: 700; letter-spacing: 1.3px; line-height: 16px; color: var(--text-soft);
+  min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* narration language: "NARRATION" and an EN / ES / EL segmented control */
+.narrlang { flex: none; display: flex; align-items: center; gap: 10px; }
+.narrlang-label { font-size: 12px; font-weight: 700; letter-spacing: 1.4px; text-transform: uppercase; color: var(--muted); }
+.seg.lang { padding: 3px; gap: 2px; border: 1px solid var(--switch-border); border-radius: 5px; background: var(--inset); }
+.seg.lang button {
+  min-width: 44px; height: 26px; padding: 0 8px; border-radius: 3px;
+  font-size: 13px; font-weight: 800; letter-spacing: 1px; color: var(--text-soft);
+}
+.seg.lang button.on { background: var(--accent); color: var(--plate-text); font-weight: 800; }
 .xp { text-transform: none; }   /* "xP" keeps its casing inside upper-case labels */
 .lower.waiting .line { color: var(--muted); font-weight: 400; }
 .body > .right {
   width: 116px; flex: none; border-left: 1px solid rgba(255, 255, 255, 0.08);
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
 }
-.lower.waiting .right { display: none; }
 .pvanum { font-size: 30px; font-weight: 800; font-stretch: 85%; line-height: 1; white-space: nowrap; }
 .lower.completed .pvanum { color: var(--completed); }
 .lower.failed .pvanum { color: var(--failed-text); }

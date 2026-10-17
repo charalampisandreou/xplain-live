@@ -101,8 +101,11 @@ def test_plate_has_one_fixed_height(client):
     css = client.get("/static/app.css").text
     js = client.get("/static/app.js").text
     body = css.split(".body {")[1].split("}")[0]
-    assert "height: 96px" in body and "min-height" not in body
-    assert "line-height: 24px" in css.split(".line {")[1].split("}")[0]
+    assert "height: 102px" in body and "min-height" not in body
+    line = css.split(".line {")[1].split("}")[0]
+    assert "line-height: 24px" in line and "font-size: 18px" in line
+    assert "height: 48px" in line   # two lines reserved, so the meta row never moves
+    assert ".line:empty" not in css
     assert "MIN_LINE_PX = 15" in js and "TWO_LINES_PX = 48" in js
 
 
@@ -124,6 +127,32 @@ def test_pitch_is_pinned_and_plate_columns_are_scoped(client):
     assert "position: absolute; top: 0; left: 0;" in css.split(".pitch > #pitch-svg {")[1].split("}")[0]
     # a rule for every svg in .pitch also caught the possession tab's chevrons
     assert ".pitch svg" not in css
+
+
+def test_language_switch_is_in_the_plate_not_the_header(client):
+    html = client.get("/").text.replace("\r\n", "\n")
+    header = html.split('class="topright"')[1].split('<h1 class="title">')[0]
+    assert "data-lang" not in header and "language" not in header.lower()
+    plate = html.split('id="plate"')[1].split('<div class="controls">')[0]
+    group = plate.split('role="group" aria-label="Narration language"')[1].split("</button>\n            </div>")[0]
+    assert ">Narration</span>" in group
+    buttons = group.split("<button")[1:]
+    assert [b.split('data-lang="')[1][:2] for b in buttons] == ["en", "es", "el"]
+    assert all('aria-pressed="' in b for b in buttons)
+    assert 'data-lang="en" class="on" aria-pressed="true"' in group
+    assert html.count("data-lang=") == 3   # one switch on the page
+    # the meta row: facts on the left, the switch on the right, under a hairline
+    assert plate.index('class="line"') < plate.index('class="rule"') < plate.index('class="metarow"')
+    assert plate.index('id="lower-facts"') < plate.index('aria-label="Narration language"')
+
+
+def test_language_switch_keeps_its_behaviour(client):
+    js = client.get("/static/app.js").text
+    assert "LANGS.includes(params.get('lang'))" in js   # ?lang=en|es|el
+    assert "$('lang').querySelectorAll('button')" in js
+    # the plate content fades on a language change; the switch itself does not
+    fade = js.split("function fadePlate()")[1].split("}")[0]
+    assert "lower-line" in fade and "lang" not in fade.replace("lower-line", "")
 
 
 def test_health_and_score_routes_are_kept(client):

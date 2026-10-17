@@ -356,6 +356,13 @@
     state.fades.get(node).anim = node.animate([{ opacity: 0 }, { opacity: 1 }], { duration: FADE_MS, easing: 'ease-out' });
   }
 
+  // The plate's content fades; its body and the narration language switch stay still.
+  function fadePlate() {
+    for (const node of [$('nametab'), $('lower-line'), $('lower-facts'), $('lower').querySelector('.body > .right')]) {
+      crossFade(node);
+    }
+  }
+
   // --- goal ---
 
   // The score bug always shows the live match, so it pulses on every goal crossed in playback (three
@@ -412,7 +419,7 @@
     $('lower-meta').textContent = idx.teams[s.goal.team_id] || '';
     $('lower-xp').hidden = true;
     $('lower-pva').textContent = '';
-    crossFade(lower);
+    fadePlate();
   }
 
   // --- narration nav: "7 / 12" between two chevrons; hidden until a narrated moment is reached ---
@@ -606,7 +613,7 @@
     const lower = $('lower');
     lower.classList.remove('completed', 'failed', 'waiting', 'goal');
     const line = $('lower-line');
-    crossFade(lower);
+    fadePlate();
     if (!entry) {   // before the first commentated moment: the body only
       lower.classList.add('waiting');
       line.textContent = 'No commentated moment yet';
