@@ -5,8 +5,8 @@ from xplain.prompts import RECAP_EXAMPLES, recap_instructions
 from xplain.recap import recap_claims
 from xplain.recap_verifier import RECAP_WORD_LIMIT, verify_recap
 
-FT, HT = RECAP_EXAMPLES
-PLAYERS = ["Dario Pell", "Joss Marlin", "Tomas Avery", "Ollie Branck"]
+FT, HT, DRAW_FT = RECAP_EXAMPLES
+PLAYERS = ["Dario Pell", "Joss Marlin", "Tomas Avery", "Ollie Branck", "Ivo Grant"]
 
 
 def check(example, players=PLAYERS, **update):
@@ -56,8 +56,8 @@ def test_judgement_luck_and_model_words_are_banned():
                   "banned")
     assert failed(check(FT, **sub(FT, "es", "remontó y venció", "remontó con suerte y venció")), "banned")
     assert failed(check(FT, **sub(FT, "el", "έκανε την ανατροπή", "έκανε την ανατροπή κυριαρχώντας")), "banned")
-    assert failed(check(FT, **sub(FT, "en", "completed more passes than expected",
-                                  "completed more passes than the xP model expected")), "banned")
+    assert failed(check(FT, **sub(FT, "en", "stood out with",
+                                  "stood out in the xP model with")), "banned")
 
 
 def test_no_cause_in_a_recap():
@@ -100,21 +100,22 @@ def test_the_result_words_must_fit_the_result():
 
 
 def test_passing_phrases_name_the_right_team_in_their_clause():
-    v = check(FT, **sub(FT, "en", "Harbourne Athletic completed more passes than expected; Kellsworth Rovers "
-                                  "completed fewer than expected",
+    v = check(FT, **sub(FT, "en", "Harbourne Athletic completed {home_vs_expected} more passes than expected; "
+                                  "Kellsworth Rovers completed {away_vs_expected} fewer than expected",
                         "Kellsworth Rovers completed more passes than expected; Harbourne Athletic completed fewer "
                         "than expected"))
     assert any("'above' expected" in r for r in failed(v, "recap_claims"))
     v = check(HT, **sub(HT, "el", "η Harbourne Athletic κινήθηκε κοντά στα αναμενόμενα",
                         "η Harbourne Athletic ολοκλήρωσε περισσότερες πάσες από τις αναμενόμενες"))
     assert any("'above' expected" in r and "text_el" in r for r in failed(v, "recap_claims"))
-    v = check(FT, **sub(FT, "en", "; Kellsworth Rovers completed fewer than expected", ", fewer than expected"))
+    v = check(FT, **sub(FT, "en", "; Kellsworth Rovers completed {away_vs_expected} fewer than expected",
+                        ", fewer than expected"))
     assert any("no team in its clause" in r for r in failed(v, "recap_claims"))
 
 
 def test_only_claimed_scorers_are_named():
-    v = check(FT, **sub(FT, "en", "Harbourne Athletic completed more", "Ollie Branck and Harbourne Athletic completed more"))
-    assert any("names Ollie Branck" in r for r in failed(v, "recap_claims"))
+    v = check(FT, **sub(FT, "en", "Harbourne Athletic completed {home", "Ivo Grant and Harbourne Athletic completed {home"))
+    assert any("names Ivo Grant" in r for r in failed(v, "recap_claims"))
     v = check(FT, claims_used=[c for c in FT.out.claims_used if c != "scorer:Joss Marlin"])
     assert any("names Joss Marlin" in r for r in failed(v, "recap_claims"))
 

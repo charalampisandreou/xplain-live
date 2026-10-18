@@ -286,7 +286,7 @@ def test_the_recap_branch_runs_beside_the_moments(seed42_events, tiny_scorer, li
     assert [r.scope for r in both.recaps] == ["full_time", "half_time"]
     for r in both.recaps:
         assert r.card is not None and r.card.scope == r.scope and r.text is not None and r.status == "accepted", r.reasons
-        assert [s.agent for s in r.trace] == ["recap_editor", "recap_verifier"]
+        assert [s.agent for s in r.trace] == ["recap_editor", "recap_verifier", "recap_filler"]
     assert [c["scope"] for c in llm.calls] == ["full_time", "half_time"]
 
 

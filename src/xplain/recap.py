@@ -2,11 +2,17 @@
 Recap: the full-time (or half-time) recap card and the facts the RecapEditor model may write about.
 
 Every number on the card is computed here, in code: the score, each goal's minute_label (clock.match_clock), and
-per team its passes, completed passes, expected completions (the sum of xP) and "vs expected" (completed minus
-expected, rounded to a whole pass), with its label ("vs expected +19"). The model never sees a number: recap_facts
+per team its passes, completed passes, expected completions (the sum of xP, rounded half-up to a whole pass) and
+"vs expected" (completed minus that expected, so the numbers on screen always add up), with its label
+("vs expected +19"); and the star player of the scope (star_player). The model never sees a number: recap_facts
 gives it categories only (the result, the margin as "narrow" or "clear", each goal's scorer, half and whether it
-was late, each team's passing band) and the claims it may make (recap_claims). The RecapEditor writes one short
-recap per language (RecapOut) and lists the claims it used; recap_verifier checks it against the card.
+was late, each team's passing band, the star's name) and the claims it may make (recap_claims).
+
+Recap v2: the model may write four slots, never a number itself: {home_vs_expected}, {away_vs_expected},
+{star_name}, {star_pva} (SLOTS). Code fills them from the card (slot_values) after the raw text has passed
+recap_verifier: the size of a team's gap (no sign; the text says "more" or "fewer"), the star's name and how many
+more passes than expected the star completed. A team's slot exists only when its band is above or below; the star
+slots only when the card has a star. Completed, expected and passes stay on the card, under fixed labels.
 
 Editorial constants (change them here only):
   * LATE_MINUTE: a goal is "late" from this base minute of its half on, added time included (85' in the second
@@ -14,10 +20,13 @@ Editorial constants (change them here only):
   * PASSING_BAND: a team is "above" or "below" expected when |vs expected| is at least this many passes, else
     "close". Chosen from seeds 3001, 42 and 7 (full time: +19.4 / -19.1, +16.8 / -10.4, -0.7 / -1.0; halves
     between -13.4 and +16.0), so a clear gap reads as one and a near-zero one does not.
+  * STAR_MIN_PVA: the star must have completed at least this many passes more than expected (after rounding), so
+    the text always reads "passes" in the plural and the star is a clear, positive standout
 """
 from __future__ import annotations
 
 from collections.abc import Sequence
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -33,7 +42,9 @@ Result = Literal["home_win", "away_win", "draw", "home_lead", "away_lead", "leve
 Band = Literal["above", "below", "close"]
 
 LATE_MINUTE: dict[int, int] = {1: 40, 2: 85}
-PASSING_BAND: dict[str, float] = {"full_time": 8.0, "half_time": 5.0}
+PASSING_BAND: dict[str, int] = {"full_time": 8, "half_time": 5}
+STAR_MIN_PVA = 2
+SLOTS: tuple[str, ...] = ("home_vs_expected", "away_vs_expected", "star_name", "star_pva")
 MINUS = "−"   # the Studio's minus sign ("−94%")
 
 
@@ -66,10 +77,23 @@ class TeamPassing(_Strict):
     name: str
     passes: Annotated[int, Field(ge=0)]
     completed: Annotated[int, Field(ge=0)]
-    expected: float              # the sum of xP over the team's passes, to one decimal
-    vs_expected: int             # completed - expected, rounded to a whole pass
+    expected: int                # the sum of xP over the team's passes, rounded half-up
+    vs_expected: int             # completed - expected
     label: str                   # "vs expected +19", "vs expected −19", "vs expected 0"
     band: Band
+
+
+class StarPlayer(_Strict):
+    """The scope's star: the highest PVA total (completed - expected), at least STAR_MIN_PVA."""
+
+    player_id: str
+    name: str
+    team_id: str
+    team_name: str
+    passes: Annotated[int, Field(ge=1)]
+    completed: Annotated[int, Field(ge=0)]
+    expected: int                # the sum of xP over the player's passes, rounded half-up
+    pva: Annotated[int, Field(ge=STAR_MIN_PVA)]   # completed - expected
 
 
 class RecapCard(_Strict):
@@ -86,6 +110,7 @@ class RecapCard(_Strict):
     comeback_team_id: str | None = None        # the winner (or leader) was behind at some point
     late_winner_team_id: str | None = None     # full time: the goal that put the winner ahead for good was late
     late_equaliser_team_id: str | None = None  # full time: a draw whose last goal levelled it late
+    star: StarPlayer | None = None
 
 
 def vs_expected_label(value: int) -> str:
@@ -96,16 +121,41 @@ def vs_expected_label(value: int) -> str:
     return "vs expected 0"
 
 
+def half_up(x: float) -> int:
+    """x rounded to a whole number, halves away from zero (Python's round() rounds halves to even)."""
+    return int(Decimal(repr(x)).quantize(Decimal(1), rounding=ROUND_HALF_UP))
+
+
 def team_passing(marks: Sequence[PassMark], team_id: str, name: str, scope: str) -> TeamPassing:
-    """A team's passing in the scope: counts, the sum of xP and completed minus expected, with its band."""
+    """A team's passing in the scope: counts, expected (the sum of xP, rounded half-up) and completed minus
+    expected, with its band."""
     ps = [m for m in marks if m.team_id == team_id and m.period in SCOPE_PERIODS[scope]]
     completed = sum(m.completed for m in ps)
-    expected = sum(m.xp for m in ps)
-    gap = completed - expected
-    band: Band = "above" if gap >= PASSING_BAND[scope] else "below" if gap <= -PASSING_BAND[scope] else "close"
-    value = round(gap)
-    return TeamPassing(team_id=team_id, name=name, passes=len(ps), completed=completed, expected=round(expected, 1),
+    expected = half_up(sum(m.xp for m in ps))
+    value = completed - expected
+    band: Band = "above" if value >= PASSING_BAND[scope] else "below" if value <= -PASSING_BAND[scope] else "close"
+    return TeamPassing(team_id=team_id, name=name, passes=len(ps), completed=completed, expected=expected,
                        vs_expected=value, label=vs_expected_label(value), band=band)
+
+
+def star_player(marks: Sequence[PassMark], scope: str) -> StarPlayer | None:
+    """The player with the highest PVA total (completed - sum of xP) in the scope, both teams; ties go to more
+    passes, then the earlier first pass. None when that player's rounded PVA is below STAR_MIN_PVA."""
+    by_player: dict[str, list[PassMark]] = {}
+    for m in sorted(marks, key=lambda m: m.seq):
+        if m.period in SCOPE_PERIODS[scope] and m.player_id:
+            by_player.setdefault(m.player_id, []).append(m)
+    if not by_player:
+        return None
+    ps = max(by_player.values(),
+             key=lambda ps: (sum(m.completed for m in ps) - sum(m.xp for m in ps), len(ps), -ps[0].seq))
+    completed, expected = sum(m.completed for m in ps), half_up(sum(m.xp for m in ps))
+    if completed - expected < STAR_MIN_PVA:
+        return None
+    first = ps[0]
+    return StarPlayer(player_id=first.player_id, name=first.player_name or first.player_id, team_id=first.team_id,
+                      team_name=first.team_name or first.team_id, passes=len(ps), completed=completed,
+                      expected=expected, pva=completed - expected)
 
 
 def _result(home: int, away: int, scope: str) -> Result:
@@ -156,7 +206,8 @@ def recap_card(events: Sequence, marks: Sequence[PassMark], scope: str) -> Recap
                      home=team_passing(marks, meta.home_team_id, meta.home_name, scope),
                      away=team_passing(marks, meta.away_team_id, meta.away_name, scope),
                      score_home=home, score_away=away, goals=goals, result=result, comeback_team_id=comeback,
-                     late_winner_team_id=late_winner, late_equaliser_team_id=late_equaliser)
+                     late_winner_team_id=late_winner, late_equaliser_team_id=late_equaliser,
+                     star=star_player(marks, scope))
 
 
 def roster(events: Sequence) -> list[str]:
@@ -197,7 +248,54 @@ def recap_claims(card: RecapCard) -> dict[str, str]:
                  "close": "completed about as many passes as expected"}
     for t in (card.home, card.away):
         claims[f"passing:{t.name}"] = f"{t.name} {band_text[t.band]}"
+    if card.star is not None:
+        where = "in the match" if card.scope == "full_time" else "in the first half"
+        claims[f"star:{card.star.name}"] = (f"{card.star.name} ({card.star.team_name}) completed the most passes "
+                                             f"above expected {where}")
     return claims
+
+
+def slot_values(card: RecapCard) -> dict[str, str]:
+    """The slots this card has, with the text code puts in their place (the same in EN, ES and EL: whole numbers
+    and a name). A team's slot only when its band is above or below; the star's only when there is a star."""
+    values: dict[str, str] = {}
+    for side, t in (("home", card.home), ("away", card.away)):
+        if t.band != "close":
+            values[f"{side}_vs_expected"] = str(abs(t.vs_expected))
+    if card.star is not None:
+        values["star_name"] = card.star.name
+        values["star_pva"] = str(card.star.pva)
+    return values
+
+
+def slot_directions(card: RecapCard) -> dict[str, str]:
+    """The direction each number slot must be written with: "more" (above, and the star) or "fewer" (below)."""
+    out = {f"{side}_vs_expected": ("more" if t.band == "above" else "fewer")
+           for side, t in (("home", card.home), ("away", card.away)) if t.band != "close"}
+    if card.star is not None:
+        out["star_pva"] = "more"
+    return out
+
+
+def slot_team(card: RecapCard) -> dict[str, str]:
+    """The team name each team slot belongs to."""
+    return {"home_vs_expected": card.home.name, "away_vs_expected": card.away.name}
+
+
+def _slot_meanings(card: RecapCard) -> dict[str, str]:
+    """What each available slot stands for (for the model; no numbers)."""
+    meanings = {}
+    for side, t in (("home", card.home), ("away", card.away)):
+        if t.band != "close":
+            word = "more" if t.band == "above" else "fewer"
+            meanings[f"{side}_vs_expected"] = (f"how many {word} passes than expected {t.name} completed; write it "
+                                               f"right before the '{word} ... than expected' phrase, in a clause "
+                                               f"naming {t.name}")
+    if card.star is not None:
+        meanings["star_name"] = "the star's name, in place of writing it"
+        meanings["star_pva"] = ("how many more passes than expected the star completed; write it right before the "
+                                "'more ... than expected' phrase, in the clause with {star_name}")
+    return meanings
 
 
 def recap_facts(card: RecapCard) -> dict:
@@ -213,5 +311,7 @@ def recap_facts(card: RecapCard) -> dict:
         "goals": [{"team": g.team_name, "scorer": g.player_name, "half": "first" if g.period == 1 else "second",
                    "late": g.late} for g in card.goals],
         "passing": {card.home.name: card.home.band, card.away.name: card.away.band},
+        "star": None if card.star is None else {"team": card.star.team_name},
         "claims": recap_claims(card),
+        "slots": _slot_meanings(card),
     }

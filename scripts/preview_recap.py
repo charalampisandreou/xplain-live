@@ -43,9 +43,12 @@ def card_lines(card: RecapCard) -> list[str]:
 
 def result_lines(r: RecapResult) -> list[str]:
     rows = [f"status {r.status}, {r.attempts} attempt(s), {r.latency_s:.1f} s"]
+    if r.raw_text is not None:
+        rows += ["  raw (as the model wrote it):", f"    EN: {r.raw_text.text_en}", f"    ES: {r.raw_text.text_es}",
+                 f"    EL: {r.raw_text.text_el}"]
     if r.text is not None:
-        rows += [f"  EN: {r.text.text_en}", f"  ES: {r.text.text_es}", f"  EL: {r.text.text_el}",
-                 f"  claims_used: {r.text.claims_used}"]
+        rows += ["  filled (shown):", f"    EN: {r.text.text_en}", f"    ES: {r.text.text_es}",
+                 f"    EL: {r.text.text_el}", f"  claims_used: {r.text.claims_used}", f"  slots: {r.slots}"]
     rows += [f"  reason: {x}" for x in r.reasons] + [f"  note: {x}" for x in r.notes]
     for i, c in enumerate(r.rejected, start=1):
         rows += [f"  rejected candidate {i}:", f"    EN: {c.text_en}", f"    ES: {c.text_es}", f"    EL: {c.text_el}",

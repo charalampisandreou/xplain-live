@@ -4,8 +4,8 @@ import pytest
 
 from xplain import clock
 from xplain.pipeline import pass_marks
-from xplain.recap import (MINUS, PASSING_BAND, recap_card, recap_claims, recap_facts, roster, team_passing,
-                          vs_expected_label)
+from xplain.recap import (MINUS, PASSING_BAND, half_up, recap_card, recap_claims, recap_facts, roster,
+                          team_passing, vs_expected_label)
 from xplain.schema import MatchMetaEvent, ShotEvent
 
 from .test_pipeline import WIDE, seed42_events, tiny_model, tiny_scorer  # noqa: F401  (fixtures)
@@ -47,10 +47,10 @@ def test_team_passing_is_computed_from_the_marks(seed42_events, marks):  # noqa:
     meta = next(e for e in seed42_events if isinstance(e, MatchMetaEvent))
     t = team_passing(marks, meta.home_team_id, meta.home_name, "full_time")
     mine = [m for m in marks if m.team_id == meta.home_team_id]
-    completed, expected = sum(m.completed for m in mine), sum(m.xp for m in mine)
-    assert (t.passes, t.completed, t.expected) == (len(mine), completed, round(expected, 1))
-    assert t.vs_expected == round(completed - expected) and t.label == vs_expected_label(t.vs_expected)
-    gap = completed - expected
+    completed, expected = sum(m.completed for m in mine), half_up(sum(m.xp for m in mine))
+    assert (t.passes, t.completed, t.expected) == (len(mine), completed, expected)
+    assert t.vs_expected == completed - expected and t.label == vs_expected_label(t.vs_expected)
+    gap = t.vs_expected
     assert t.band == ("above" if gap >= PASSING_BAND["full_time"] else "below"
                       if gap <= -PASSING_BAND["full_time"] else "close")
     half = team_passing(marks, meta.home_team_id, meta.home_name, "half_time")
@@ -103,7 +103,8 @@ def test_facts_carry_no_numbers(seed42_events, marks):  # noqa: F811
     facts = recap_facts(card(events, marks))
     text = json.dumps(facts, ensure_ascii=False)
     assert not any(ch.isdigit() for ch in text)
-    assert "minute" not in text and "expected\":" not in text and "vs_expected" not in text
+    no_slots = json.dumps({k: v for k, v in facts.items() if k != "slots"}, ensure_ascii=False)
+    assert "minute" not in text and "expected\":" not in no_slots and "vs_expected" not in no_slots
     assert facts["margin"] == "narrow" and facts["passing"].keys() == {meta.home_name, meta.away_name}
     assert [g["late"] for g in facts["goals"]] == [False, False, True]
 

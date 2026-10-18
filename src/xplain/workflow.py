@@ -83,7 +83,9 @@ class RecapOutcome:
 
     scope: str
     card: RecapCard | None
-    text: RecapOut | None
+    text: RecapOut | None                 # filled
+    raw_text: RecapOut | None = None      # as the model wrote it, with slots
+    slots: dict[str, str] = field(default_factory=dict)
     attempts: int = 0
     reasons: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
@@ -293,7 +295,8 @@ class RecapEditorExecutor(Executor):
         if r.text is None:
             log.warning("%s recap: no text after %d attempt(s): %s", request.scope, r.attempts,
                         "; ".join(r.reasons) or "-")
-        await ctx.yield_output(RecapOutcome(scope=request.scope, card=card, text=r.text, attempts=r.attempts,
+        await ctx.yield_output(RecapOutcome(scope=request.scope, card=card, text=r.text, raw_text=r.raw_text,
+                                            slots=dict(r.slots), attempts=r.attempts,
                                             reasons=list(r.reasons), notes=list(r.notes), latency_s=r.latency_s,
                                             trace=list(r.trace)))
 

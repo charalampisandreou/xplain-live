@@ -8,7 +8,7 @@ from xplain.prompts import RECAP_EXAMPLES
 from xplain.recap import RecapOut
 from xplain.recap_editor import MAX_ATTEMPTS, RecapEditor, RecapResult
 
-FT, HT = RECAP_EXAMPLES
+FT, HT, DRAW_FT = RECAP_EXAMPLES
 PLAYERS = ["Dario Pell", "Joss Marlin", "Tomas Avery", "Ollie Branck"]
 GOOD = FT.out
 BAD = GOOD.model_copy(update={"text_en": GOOD.text_en.replace("came from behind", "came from behind 2-1")})
@@ -53,8 +53,15 @@ def steps(r: RecapResult) -> list[tuple]:
 def test_good_first_answer():
     llm = FakeLLM(GOOD)
     r = write(llm)
-    assert r.text == GOOD and r.status == "accepted" and r.attempts == 1 and r.reasons == []
-    assert steps(r) == [("recap_editor", "llm", 1, True), ("recap_verifier", "code", 1, True)]
+    assert r.raw_text == GOOD and r.status == "accepted" and r.attempts == 1 and r.reasons == []
+    assert r.text.text_en == GOOD.text_en.replace("{home_vs_expected}", "15").replace(
+        "{away_vs_expected}", "15").replace("{star_name}", "Ollie Branck").replace("{star_pva}", "6")
+    assert r.slots == {"home_vs_expected": "15", "away_vs_expected": "15", "star_name": "Ollie Branck",
+                       "star_pva": "6"}
+    assert steps(r) == [("recap_editor", "llm", 1, True), ("recap_verifier", "code", 1, True),
+                        ("recap_filler", "code", 1, True)]
+    assert r.trace[1].text == {"en": GOOD.text_en, "es": GOOD.text_es, "el": GOOD.text_el}   # raw
+    assert r.trace[2].text["el"] == r.text.text_el and "{star_pva} = 6" in r.trace[2].notes   # filled
     assert r.trace[0].model == "gpt-4.1-mini" and r.trace[0].latency_s is not None
     assert "rejected_because" not in llm.messages[0]
 
@@ -69,11 +76,13 @@ def test_the_model_sees_categories_only():
 def test_a_rejected_answer_is_retried_with_the_reasons():
     llm = FakeLLM(BAD, GOOD)
     r = write(llm)
-    assert r.text == GOOD and r.status == "retried" and r.attempts == 2
+    assert r.raw_text == GOOD and r.status == "retried" and r.attempts == 2
     assert r.reasons and r.reasons[0].startswith("attempt 1: no_numbers")
     assert llm.messages[1]["rejected_because"] == [x.removeprefix("attempt 1: ") for x in r.reasons]
     assert steps(r) == [("recap_editor", "llm", 1, True), ("recap_verifier", "code", 1, False),
-                        ("recap_editor", "llm", 2, True), ("recap_verifier", "code", 2, True)]
+                        ("recap_editor", "llm", 2, True), ("recap_verifier", "code", 2, True),
+                        ("recap_filler", "code", 2, True)]
+    assert r.trace[1].text["en"] == BAD.text_en   # the rejected raw text is in the trace
 
 
 def test_three_rejections_give_no_text():
@@ -83,13 +92,15 @@ def test_three_rejections_give_no_text():
 
 
 def test_timeout_error_and_invalid_answer_never_raise():
-    r = write(FakeLLM("slow"), timeout_s=0.05)
-    assert r.text is None and r.reasons == ["attempt 1: timeout after 0.05 s"]
-    assert steps(r) == [("recap_editor", "llm", 1, False)]
+    r = write(FakeLLM("slow", "slow"), timeout_s=0.05)
+    assert r.text is None and r.reasons == ["attempt 1: timeout after 0.05 s", "attempt 2: timeout after 0.05 s"]
+    assert steps(r) == [("recap_editor", "llm", 1, False), ("recap_editor", "llm", 2, False)]
+    r = write(FakeLLM("slow", GOOD), timeout_s=0.05)   # one timeout is retried, as for the Narrator
+    assert r.raw_text == GOOD and r.attempts == 2 and r.reasons == ["attempt 1: timeout after 0.05 s"]
     r = write(FakeLLM(RuntimeError("gone")))
     assert r.text is None and r.reasons == ["attempt 1: error RuntimeError: gone"]
     r = write(FakeLLM("invalid", GOOD))
-    assert r.text == GOOD and r.reasons == ["attempt 1: format: the answer is not a valid RecapOut (ValidationError)"]
+    assert r.raw_text == GOOD and r.reasons == ["attempt 1: format: the answer is not a valid RecapOut (ValidationError)"]
     assert steps(r)[0] == ("recap_editor", "llm", 1, False)
 
 

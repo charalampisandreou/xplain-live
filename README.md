@@ -322,6 +322,10 @@ moment id, so the same moment always gets the same nudge.
 
 - One spoken sentence per language (English, Spanish, Greek) for each commentated moment.
 - No numbers and no minute in any line. The card shows them, computed by code.
+- Moment lines carry no numbers; recap numbers are inserted by code, never written by the model. The
+  RecapEditor writes placeholders ({home_vs_expected}, {away_vs_expected}, {star_name}, {star_pva}); the recap
+  verifier checks the raw text, code fills the placeholders from the recap card, and the filled text is checked
+  again.
 - A line may give a **reason for the model's rating** ("difficult because it was lofted high") or
   a **concession** ("not completed, even though it was along the ground"). It never gives a cause
   of the outcome. Drivers explain why the *model* rated the pass as it did, not why the pass
@@ -407,8 +411,9 @@ so that row is not a like-for-like comparison.
 No third-party data and no pre-built scoring model is used anywhere in the current version. The
 generator's rules are designed and the scoring model is trained in this repository on generated
 matches only. The only third-party model is the Microsoft Foundry language model (gpt-6.1-sol by
-default, gpt-4.1-mini selectable) that phrases the commentary lines and the recaps; it never sees or produces a football statistic (the only
-numbers it handles are the driver ranks 1 to 3).
+default, gpt-4.1-mini selectable) that phrases the commentary lines and the recaps; it never sees or produces a
+football statistic (the only numbers it handles are the driver ranks 1 to 3; recap numbers are put into its
+placeholders by code).
 
 History: an earlier version of the generator used pass-completion weights fitted on StatsBomb Open
 Data. After correspondence with the hackathon support team (13 October 2026), who asked entrants

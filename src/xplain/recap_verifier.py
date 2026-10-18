@@ -4,11 +4,22 @@ Recap Verifier: checks a RecapOut against its RecapCard. Deterministic, no LLM, 
 It is separate from the Narrator's Verifier (verifier.py), which it does not change: it only reads that module's
 tables (number words, banned claims, causal markers, sentence breaks) and adds its own.
 
-Checks (every failing check adds a reason, prefixed with its name):
+Recap v2: the model writes slots ({home_vs_expected}, {away_vs_expected}, {star_name}, {star_pva}; recap.SLOTS),
+never a number. verify_recap checks the RAW text (no_numbers, recap_slots), fills the slots from the card
+(recap.slot_values) and checks the FILLED text (everything else). Moment lines carry no numbers; recap numbers are
+inserted by code, never written by the model.
+
+Checks on the raw text:
+  * no_numbers:  with the slots taken out, no digit, "%", percent or minute word (verifier.NUMBER_WORDS), or
+                 number word (RECAP_NUMBER_WORDS)
+  * recap_slots: only slots of recap.SLOTS, only those this card has (recap.slot_values), no stray braces, the
+                 same slots in EN/ES/EL; each number slot is followed by its direction phrase (SLOT_PHRASES:
+                 "more ... than expected" for an above team and the star, "fewer ... than expected" for a below
+                 team); a team slot sits in a clause naming its team, with that team's passing claim used; star
+                 slots need the star claim, and {star_pva} sits in the clause with {star_name}
+Checks on the filled text (every slot filled, no brace left):
   * format:      each text is non-empty, has no line break and at most RECAP_MAX_SENTENCES sentences
   * length:      each text has at most RECAP_WORD_LIMIT words (the same for EN/ES/EL)
-  * no_numbers:  no digit, "%", percent or minute word (verifier.NUMBER_WORDS), or number word
-                 (RECAP_NUMBER_WORDS); the card shows the score, the minutes and "vs expected"
   * banned:      verifier.BANNED (claims we have no data for, model internals, intent and credit verbs) and
                  RECAP_BANNED (judgement and luck, dominance and control, tactics, pressure, possession, the model)
   * recap_cause: no causal marker (verifier.CAUSAL_MARKERS): a recap reports what happened, never why
@@ -22,8 +33,10 @@ Checks (every failing check adds a reason, prefixed with its name):
         word does not name only the loser (the team behind), and a clause with a loss word not only the winner.
         Spanish "empate" is a draw word, except inside an explicit equaliser phrase (EQUALISER_PHRASES,
         "el empate de <scorer>"), which neither contradicts a win nor expresses a draw
-      - a passing phrase (above / below / close to expected) names, in its own clause, only teams of that band
-      - no player is named unless they scored in the scope and their scorer claim is used
+      - a passing phrase (above / below / close to expected) names, in its own clause, only teams of that band;
+        a clause naming the star (star claim used) is the star's: its phrase must be "above" (more)
+      - no player is named unless they scored in the scope and their scorer claim is used, or they are the star
+        and the star claim is used
 
 Clauses are split at punctuation (, ; : · — and sentence ends), so the prompt asks for each team's passing
 claim in its own clause.
@@ -35,12 +48,12 @@ from collections.abc import Sequence
 
 from pydantic import BaseModel, ConfigDict
 
-from .recap import RecapCard, RecapOut, recap_claims
+from .recap import SLOTS, RecapCard, RecapOut, recap_claims, slot_directions, slot_team, slot_values
 from .verifier import BANNED, CAUSAL_MARKERS, LANGS, NUMBER_CHARS, NUMBER_WORDS, SENTENCE_BREAK
 
-RECAP_WORD_LIMIT = 50
-RECAP_WORD_TARGET = 35
-RECAP_MAX_SENTENCES = 2
+RECAP_WORD_LIMIT = 60      # on the filled text: a number counts as one word, a name as its words
+RECAP_WORD_TARGET = 45
+RECAP_MAX_SENTENCES = 3
 
 RECAP_NUMBER_WORDS: dict[str, tuple[str, ...]] = {
     "en": (r"\b(two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|twenty|thirty|hundred|dozen)\b",
@@ -120,12 +133,13 @@ PASSING_WORDS: dict[str, tuple[str, ...]] = {
 }
 BAND_WORDS: dict[str, dict[str, tuple[str, ...]]] = {
     "above": {
-        "en": (r"\b(more|better)(?: \w+)? than expected\b", r"\babove expect\w*"),
+        "en": (r"\b(more|better)(?: \w+){0,2} than expected\b", r"\babove expect\w*"),
         "es": (r"\b(m[aá]s|mejor)(?: \w+)? de lo(s)? esperad\w*", r"\bpor encima de lo(s)? esperad\w*"),
         "el": (r"(περισσότερ|καλύτερ)\w*(?: \w+)? από τ\w* αναμενόμεν\w*", r"πάνω από τ\w* αναμενόμεν\w*"),
     },
     "below": {
-        "en": (r"\b(fewer|less|worse)(?: \w+)? than expected\b", r"\bbelow expect\w*", r"\bshort of expect\w*"),
+        "en": (r"\b(fewer|less|worse)(?: \w+){0,2} than expected\b", r"\bbelow expect\w*",
+               r"\bshort of expect\w*"),
         "es": (r"\b(menos|peor)(?: \w+)? de lo(s)? esperad\w*", r"\bpor debajo de lo(s)? esperad\w*"),
         "el": (r"(λιγότερ|χειρότερ)\w*(?: \w+)? από τ\w* αναμενόμεν\w*", r"κάτω από τ\w* αναμενόμεν\w*"),
     },
@@ -137,6 +151,19 @@ BAND_WORDS: dict[str, dict[str, tuple[str, ...]]] = {
     },
 }
 
+SLOT_RE = re.compile(r"\{([a-z_]+)\}")
+# The phrase a number slot must be followed by, per direction and language. EN: the direction word right after
+# the slot, then at most two words before "than expected" ("{x} more passes than expected"). ES: at most one word
+# (the noun) before the direction word and at most one after it ("{x} pases más de lo esperado"). EL: the direction
+# word right after the slot, then at most one word ("{x} περισσότερες πάσες από τις αναμενόμενες").
+SLOT_PHRASES: dict[str, dict[str, str]] = {
+    "more": {"en": r"\s*more(?:\s+\w+){0,2}\s+than\s+expected\b",
+             "es": r"\s*(?:\w+\s+)?m[aá]s(?:\s+\w+)?\s+de\s+los?\s+esperad\w*",
+             "el": r"\s*περισσότερ\w*(?:\s+\w+)?\s+από\s+τ\w*\s+αναμενόμεν\w*"},
+    "fewer": {"en": r"\s*(?:fewer|less)(?:\s+\w+){0,2}\s+than\s+expected\b",
+              "es": r"\s*(?:\w+\s+)?menos(?:\s+\w+)?\s+de\s+los?\s+esperad\w*",
+              "el": r"\s*λιγότερ\w*(?:\s+\w+)?\s+από\s+τ\w*\s+αναμενόμεν\w*"},
+}
 CLAUSE_SPLIT = re.compile(r"[,;:··–—.!?]")
 WORD = re.compile(r"\w+")
 
@@ -153,6 +180,7 @@ _LEVEL, _LEAD = _rx(LEVEL_WORDS), _rx(LEAD_WORDS)
 _EQUALISER = _rx(EQUALISER_PHRASES)
 _COMEBACK, _LATE, _PASSING = _rx(COMEBACK_WORDS), _rx(LATE_WORDS), _rx(PASSING_WORDS)
 _BAND = {band: _rx(table) for band, table in BAND_WORDS.items()}
+_SLOT_PHRASE = {d: {lang: re.compile(p, re.IGNORECASE) for lang, p in table.items()} for d, table in SLOT_PHRASES.items()}
 
 
 class RecapVerdict(BaseModel):
@@ -161,6 +189,8 @@ class RecapVerdict(BaseModel):
     ok: bool
     reasons: list[str]
     notes: list[str] = []
+    filled: RecapOut | None = None   # the text with its slots filled (None when a slot could not be filled)
+    slots_used: list[str] = []       # the slots of the raw text, in order of first use
 
 
 def _find(patterns: list[re.Pattern[str]], text: str) -> str | None:
@@ -194,6 +224,84 @@ def clauses(text: str) -> list[str]:
     return [c for c in CLAUSE_SPLIT.split(text) if c.strip()]
 
 
+def clause_at(text: str, pos: int) -> str:
+    """The clause (CLAUSE_SPLIT) that holds position pos."""
+    start = max((m.end() for m in CLAUSE_SPLIT.finditer(text, 0, pos)), default=0)
+    end = next((m.start() for m in CLAUSE_SPLIT.finditer(text, pos)), len(text))
+    return text[start:end]
+
+
+def _numbers(out: RecapOut) -> list[str]:
+    """no_numbers on the raw text, slots taken out."""
+    reasons = []
+    for lang in LANGS:
+        field, text = f"text_{lang}", SLOT_RE.sub(" ", getattr(out, f"text_{lang}"))
+        if m := NUMBER_CHARS.search(text):
+            reasons.append(f"no_numbers: {field} has {m.group(0)!r}")
+        elif hit := _find(_NUM[lang], text):
+            reasons.append(f"no_numbers: {field} has {hit!r}")
+    return reasons
+
+
+def _slots(out: RecapOut, card: RecapCard) -> list[str]:
+    """recap_slots on the raw text."""
+    values, directions, teams = slot_values(card), slot_directions(card), slot_team(card)
+    claims = recap_claims(card)
+    used = {c for c in out.claims_used if c in claims}
+    star_claim = f"star:{card.star.name}" if card.star else None
+    reasons, sets = [], {}
+    for lang in LANGS:
+        field, text = f"text_{lang}", getattr(out, f"text_{lang}")
+
+        def say(msg: str) -> None:
+            reasons.append(f"recap_slots: {field} {msg}")
+
+        stripped = SLOT_RE.sub(" ", text)
+        if "{" in stripped or "}" in stripped:
+            say("has a brace outside a slot")
+        sets[lang] = sorted(set(SLOT_RE.findall(text)))
+        for m in SLOT_RE.finditer(text):
+            name = m.group(1)
+            if name not in SLOTS:
+                say(f"has an unknown slot {{{name}}} (allowed: {', '.join(SLOTS)})")
+                continue
+            if name not in values:
+                say(f"has {{{name}}}, which this card does not have")
+                continue
+            if name in directions:
+                want = directions[name]
+                other = "fewer" if want == "more" else "more"
+                after = text[m.end():]
+                if _SLOT_PHRASE[other][lang].match(after):
+                    say(f"writes {{{name}}} with the '{other}' phrase; it must be '{want} ... than expected'")
+                elif not _SLOT_PHRASE[want][lang].match(after):
+                    say(f"does not follow {{{name}}} with the '{want} ... than expected' phrase")
+            clause = clause_at(text, m.start())
+            if name in teams:
+                team = teams[name]
+                if not _named(team, clause):
+                    say(f"has {{{name}}} in a clause that does not name {team}: {clause.strip()!r}")
+                if f"passing:{team}" not in used:
+                    say(f"has {{{name}}} without the claim 'passing:{team}'")
+            if name.startswith("star_") and star_claim not in used:
+                say(f"has {{{name}}} without the claim {star_claim!r}")
+            if name == "star_pva" and "{star_name}" not in clause:
+                say(f"has {{star_pva}} in a clause without {{star_name}}: {clause.strip()!r}")
+    if len({tuple(v) for v in sets.values()}) > 1:
+        reasons.append(f"recap_slots: the slots differ across languages: {sets}")
+    return reasons
+
+
+def fill(out: RecapOut, card: RecapCard) -> RecapOut:
+    """The text with every slot this card has replaced by its value (recap.slot_values); other braces stay."""
+    values = slot_values(card)
+
+    def sub(text: str) -> str:
+        return SLOT_RE.sub(lambda m: values.get(m.group(1), m.group(0)), text)
+
+    return out.model_copy(update={f"text_{lang}": sub(getattr(out, f"text_{lang}")) for lang in LANGS})
+
+
 def _format(out: RecapOut) -> list[str]:
     reasons = []
     for lang in LANGS:
@@ -213,13 +321,12 @@ def _format(out: RecapOut) -> list[str]:
 
 
 def _wording(out: RecapOut) -> list[str]:
+    """banned and recap_cause (on the filled text)."""
     reasons = []
     for lang in LANGS:
         field, text = f"text_{lang}", getattr(out, f"text_{lang}")
-        if m := NUMBER_CHARS.search(text):
-            reasons.append(f"no_numbers: {field} has {m.group(0)!r}")
-        elif hit := _find(_NUM[lang], text):
-            reasons.append(f"no_numbers: {field} has {hit!r}")
+        if "{" in text or "}" in text:
+            reasons.append(f"recap_slots: {field} has an unfilled slot or a stray brace")
         if hit := _find(_BANNED[lang], text):
             reasons.append(f"banned: {field} has {hit!r}")
         if hit := _find(_CAUSE[lang], text):
@@ -242,6 +349,7 @@ def _claims(out: RecapOut, card: RecapCard, players: Sequence[str]) -> tuple[lis
     home, away = card.home.name, card.away.name
     band_of = {home: card.home.band, away: card.away.band}
     scorers = {g.player_name for g in card.goals if g.player_name}
+    star = card.star.name if card.star is not None and f"star:{card.star.name}" in used else None
     late_scorer_used = any(g.late and f"scorer:{g.player_name}" in used for g in card.goals)
     winner = {"home_win": home, "away_win": away, "home_lead": home, "away_lead": away}.get(card.result)
     loser = ({home, away} - {winner}).pop() if winner else None
@@ -260,8 +368,8 @@ def _claims(out: RecapOut, card: RecapCard, players: Sequence[str]) -> tuple[lis
             say(f"has {hit!r} but no comeback claim is used")
         if (hit := _find(_LATE[lang], text)) and not ({"late_winner", "late_equaliser"} & kinds or late_scorer_used):
             say(f"has {hit!r} but no late claim is used")
-        if (hit := _find(_PASSING[lang], text)) and "passing" not in kinds:
-            say(f"has {hit!r} but no passing claim is used")
+        if (hit := _find(_PASSING[lang], text)) and not {"passing", "star"} & kinds:
+            say(f"has {hit!r} but no passing or star claim is used")
 
         # the result words fit the result (draw and level words outside explicit equaliser phrases)
         result_text = equaliser_free(text, lang, sorted(scorers))
@@ -286,13 +394,23 @@ def _claims(out: RecapOut, card: RecapCard, players: Sequence[str]) -> tuple[lis
 
         # passing phrases name only teams of their band, in their own clause
         expressed_bands: set[str] = set()
+        star_expressed = False
         for clause in clauses(text):
             for band, table in _BAND.items():
                 if not _find(table[lang], clause):
                     continue
+                if star and _player_named(star, clause) and not any(_named(n, clause) for n in (home, away)):
+                    if band != "above":
+                        say(f"says the star {star} passed '{band}' expected; the star is 'above' (more)")
+                    else:
+                        star_expressed = True
+                    continue
                 named = [n for n in (home, away) if _named(n, clause)]
                 if not named:
                     say(f"has a passing phrase with no team in its clause: {clause.strip()!r}")
+                unclaimed = [n for n in named if f"passing:{n}" not in used]
+                if unclaimed:
+                    say(f"says how {unclaimed} passed without the passing claim")
                 wrong = [n for n in named if band_of[n] != band]
                 if wrong:
                     say(f"says {wrong} passed '{band}' expected, but the card says "
@@ -301,8 +419,8 @@ def _claims(out: RecapOut, card: RecapCard, players: Sequence[str]) -> tuple[lis
 
         # players: only claimed scorers
         for p in players:
-            if _player_named(p, text) and not (p in scorers and f"scorer:{p}" in used):
-                say(f"names {p}, who has no used scorer claim")
+            if _player_named(p, text) and not ((p in scorers and f"scorer:{p}" in used) or p == star):
+                say(f"names {p}, who has no used scorer or star claim")
 
         # every used claim is expressed
         for c in used:
@@ -320,12 +438,18 @@ def _claims(out: RecapOut, card: RecapCard, players: Sequence[str]) -> tuple[lis
                 say(f"does not name the scorer of {c!r}")
             elif kind == "passing" and arg not in expressed_bands:
                 say(f"does not express {c!r} ({arg}: {band_of.get(arg)} expected, in a clause naming the team)")
+            elif kind == "star" and not star_expressed:
+                say(f"does not express {c!r} (the star's name with 'more ... than expected' in one clause)")
     return reasons, notes
 
 
 def verify_recap(out: RecapOut, card: RecapCard, players: Sequence[str] = ()) -> RecapVerdict:
-    """Every check on a RecapOut; players: every player name of the match (recap.roster)."""
-    reasons = _format(out) + _wording(out)
-    claim_reasons, notes = _claims(out, card, players)
+    """Every check on a raw RecapOut (with slots): no_numbers and recap_slots on the raw text, then the slots are
+    filled and every other check runs on the filled text. players: every player name of the match (recap.roster).
+    The verdict carries the filled text and the slots used."""
+    slots_used = list(dict.fromkeys(SLOT_RE.findall(" ".join(getattr(out, f"text_{lang}") for lang in LANGS))))
+    filled = fill(out, card)
+    reasons = _numbers(out) + _slots(out, card) + _format(filled) + _wording(filled)
+    claim_reasons, notes = _claims(filled, card, players)
     reasons += claim_reasons
-    return RecapVerdict(ok=not reasons, reasons=reasons, notes=notes)
+    return RecapVerdict(ok=not reasons, reasons=reasons, notes=notes, filled=filled, slots_used=slots_used)

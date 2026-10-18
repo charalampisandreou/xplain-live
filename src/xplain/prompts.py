@@ -25,7 +25,7 @@ from .config import PHRASE_MODES, phrase_mode
 from .explainer import BODY_PART_LABELS, PLAY_PATTERN_LABELS, PRESSURE_LABELS
 from .narration import DIFFICULTY_TIERS, DifficultyTier
 from .phrases import LABEL_PHRASES
-from .recap import RecapCard, RecapGoal, RecapOut, TeamPassing, recap_facts, vs_expected_label
+from .recap import RecapCard, RecapGoal, RecapOut, StarPlayer, TeamPassing, recap_facts, vs_expected_label
 from .recap_verifier import RECAP_MAX_SENTENCES, RECAP_WORD_LIMIT, RECAP_WORD_TARGET
 from .schema import BodyPart, PlayPattern
 from .verifier import WORD_LIMIT, WORD_TARGET
@@ -333,66 +333,104 @@ def narrator_instructions(mode: str | None = None) -> str:
 
 
 # --- RecapEditor ---------------------------------------------------------------------------------------------------
-# Worked recap examples (invented teams and players). The Greek texts are drafts for the owner to skim; the Spanish
-# texts are not reviewed by a native speaker. A test runs each through recap_verifier against its card.
+# Worked recap examples (invented teams and players), as the model writes them: with slots, never a number. The Greek
+# texts are drafts for the owner to skim; the Spanish texts are not reviewed by a native speaker. A test runs each
+# through recap_verifier against its card (raw checks, fill, filled checks).
 
 def _team(team_id: str, name: str, band: str) -> TeamPassing:
     # the numbers of an example card never reach the model (recap_facts has none); they only fit the band
     gap = {"above": 15, "below": -15, "close": 1}[band]
-    return TeamPassing(team_id=team_id, name=name, passes=400, completed=320 + gap, expected=320.0,
+    return TeamPassing(team_id=team_id, name=name, passes=400, completed=320 + gap, expected=320,
                        vs_expected=gap, label=vs_expected_label(gap), band=band)
+
+
+def _star(name: str, team_id: str, team_name: str, pva: int) -> StarPlayer:
+    return StarPlayer(player_id=f"{team_id}-star", name=name, team_id=team_id, team_name=team_name, passes=50,
+                      completed=40 + pva, expected=40, pva=pva)
 
 
 @dataclass(frozen=True)
 class RecapExample:
     name: str
     card: RecapCard
-    out: RecapOut
+    out: RecapOut   # raw, with slots
 
+
+_HBA, _KWR = "Harbourne Athletic", "Kellsworth Rovers"
 
 RECAP_EXAMPLES: tuple[RecapExample, ...] = (
     RecapExample(
-        name="FT1 (comeback, late winner)",
+        name="FT1 (comeback, late winner, star)",
         card=RecapCard(
-            scope="full_time", match_id="example", home=_team("hba", "Harbourne Athletic", "above"),
-            away=_team("kwr", "Kellsworth Rovers", "below"), score_home=2, score_away=1,
-            goals=[RecapGoal(team_id="kwr", team_name="Kellsworth Rovers", player_name="Dario Pell", minute_label="31",
+            scope="full_time", match_id="example", home=_team("hba", _HBA, "above"),
+            away=_team("kwr", _KWR, "below"), score_home=2, score_away=1,
+            goals=[RecapGoal(team_id="kwr", team_name=_KWR, player_name="Dario Pell", minute_label="31",
                              period=1, late=False, home=0, away=1),
-                   RecapGoal(team_id="hba", team_name="Harbourne Athletic", player_name="Joss Marlin",
+                   RecapGoal(team_id="hba", team_name=_HBA, player_name="Joss Marlin",
                              minute_label="62", period=2, late=False, home=1, away=1),
-                   RecapGoal(team_id="hba", team_name="Harbourne Athletic", player_name="Tomas Avery",
+                   RecapGoal(team_id="hba", team_name=_HBA, player_name="Tomas Avery",
                              minute_label="90+2", period=2, late=True, home=2, away=1)],
-            result="home_win", comeback_team_id="hba", late_winner_team_id="hba"),
+            result="home_win", comeback_team_id="hba", late_winner_team_id="hba",
+            star=_star("Ollie Branck", "hba", _HBA, 6)),
         out=RecapOut(
             text_en="Harbourne Athletic came from behind to beat Kellsworth Rovers, with Tomas Avery's late winner "
-                    "after Joss Marlin had cancelled out Dario Pell's opener. Harbourne Athletic completed more "
-                    "passes than expected; Kellsworth Rovers completed fewer than expected.",
+                    "after Joss Marlin had cancelled out Dario Pell's opener. Harbourne Athletic completed "
+                    "{home_vs_expected} more passes than expected; Kellsworth Rovers completed {away_vs_expected} "
+                    "fewer than expected. {star_name} stood out with {star_pva} more passes than expected.",
             text_es="Harbourne Athletic remontó y venció a Kellsworth Rovers con un gol tardío de Tomas Avery, después "
-                    "de que Joss Marlin igualara el tanto inicial de Dario Pell. Harbourne Athletic completó más pases "
-                    "de lo esperado; Kellsworth Rovers completó menos de lo esperado.",
-            text_el="Η Harbourne Athletic έκανε την ανατροπή απέναντι στην Kellsworth Rovers και νίκησε με γκολ του "
-                    "Tomas Avery στο φινάλε, μετά την ισοφάριση του Joss Marlin στο γκολ του Dario Pell. Η Harbourne "
-                    "Athletic ολοκλήρωσε περισσότερες πάσες από τις αναμενόμενες· η Kellsworth Rovers λιγότερες από "
-                    "τις αναμενόμενες.",
+                    "de que Joss Marlin igualara el tanto inicial de Dario Pell. Harbourne Athletic completó "
+                    "{home_vs_expected} pases más de lo esperado; Kellsworth Rovers completó {away_vs_expected} menos "
+                    "de lo esperado. {star_name} destacó con {star_pva} pases más de lo esperado.",
+            text_el="Η Harbourne Athletic έκανε την ανατροπή και νίκησε την Kellsworth Rovers με γκολ του Tomas Avery "
+                    "στο φινάλε, μετά την ισοφάριση του Joss Marlin στο γκολ του Dario Pell. Η Harbourne Athletic "
+                    "ολοκλήρωσε {home_vs_expected} περισσότερες πάσες από τις αναμενόμενες· η Kellsworth Rovers "
+                    "{away_vs_expected} λιγότερες από τις αναμενόμενες. Ο {star_name} ξεχώρισε με {star_pva} "
+                    "περισσότερες πάσες από τις αναμενόμενες.",
             claims_used=["result", "comeback:Harbourne Athletic", "late_winner:Harbourne Athletic",
                          "scorer:Dario Pell", "scorer:Joss Marlin", "scorer:Tomas Avery",
-                         "passing:Harbourne Athletic", "passing:Kellsworth Rovers"]),
+                         "passing:Harbourne Athletic", "passing:Kellsworth Rovers", "star:Ollie Branck"]),
     ),
     RecapExample(
-        name="HT1 (level, goalless)",
+        name="HT1 (level, goalless, star)",
         card=RecapCard(
-            scope="half_time", match_id="example", home=_team("hba", "Harbourne Athletic", "close"),
-            away=_team("kwr", "Kellsworth Rovers", "above"), score_home=0, score_away=0, goals=[], result="level"),
+            scope="half_time", match_id="example", home=_team("hba", _HBA, "close"),
+            away=_team("kwr", _KWR, "above"), score_home=0, score_away=0, goals=[], result="level",
+            star=_star("Dario Pell", "kwr", _KWR, 4)),
         out=RecapOut(
             text_en="Harbourne Athletic and Kellsworth Rovers are level and goalless at the break. Kellsworth Rovers "
-                    "completed more passes than expected, while Harbourne Athletic passed about as expected.",
+                    "completed {away_vs_expected} more passes than expected, while Harbourne Athletic passed about as "
+                    "expected. {star_name} stood out with {star_pva} more passes than expected.",
             text_es="Harbourne Athletic y Kellsworth Rovers llegan al descanso igualados y sin goles. Kellsworth "
-                    "Rovers completó más pases de lo esperado, mientras que Harbourne Athletic estuvo en línea con lo "
-                    "esperado.",
+                    "Rovers completó {away_vs_expected} pases más de lo esperado, mientras que Harbourne Athletic "
+                    "estuvo en línea con lo esperado. {star_name} destacó con {star_pva} pases más de lo esperado.",
             text_el="Η Harbourne Athletic και η Kellsworth Rovers πάνε στα αποδυτήρια ισόπαλες και χωρίς γκολ. Η "
-                    "Kellsworth Rovers ολοκλήρωσε περισσότερες πάσες από τις αναμενόμενες, ενώ η Harbourne Athletic "
-                    "κινήθηκε κοντά στα αναμενόμενα.",
-            claims_used=["result", "passing:Kellsworth Rovers", "passing:Harbourne Athletic"]),
+                    "Kellsworth Rovers ολοκλήρωσε {away_vs_expected} περισσότερες πάσες από τις αναμενόμενες, ενώ η "
+                    "Harbourne Athletic κινήθηκε κοντά στα αναμενόμενα. Ο {star_name} ξεχώρισε με {star_pva} "
+                    "περισσότερες πάσες από τις αναμενόμενες.",
+            claims_used=["result", "passing:Kellsworth Rovers", "passing:Harbourne Athletic", "star:Dario Pell"]),
+    ),
+    RecapExample(
+        name="FT2 (draw, no star)",
+        card=RecapCard(
+            scope="full_time", match_id="example", home=_team("hba", _HBA, "above"),
+            away=_team("kwr", _KWR, "close"), score_home=1, score_away=1,
+            goals=[RecapGoal(team_id="hba", team_name=_HBA, player_name="Joss Marlin", minute_label="20",
+                             period=1, late=False, home=1, away=0),
+                   RecapGoal(team_id="kwr", team_name=_KWR, player_name="Dario Pell", minute_label="67",
+                             period=2, late=False, home=1, away=1)],
+            result="draw"),
+        out=RecapOut(
+            text_en="Harbourne Athletic and Kellsworth Rovers drew, with goals from Joss Marlin and Dario Pell. "
+                    "Harbourne Athletic completed {home_vs_expected} more passes than expected; Kellsworth Rovers "
+                    "passed about as expected.",
+            text_es="Harbourne Athletic y Kellsworth Rovers empataron, con goles de Joss Marlin y Dario Pell. "
+                    "Harbourne Athletic completó {home_vs_expected} pases más de lo esperado; Kellsworth Rovers estuvo "
+                    "en línea con lo esperado.",
+            text_el="Η Harbourne Athletic και η Kellsworth Rovers έμειναν στην ισοπαλία, με γκολ του Joss Marlin και "
+                    "του Dario Pell. Η Harbourne Athletic ολοκλήρωσε {home_vs_expected} περισσότερες πάσες από τις "
+                    "αναμενόμενες· η Kellsworth Rovers κινήθηκε κοντά στα αναμενόμενα.",
+            claims_used=["result", "scorer:Joss Marlin", "scorer:Dario Pell", "passing:Harbourne Athletic",
+                         "passing:Kellsworth Rovers"]),
     ),
 )
 
@@ -409,18 +447,34 @@ say the same thing, each in natural wording for its language.
 
 The facts (JSON) give the two teams, the result, the margin ("narrow" or "clear"; null when level), whether
 there were no goals, the goals in order (team, scorer, half, late or not), each team's passing against
-expectation ("above", "below" or "close") and "claims": the only claims you may make, by id, each with what it
-says. A card next to your text shows every number (score, minutes, passes against expected), so you write none.
+expectation ("above", "below" or "close"), the star player's team (or null), "claims": the only claims you may
+make, by id, each with what it says, and "slots": the only placeholders you may write. A card next to your text
+shows the score, the minutes and each team's passes.
+
+Numbers: you never write a number. Where a number belongs, write a slot from "slots", exactly as named, in
+braces; code puts the right number in its place. Slots:
+- {{home_vs_expected}} / {{away_vs_expected}} (only when listed): how many more or fewer passes than expected the
+  team completed. Write it right before its phrase: EN "{{x}} more passes than expected" / "{{x}} fewer than
+  expected"; ES "{{x}} pases más de lo esperado" / "{{x}} menos de lo esperado"; EL "{{x}} περισσότερες πάσες από
+  τις αναμενόμενες" / "{{x}} λιγότερες από τις αναμενόμενες". "more" for a team above expected, "fewer" for a team
+  below. Put it in the clause that names the team, and use that team's passing claim.
+- {{star_name}} and {{star_pva}} (only when listed): the star player and how many more passes than expected they
+  completed. Use the star claim; write both in one clause, "{{star_name}} stood out with {{star_pva}} more passes
+  than expected" (Greek: "Ο {{star_name}} ξεχώρισε με {{star_pva}} περισσότερες πάσες από τις αναμενόμενες");
+  do not name a team in that clause.
+- Use the same slots in all three languages. A team in the "close" band gets no slot: say it completed about as
+  many passes as expected.
 
 Rules:
-- At most {sentences} sentences and {limit} words per language; aim for about {target}.
+- At most {sentences} sentences and {limit} words per language once the slots are filled; aim for about {target}.
 - Make only listed claims. Put the id of every claim you make in claims_used, and express each of them in all
   three languages. You need not use every claim; always use the result claim.
-- No numbers of any kind: no digits, no score, no number words (two, dos, δύο ...), no minutes, no percentages.
+- No numbers of any kind outside slots: no digits, no score, no number words (two, dos, δύο ...), no minutes, no
+  percentages.
 - Report what happened, never why: no "because", "thanks to", "due to", "since" and the like, in any language.
   Do not judge: no deserved, lucky or unlucky, dominated, controlled, should have. No tactics, pressing,
-  pressure, possession or formations. Never mention a model, xP or probabilities.
-- Name only the two teams and the scorers whose scorer claim you use; no other player.
+  pressure, possession or formations. Never mention a model, xP, PVA or probabilities.
+- Name only the two teams, the scorers whose scorer claim you use, and the star (through {{star_name}}).
 - Passing: say a team completed more passes than expected, fewer than expected, or about as many as expected,
   exactly as its claim says. Put that team's name in the same clause as the phrase, and separate the two teams'
   passing with a comma or a semicolon.
@@ -429,8 +483,8 @@ Rules:
   EL "στο φινάλε", "στις καθυστερήσεις". Without such a claim use none of them. Comeback words only with a
   comeback claim.
 - Half time: nobody has won or lost yet. Say who leads, or that the teams are level.
-- Greek: teams take the feminine article (η Harbourne Athletic, την Kellsworth Rovers). For "after" write
-  "μετά"; never "αφού", "επειδή" or "γιατί" (they read as a cause).
+- Greek: teams take the feminine article (η Harbourne Athletic, την Kellsworth Rovers), players the masculine
+  (ο, του, τον). For "after" write "μετά"; never "αφού", "επειδή" or "γιατί" (they read as a cause).
 - Every scorer claim you list: name that scorer in all three languages.
 - Spanish equaliser: in a match that was won, "empate" alone reads as a draw. For the equalising goal write
   "consiguió el empate", "puso el empate" or "el gol del empate". Never "logró" (not allowed), and not

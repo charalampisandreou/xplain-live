@@ -562,6 +562,8 @@ def test_recaps_go_into_the_bundle_and_its_trace(seed42_events, tiny_scorer, onl
     assert set(b.recaps) == {"full_time", "half_time"} == set(b.trace.recaps)
     ft = b.recaps["full_time"]
     assert ft.status == "accepted" and ft.text is not None
+    assert ft.raw_text is not None and ft.slots == {}   # this fake recap uses no slot: raw and filled are the same
+    assert ft.raw_text == ft.text and [s.agent for s in b.trace.recaps["full_time"]][-1] == "recap_filler"
     assert ft.card.home.label.startswith("vs expected") and ft.card.match_id == b.meta.match_id
     assert MatchBundle.model_validate_json(to_json(b)) == b
     # the recaps change nothing in the moments (wall times aside)

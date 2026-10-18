@@ -238,7 +238,9 @@ class RecapEntry(_Strict):
     """One recap: its card (numbers from code), its verified text or None, and how the text came about."""
 
     card: RecapCard
-    text: RecapOut | None = None
+    text: RecapOut | None = None       # filled: the slots replaced by code from the card
+    raw_text: RecapOut | None = None   # as the model wrote it, with slots
+    slots: dict[str, str] = {}         # the slots used and their values
     status: Literal["accepted", "retried", "rejected"]
     attempts: Annotated[int, Field(ge=0)] = 0
     reasons: list[str] = []
@@ -407,7 +409,8 @@ def _narration(bundle: MomentBundle, outcome: MomentOutcome | None) -> tuple[Nar
 
 def recap_entries(recaps: Sequence[RecapOutcome]) -> dict[str, RecapEntry]:
     """The recaps with a card, by scope (a recap whose card could not be built is in the trace only)."""
-    return {r.scope: RecapEntry(card=r.card, text=r.text, status=r.status, attempts=r.attempts,
+    return {r.scope: RecapEntry(card=r.card, text=r.text, raw_text=r.raw_text, slots=dict(r.slots),
+                                status=r.status, attempts=r.attempts,
                                 reasons=list(r.reasons), notes=list(r.notes), latency_s=r.latency_s)
             for r in recaps if r.card is not None}
 

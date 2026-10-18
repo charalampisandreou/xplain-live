@@ -21,7 +21,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-Agent = Literal["analyst", "explainer", "narrator", "verifier", "recap_editor", "recap_verifier"]
+Agent = Literal["analyst", "explainer", "narrator", "verifier", "recap_editor", "recap_verifier", "recap_filler"]
 StepKind = Literal["code", "llm"]
 
 
@@ -38,6 +38,8 @@ class TraceStep(BaseModel):
     latency_s: float | None = None      # wall time, for llm steps only
     final: bool = False                 # the workflow's final Verifier check
     reused: bool = False                # ran in an earlier build (a reused line), not in this one
+    text: dict[str, str] | None = None  # recap steps only: the raw text checked (recap_verifier, per attempt) or the
+                                        # filled text (recap_filler), by language
 
     @model_validator(mode="after")
     def _check(self) -> TraceStep:
@@ -49,9 +51,9 @@ class TraceStep(BaseModel):
 
 
 def code_step(agent: Agent, ok: bool = True, attempt: int = 1, reasons: list[str] | None = None,
-              notes: list[str] | None = None, final: bool = False) -> TraceStep:
+              notes: list[str] | None = None, final: bool = False, text: dict[str, str] | None = None) -> TraceStep:
     return TraceStep(agent=agent, kind="code", attempt=attempt, ok=ok, reasons=reasons or [], notes=notes or [],
-                     final=final)
+                     final=final, text=text)
 
 
 def reused(steps: list[TraceStep]) -> list[TraceStep]:
