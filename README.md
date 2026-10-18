@@ -23,7 +23,7 @@ overlay cards that a graphics system can render alongside the match.
 > The model files and the demo bundle are published in the open-licence release
 > [data-v1](https://github.com/charalampisandreou/xplain-live/releases/tag/data-v1) (model files MIT,
 > bundle CC BY 4.0). The bundle there was replaced after the narration retune; its SHA-256 is
-> `be6614f5edc14e0194a54e81b9abd157e58af55acb34e8cf3ca7e9cde1b41a73`.
+> `06ab6d0864c999c70aab7d951137d49f510acac9859daf3c851b8bc27bedd5d9`.
 >
 > Not built yet: the Analyst screen, the agent trace (planned for the Analyst screen), personalization
 > modes (analyst, casual fan, player focus, favourite club or player), and live mode (the deployed app
@@ -199,6 +199,11 @@ With `--no-llm`, a moment whose line was rejected before is written as `not_run`
 `--fresh` ignores the old file. The command prints a one-line summary with the goals and the
 final score.
 
+`python scripts/refresh_recap_cards.py data/bundle_seed3001.json` fills in recap-card fields added
+after a bundle was built (for now the two-decimal `expected_xp` and `vs_expected_xp`), from the
+bundle's own passes and with no model call. Every field the card already had must come out the
+same, so the recap texts stay right; it prints the new SHA-256.
+
 ## Run the web page
 
 The Studio screen (`src/xplain/web/`: plain HTML, CSS and JS, no build step) is served by the same
@@ -237,7 +242,7 @@ top edge shows the team of the selected pass on the side it attacks from, with c
 toward the goal it attacks (from `meta.attacks_right`; still under reduced motion). The score bug
 shows the minute and the half; the possession tab stays at the pitch's top-left, with the code
 then right-pointing chevrons when attacking right and left-pointing chevrons then the code when
-attacking left. The lower third is a cyan name tab (player, team code and minute) on a dark body
+attacking left. The lower third is a cyan name tab (shirt number, player, team code and minute) on a dark body
 with the commentator's line in the chosen language, the tier and xP, and PVA on the right. The Analyst mode is not built yet.
 
 Also in the Studio:
@@ -251,6 +256,13 @@ Also in the Studio:
   the plate** (the header no longer has a language switch).
 - **PVA column in every state** (a dash while waiting for a pass, "GOAL" over the minute on a goal) and
   "xP" written with that casing throughout.
+- **Half-time and full-time recaps.** When live playback reaches half time (the last first-half pass) or
+  full time, the recap card takes the pitch's place: the result, the goals, each team's passing
+  (completed, expected and vs expected, the last two to two decimals), the star player (their row opens
+  them in Players) and the recap text in the narration language. The score bug reads HT or FT. A Recap /
+  Map switch shows the card or the pitch; the plate's chevrons step from the recap into the narrated
+  moments and back, and stepping or replaying keeps the recap. Half time resumes by itself after 10
+  seconds unless you step away; full time stays. `?recap=ht` or `?recap=ft` opens one, paused.
 
 **Players mode** (the Players button in the header, or `?mode=player&player=PLAYER_ID`, e.g.
 `?mode=player&player=dsk-p10`) follows one player's match on the same clock, score and narration
@@ -260,19 +272,20 @@ language as the Studio:
   `pass_geometry`, so the player always attacks right in both halves): green arrows completed, red
   dashed lines ending in a cross not completed, a cyan ring at the start of each surprise moment and a
   white dot at the start of the latest pass. All / 1st / 2nd filter it; it grows as the player passes.
-- **Numbers so far.** Passes, completed (with its rate), expected (the sum of xP rounded half-up, as the
-  recap card counts it, with its rate over the passes), vs expected (completed minus expected), a bar of
+- **Numbers so far.** Passes, completed (with its rate), expected (the sum of xP, with its rate: the mean
+  xP), vs expected (completed minus expected), both to two decimals as on the recap card, a bar of
   the completed passes per difficulty tier (the narration's five words), and the player's
   surprise moments with their PVA (hover or focus a row to bring its pass forward on the map).
 - **Narration plate** with only this player's narrated moments (the latest; chevrons or `[` `]` page
   back), or "No commentated moment for NAME yet."
-- **Change player** opens both teams side by side with each player's passes so far (arrows, Enter,
-  Esc).
+- **Change player** opens both teams side by side: shirt number, name, position and passes so far
+  (arrows, Enter, Esc). From a recap, Players opens on its star player; the star's row on the recap
+  card opens the star directly.
 
 These numbers are the one place the page computes anything (the browser computation exception): sums,
-counts, means and rates over the bundle's marks at the clock, and the xP sum rounded half-up, in
-`src/xplain/web/player.js`, each checked against its Python twin (`pipeline.player_summary`,
-`recap.half_up` and others) in `tests/test_player_js.py`, which runs
+counts, means and rates over the bundle's marks at the clock, shown to two decimals with `toFixed(2)`,
+in `src/xplain/web/player.js`, each checked against its Python twin (`pipeline.player_summary`,
+`recap.xp_sum`, `recap.round2` and others) in `tests/test_player_js.py`, which runs
 `player.js` under Node (skipped when `node` is not installed).
 
 ## Docker

@@ -37,8 +37,9 @@
   <!-- title: its wording lives here only; app.js swaps in data-ht / data-ft while a recap is shown -->
   <h1 class="title" id="title" data-live="Live pass map" data-ht="HT Recap" data-ft="FT Recap">Live pass map</h1>
 
-  <!-- Player mode: the player's name and team in the title's slot (player.js sets them), and the picker button -->
-  <h1 class="player-head"><span class="player-name" id="player-name"></span><span class="player-team" id="player-team"></span></h1>
+  <!-- Player mode: the shirt number, the player's name and team in the title's slot (player.js sets them), and the
+       picker button -->
+  <h1 class="player-head"><span class="player-num" id="player-num" hidden><span class="num-hash" aria-hidden="true">#</span><span id="player-num-val"></span></span><span class="player-name" id="player-name"></span><span class="player-team" id="player-team"></span></h1>
   <button type="button" class="player-change" id="player-pick" aria-haspopup="listbox" aria-expanded="false" aria-controls="player-picker">Change player<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg></button>
 
   <!-- pitch, with the possession tab on its top edge -->
@@ -75,11 +76,10 @@
   <!-- recap card: in the pitch's slot while a half-time or full-time recap is shown (app.js fills it from
        bundle.recaps[scope].card; the text in the narration language) -->
   <section class="recap" id="recap" aria-labelledby="title" hidden>
-    <div class="rc-score">
-      <span class="rc-code" id="rc-home-code"></span><span class="rc-num" id="rc-score"></span><span class="rc-code" id="rc-away-code"></span>
-      <span class="rc-when" id="rc-when"></span>
+    <!-- the result under the title: the full names with the score between them, in the accent -->
+    <div class="rc-result">
+      <span class="rc-side" id="rc-home-name"></span><span class="rc-num" id="rc-score"></span><span class="rc-side" id="rc-away-name"></span>
     </div>
-    <div class="rc-names"><span id="rc-home-name"></span><span id="rc-away-name"></span></div>
     <div class="rc-grid">
       <div class="rc-goals">
         <div class="thead"><h2>Goals</h2></div>
@@ -93,7 +93,7 @@
     </div>
     <div class="rc-starblock" id="rc-starblock">
       <div class="thead"><h2>Star player</h2><div class="tsub">most completions above expected</div></div>
-      <div class="st" id="rc-star"></div>
+      <button type="button" class="st" id="rc-star"></button>
     </div>
     <p class="rc-text" id="rc-text"></p>
   </section>
@@ -129,6 +129,8 @@
   <div class="plate" id="plate">
   <div class="lower waiting" id="lower" aria-live="polite">
     <div class="nametab" id="nametab">
+      <span class="tab-num" id="lower-num"></span>
+      <span class="tab-div tab-div-num" aria-hidden="true"></span>
       <span class="tab-name" id="lower-name"></span>
       <span class="tab-div" aria-hidden="true"></span>
       <span class="tab-when" id="lower-when"></span>

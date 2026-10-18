@@ -609,6 +609,44 @@ def test_recaps_go_into_the_bundle_and_its_trace(seed42_events, tiny_scorer, onl
         MatchBundle.model_validate(data)
 
 
+def test_refresh_recap_cards_fills_the_added_fields_only(tmp_path, monkeypatch, capsys,
+                                                        seed42_events, tiny_scorer):  # noqa: F811
+    from xplain.bundle import refresh_recap_cards
+    from .test_workflow import RecapLLM, goalless_recap, run_full
+    run_, _ = run_full(seed42_events, tiny_scorer, lambda i, f: GOOD(f), RecapLLM(goalless_recap),
+                       scopes=("full_time", "half_time"))
+    b = build_bundle(seed42_events, tiny_scorer, run_.outcomes, "hints", WIDE, recaps=run_.recaps)
+    # a bundle written before the fields existed: drop them
+    data = b.model_dump(mode="json")
+    for entry in data["recaps"].values():
+        for side in ("home", "away", "star"):
+            if entry["card"][side] is not None:
+                entry["card"][side].pop("expected_xp")
+                entry["card"][side].pop("vs_expected_xp")
+    old = MatchBundle.model_validate(data)
+    assert old.recaps["full_time"].card.home.expected_xp is None
+    new = refresh_recap_cards(old)
+    assert new == b   # the same bundle as one built with them; the text and everything else untouched
+    ft = old.recaps["full_time"]
+    home = ft.card.home.model_copy(update={"completed": ft.card.home.completed + 1})
+    tampered = old.model_copy(update={"recaps": {**old.recaps, "full_time": ft.model_copy(
+        update={"card": ft.card.model_copy(update={"home": home})})}})
+    with pytest.raises(ValueError):   # a stored number that no longer matches the passes is not refreshed over
+        refresh_recap_cards(tampered)
+    # the script: in place, then the SHA-256 of the written file
+    import hashlib
+    import runpy
+    import sys
+    from pathlib import Path
+    path = tmp_path / "bundle_old.json"
+    path.write_text(to_json(old), encoding="utf-8")
+    script = Path(__file__).resolve().parents[1] / "scripts" / "refresh_recap_cards.py"
+    monkeypatch.setattr(sys, "argv", ["refresh_recap_cards.py", str(path)])
+    runpy.run_path(str(script), run_name="__main__")
+    assert MatchBundle.model_validate_json(path.read_text(encoding="utf-8")) == b
+    assert hashlib.sha256(path.read_bytes()).hexdigest() in capsys.readouterr().out
+
+
 def test_recaps_need_the_model(tmp_path, monkeypatch, seed42_events, tiny_scorer):  # noqa: F811
     path = tmp_path / "m.jsonl"
     write_jsonl(path, seed42_events)

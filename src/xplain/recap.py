@@ -14,6 +14,11 @@ recap_verifier: the size of a team's gap (no sign; the text says "more" or "fewe
 more passes than expected the star completed. A team's slot exists only when its band is above or below; the star
 slots only when the card has a star. Completed, expected and passes stay on the card, under fixed labels.
 
+On screen, Expected and vs expected show two decimals: expected_xp (the sum of xP) and vs_expected_xp (completed
+minus that sum), each rounded by round2, the same rounding as the page's toFixed(2) (player.js fixed2). The whole
+numbers above stay for the text's slots, the bands and the star rule; the text's number is always the on-screen
+value rounded to a whole pass (|vs_expected - vs_expected_xp| <= 0.5).
+
 Editorial constants (change them here only):
   * LATE_MINUTE: a goal is "late" from this base minute of its half on, added time included (85' in the second
     half, 40' in the first)
@@ -81,6 +86,8 @@ class TeamPassing(_Strict):
     vs_expected: int             # completed - expected
     label: str                   # "vs expected +19", "vs expected −19", "vs expected 0"
     band: Band
+    expected_xp: float | None = None      # the sum of xP, round2 (two decimals, for the screen)
+    vs_expected_xp: float | None = None   # completed - the sum of xP, round2
 
 
 class StarPlayer(_Strict):
@@ -94,6 +101,8 @@ class StarPlayer(_Strict):
     completed: Annotated[int, Field(ge=0)]
     expected: int                # the sum of xP over the player's passes, rounded half-up
     pva: Annotated[int, Field(ge=STAR_MIN_PVA)]   # completed - expected
+    expected_xp: float | None = None      # the sum of xP, round2 (two decimals, for the screen)
+    vs_expected_xp: float | None = None   # completed - the sum of xP, round2
 
 
 class RecapCard(_Strict):
@@ -128,16 +137,33 @@ def half_up(x: float) -> int:
     return int(Decimal(repr(x)).quantize(Decimal(1), rounding=ROUND_HALF_UP))
 
 
+def xp_sum(marks: Sequence[PassMark]) -> float:
+    """The sum of xP added one pass at a time, left to right, as player.js adds it. Python's sum() compensates for
+    float rounding (since 3.12), so it can differ from the page in the last bits."""
+    total = 0.0
+    for m in marks:
+        total += m.xp
+    return total
+
+
+def round2(x: float) -> float:
+    """x to two decimals the way JavaScript's toFixed(2) does it: on the exact binary value of x, halves away from
+    zero (1.005 is stored just below 1.005, so it gives 1.0, as toFixed does). -0.0 becomes 0.0."""
+    return float(Decimal(x).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)) + 0.0
+
+
 def team_passing(marks: Sequence[PassMark], team_id: str, name: str, scope: str) -> TeamPassing:
     """A team's passing in the scope: counts, expected (the sum of xP, rounded half-up) and completed minus
     expected, with its band."""
     ps = [m for m in marks if m.team_id == team_id and m.period in SCOPE_PERIODS[scope]]
     completed = sum(m.completed for m in ps)
-    expected = half_up(sum(m.xp for m in ps))
+    xp = xp_sum(ps)
+    expected = half_up(xp)
     value = completed - expected
     band: Band = "above" if value >= PASSING_BAND[scope] else "below" if value <= -PASSING_BAND[scope] else "close"
     return TeamPassing(team_id=team_id, name=name, passes=len(ps), completed=completed, expected=expected,
-                       vs_expected=value, label=vs_expected_label(value), band=band)
+                       vs_expected=value, label=vs_expected_label(value), band=band,
+                       expected_xp=round2(xp), vs_expected_xp=round2(completed - xp))
 
 
 def star_player(marks: Sequence[PassMark], scope: str) -> StarPlayer | None:
@@ -151,13 +177,15 @@ def star_player(marks: Sequence[PassMark], scope: str) -> StarPlayer | None:
         return None
     ps = max(by_player.values(),
              key=lambda ps: (sum(m.completed for m in ps) - sum(m.xp for m in ps), len(ps), -ps[0].seq))
-    completed, expected = sum(m.completed for m in ps), half_up(sum(m.xp for m in ps))
+    completed, xp = sum(m.completed for m in ps), xp_sum(ps)   # ps in seq order, as Players adds them
+    expected = half_up(xp)
     if completed - expected < STAR_MIN_PVA:
         return None
     first = ps[0]
     return StarPlayer(player_id=first.player_id, name=first.player_name or first.player_id, team_id=first.team_id,
                       team_name=first.team_name or first.team_id, passes=len(ps), completed=completed,
-                      expected=expected, pva=completed - expected)
+                      expected=expected, pva=completed - expected,
+                      expected_xp=round2(xp), vs_expected_xp=round2(completed - xp))
 
 
 def _result(home: int, away: int, scope: str) -> Result:

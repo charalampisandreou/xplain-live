@@ -5,7 +5,7 @@ import pytest
 from xplain import clock
 from xplain.pipeline import pass_marks
 from xplain.recap import (MINUS, PASSING_BAND, half_up, recap_card, recap_claims, recap_facts, roster,
-                          team_passing, vs_expected_label)
+                          round2, star_player, team_passing, vs_expected_label, xp_sum)
 from xplain.schema import MatchMetaEvent, ShotEvent
 
 from .test_pipeline import WIDE, seed42_events, tiny_model, tiny_scorer  # noqa: F401  (fixtures)
@@ -55,6 +55,24 @@ def test_team_passing_is_computed_from_the_marks(seed42_events, marks):  # noqa:
                       if gap <= -PASSING_BAND["full_time"] else "close")
     half = team_passing(marks, meta.home_team_id, meta.home_name, "half_time")
     assert half.passes == sum(1 for m in mine if m.period == 1)
+    # two decimals for the screen; the whole numbers are those values rounded
+    xp = xp_sum(mine)
+    assert (t.expected_xp, t.vs_expected_xp) == (round2(xp), round2(completed - xp))
+    assert abs(t.vs_expected - t.vs_expected_xp) <= 0.5 + 1e-9
+
+
+def test_round2_rounds_like_toFixed():
+    assert round2(0.125) == 0.13 and round2(-0.125) == -0.13   # exact halves: away from zero
+    assert round2(1.005) == 1.0 and round2(2.675) == 2.67      # stored just below the half
+    assert str(round2(-0.004)) == "0.0" and round2(393.554) == 393.55
+
+
+def test_the_star_has_its_two_decimal_values(seed42_events, marks):  # noqa: F811
+    s = star_player(marks, "full_time")
+    assert s is not None
+    mine = sorted((m for m in marks if m.player_id == s.player_id), key=lambda m: m.seq)
+    xp = xp_sum(mine)
+    assert (s.expected_xp, s.vs_expected_xp) == (round2(xp), round2(s.completed - xp))
 
 
 def test_goalless_draw(seed42_events, marks):  # noqa: F811

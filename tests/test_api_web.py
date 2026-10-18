@@ -258,11 +258,12 @@ def test_players_stats_show_count_and_percent_on_one_grid(client):
     js = client.get("/static/player.js").text
     assert '<span id="pv-completed">–</span><span class="pv-sub" id="pv-completed-pct"></span>' in html
     assert "setText('pv-completed', s ? String(s.completed) : '–');" in js
-    # Expected as the recap counts it, with its rate over the passes; vs expected a signed whole number
+    # Expected (the sum of xP) with its rate (the mean xP), and vs expected: two decimals, as on the recap card
     assert '<span id="pv-expected">–</span><span class="pv-sub" id="pv-expected-pct"></span>' in html
-    assert "setText('pv-expected', s ? String(s.expected) : '–');" in js
-    assert "setText('pv-expected-pct', s ? api.percent(s.expectedRate) + '%' : '');" in js
-    assert "api.signed(s.vsExpected)" in js and "signed1" not in js
+    assert "setDecimal('pv-expected', s ? fixed2(s.expectedXp, false) : '–');" in js
+    assert "setText('pv-expected-pct', s ? api.percent(s.meanXp) + '%' : '');" in js
+    assert "setDecimal('pv-vs', text);" in js and "fixed2(s.vsExpectedXp, true)" in js and "signed1" not in js
+    assert ".dec { font-size: 0.62em;" in css   # the decimals a step smaller
     grid = css.split("\n.pv-stats {")[1].split("}")[0]
     assert "repeat(4, 1fr)" in grid and "align-items: baseline" in grid
     assert "tabular-nums" in css.split("\n.pv-value {")[1].split("}")[0]
@@ -356,6 +357,61 @@ def test_recap_star_text_and_view_switch(client):
     assert "const on = open && state.recap.view === 'recap';" in render
     assert "$('recap-view').hidden = !open;" in render
     assert "title.textContent = open ?" in render
+
+
+def test_score_bug_reads_ht_and_ft(client):
+    app = client.get("/static/app.js").text
+    css = client.get("/static/app.css").text
+    brk = app.split("function matchBreak() {")[1].split("\n  }\n")[0]
+    assert "if (state.now >= c.last_event_t) return 'FT';" in brk
+    assert "state.now >= idx.h1End && state.now < h2) return 'HT';" in brk
+    assert "$('minute').textContent = brk || (tick >= 0 ? idx.ticks[tick].minute_label" in app   # minutes: the clock's
+    assert "$('half').textContent = !brk && half ? HALF_LABEL[half] : '';" in app
+    assert ".scorebug.break .live-dot { display: none; }" in css
+
+
+def test_recap_stays_open_while_stepping_and_the_plate_keeps_its_arrows(client):
+    app = client.get("/static/app.js").text
+    for fn in ("function step(dir) {", "function enterReplay(id) {"):
+        body = app.split(fn)[1].split("\n  }\n")[0]
+        assert "recapToMap();" in body and "closeRecap" not in body
+    nav = app.split("function narrStep(dir) {")[1].split("\n  }\n")[0]
+    assert "if (dir < 0 && narration(liveIndex()).reached > 0) { recapToMap(); backToLive(); }" in nav
+    assert "else if (dir > 0 && r) setRecapView('recap');" in nav
+    render = app.split("function render() {")[1].split("// --- transitions")[0]
+    assert "renderNarrNav({ reached: narr.reached, pos: 0, prev: narr.reached > 0, next: null });" in render
+    assert "$('narrnav').hidden = true" not in render
+    assert "if (view === 'recap') { backToLive(); state.recap.view = 'recap'; } else recapToMap();" in app
+    # Esc: replay and step mode first; a recap closes only from live
+    esc = app.split("if (e.key === 'Escape') {")[1].split("else if (e.key === 'ArrowLeft')")[0]
+    assert esc.index("leaveReplay()") < esc.index("closeRecap()")
+
+
+def test_recap_header_star_link_and_shirt_numbers(client):
+    html = client.get("/").text
+    app = client.get("/static/app.js").text
+    js = client.get("/static/player.js").text
+    css = client.get("/static/app.css").text
+    recap = html.split('<section class="recap" id="recap"')[1].split("</section>")[0]
+    assert '<div class="rc-result">' in recap and 'id="rc-home-name"' in recap and 'id="rc-away-name"' in recap
+    assert "rc-when" not in recap and "rc-home-code" not in recap   # the title says HT / FT
+    # Expected and vs expected from the card's two-decimal values
+    assert "decimal('rc-n', t.expected_xp ?? t.expected, false)" in app
+    assert "decimal('st-val', s.vs_expected_xp ?? s.pva, true)" in app
+    assert "const text = XplainPlayer.fixed2(x, signed);" in app
+    # the star row opens the star in Players; from a recap Players opens on the star until a player is picked
+    assert '<button type="button" class="st" id="rc-star"></button>' in html
+    assert "$('rc-star').addEventListener('click', openStar);" in app
+    mode = app.split("function setMode(mode) {")[1].split("history.replaceState")[0]
+    assert "if (mode === 'player' && state.recap && !state.playerPicked) {" in mode
+    assert "state.playerPicked = true; setMode('player');" in app
+    # shirt numbers: the plate's name tab, the Players title, the picker
+    assert '<span class="tab-num" id="lower-num"></span>' in html
+    assert "$('lower-num').textContent = shirt(m.player_id);" in app
+    assert ".tab-num:empty, .tab-num:empty + .tab-div { display: none; }" in css
+    assert 'id="player-num" hidden><span class="num-hash" aria-hidden="true">#</span>' in html
+    assert "num.textContent = pl.shirt_number != null ? '#' + pl.shirt_number : '';" in js
+    assert "head.appendChild(div('pk-sub', 'Passes'));" in js and "pk-check" not in js + css
 
 
 def test_no_league_names_in_the_page(client):

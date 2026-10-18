@@ -5,8 +5,9 @@
 // so it would give the result away). Each function that yields a number mirrors a Python
 // reference and is checked against it in tests/test_player_js.py:
 //   playerPasses + playerStats  ->  pipeline.player_pass_map / player_summary(marks, id, as_of_t);
-//                                  expected, vsExpected, expectedRate -> the recap card's counting:
-//                                  recap.half_up(sum of xP), completed - expected, expected / passes
+//                                  expectedXp, vsExpectedXp -> the recap card's expected_xp / vs_expected_xp
+//                                  before rounding: the sum of xP, completed minus that sum
+//   fixed2                      ->  recap.round2: two decimals, as toFixed(2) (formatting only)
 //   hardestCompleted            ->  the completed pass with the lowest xp, ties to the earlier seq
 //   narratedFor                 ->  the player's moments with a line, t <= now, in seq order
 //   tierCounts                  ->  how many of the passes have each difficulty tier (mark.tier.en)
@@ -35,8 +36,8 @@
 
   // Counts, completion rate, mean xP and PVA of the passes: pipeline.player_summary. Sums run in
   // seq order from 0, as Python's sum does, so the floats match. null when there are no passes.
-  // expected and vsExpected count as the recap card does (recap.star_player): the sum of xP rounded
-  // half-up to a whole number, and completed minus that (not rounded again).
+  // expectedXp and vsExpectedXp are what the recap card shows as Expected and vs expected (recap.star_player):
+  // the sum of xP, and completed minus that sum; fixed2 shows them to two decimals.
   function playerStats(passes) {
     const n = passes.length;
     if (n === 0) return null;
@@ -46,8 +47,6 @@
       xp += m.xp;
       pva += m.delta;
     }
-    // Math.round equals ROUND_HALF_UP (recap.half_up) here only because a sum of xP is never negative
-    const expected = Math.round(xp);
     return {
       passes: n,
       completed: done,
@@ -55,10 +54,19 @@
       meanXp: xp / n,
       pvaTotal: pva,
       pvaPerPass: pva / n,
-      expected,
-      vsExpected: done - expected,
-      expectedRate: expected / n,
+      expectedXp: xp,
+      vsExpectedXp: done - xp,
     };
+  }
+
+  // Two decimals for Expected and vs expected, in Studio and Players: toFixed(2) rounds the exact float, halves
+  // away from zero (recap.round2 is the Python twin; the card's values are already rounded so). signed: "+5.48",
+  // "−19.11" with the Studio's minus sign, and "0.00" with no sign.
+  function fixed2(x, signed) {
+    const a = Math.abs(x).toFixed(2);
+    if (a === '0.00') return a;
+    if (signed) return (x > 0 ? '+' : '−') + a;
+    return x < 0 ? '−' + a : a;
   }
 
   // The completed pass with the lowest xP (the hardest one completed), ties to the earlier seq; null when none.
@@ -146,12 +154,10 @@
     closePicker(false);
   }
 
-  // --- the picker: a pop-up list of both teams, the current player checked ---------------------------
+  // --- the picker: a pop-up list of both teams, the current player marked by the cyan bar ----------------
 
-  const CHECK = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" '
-    + 'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7"></path></svg>';
-
-  // Two columns, home then away, each player in meta.players order; built once per bundle.
+  // Two columns, home then away, each player in meta.players order; built once per bundle. A row: the shirt
+  // number ("#27"), the name, the position, and on the right the passes so far (the column head says so).
   function buildPicker() {
     const { bundle } = view.api;
     const panel = $('player-picker');
@@ -161,7 +167,7 @@
       const head = div('pk-head');
       head.id = 'pk-head-' + team.team_id;
       head.appendChild(div('pk-team', team.name));
-      head.appendChild(div('pk-sub', 'passes'));
+      head.appendChild(div('pk-sub', 'Passes'));   // the column head of the count on the right
       col.setAttribute('aria-labelledby', head.id);
       col.appendChild(head);
       for (const pl of bundle.meta.players) {
@@ -172,9 +178,9 @@
         b.setAttribute('role', 'option');
         b.dataset.player = pl.player_id;
         b.tabIndex = -1;
-        const check = document.createElement('span');
-        check.className = 'pk-check';
-        check.innerHTML = CHECK;
+        const num = document.createElement('span');   // the shirt number, "#27", muted (meta.players)
+        num.className = 'pk-num';
+        num.textContent = pl.shirt_number != null ? '#' + pl.shirt_number : '';
         const name = document.createElement('span');
         name.className = 'pk-name';
         name.textContent = pl.name;
@@ -183,7 +189,7 @@
         pos.textContent = pl.position || '';
         const n = document.createElement('span');
         n.className = 'pk-n';
-        b.append(check, name, pos, n);
+        b.append(num, name, pos, n);
         col.appendChild(b);
       }
       return col;
@@ -202,7 +208,7 @@
     }, true);
   }
 
-  // passes so far (playerPasses, t <= now, whole match) and the current player, checked
+  // passes so far (playerPasses, t <= now, whole match) and the current player, marked
   function refreshPicker() {
     const { bundle, now, player } = view.api.current();
     for (const b of $('player-picker').querySelectorAll('.pk-opt')) {
@@ -213,7 +219,9 @@
       b.classList.toggle('none', n === 0);
       const on = b.dataset.player === player;
       b.setAttribute('aria-selected', String(on));
-      b.setAttribute('aria-label', b.querySelector('.pk-name').textContent + ', ' + n + (n === 1 ? ' pass' : ' passes') + ' so far');
+      const num = b.querySelector('.pk-num').textContent;
+      b.setAttribute('aria-label', (num ? num + ' ' : '') + b.querySelector('.pk-name').textContent + ', '
+        + n + (n === 1 ? ' pass' : ' passes') + ' so far');
     }
   }
 
@@ -290,6 +298,18 @@
     if (node.textContent !== text) node.textContent = text;
   }
 
+  // "43.52": the whole part at the value's size, ".52" in a smaller span (.dec), so the decimals stay quiet
+  function setDecimal(id, text) {
+    const node = $(id);
+    if (node.textContent === text) return;
+    const dot = text.indexOf('.');
+    if (dot < 0) { node.textContent = text; return; }
+    const dec = document.createElement('span');
+    dec.className = 'dec';
+    dec.textContent = text.slice(dot);
+    node.replaceChildren(text.slice(0, dot), dec);
+  }
+
   function div(cls, text) {
     const d = document.createElement('div');
     d.className = cls;
@@ -318,6 +338,8 @@
     const stats = playerStats(passes);
     setText('player-name', player ? player.name : '');
     setText('player-team', player ? view.api.teamName(player.team_id) : '');
+    setText('player-num-val', player && player.shirt_number != null ? String(player.shirt_number) : '');
+    $('player-num').hidden = !(player && player.shirt_number != null);
     renderTab(player);
     renderMap(passes, player, stats, moments.length);
     renderNumbers(stats);
@@ -387,11 +409,12 @@
     setText('pv-passes', s ? String(s.passes) : '–');
     setText('pv-completed', s ? String(s.completed) : '–');
     setText('pv-completed-pct', s ? api.percent(s.completionRate) + '%' : '');
-    // Completed and Expected: a count with its rate over the passes (75%, 68%); vs expected as the recap
-    setText('pv-expected', s ? String(s.expected) : '–');
-    setText('pv-expected-pct', s ? api.percent(s.expectedRate) + '%' : '');
-    const text = s ? api.signed(s.vsExpected) : '–';
-    setText('pv-vs', text);
+    // Completed: the count and its rate over the passes; Expected: the sum of xP and its rate (the mean xP);
+    // both Expected and vs expected to two decimals, as on the recap card
+    setDecimal('pv-expected', s ? fixed2(s.expectedXp, false) : '–');
+    setText('pv-expected-pct', s ? api.percent(s.meanXp) + '%' : '');
+    const text = s ? fixed2(s.vsExpectedXp, true) : '–';
+    setDecimal('pv-vs', text);
     $('pv-vs').classList.toggle('pos', text[0] === '+');
     $('pv-vs').classList.toggle('neg', text[0] === '−');
   }
@@ -442,7 +465,7 @@
     }
   }
 
-  const api = { scopePeriod, playerPasses, playerStats, hardestCompleted, narratedFor, tierCounts,
+  const api = { scopePeriod, playerPasses, playerStats, fixed2, hardestCompleted, narratedFor, tierCounts,
     completedTierCounts, momentsFor,
     mount, invalidate, render };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

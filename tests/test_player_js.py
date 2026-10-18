@@ -14,7 +14,7 @@ import pytest
 
 from xplain.bundle import build_bundle
 from xplain.pipeline import player_summary
-from xplain.recap import half_up
+from xplain.recap import MINUS, half_up, round2, xp_sum
 
 from .test_bundle import narrated
 from .test_pipeline import WIDE, seed42_events, tiny_model, tiny_scorer  # noqa: F401  (fixtures)
@@ -116,10 +116,9 @@ def test_player_numbers_equal_python(match, tmp_path):
             for k_js, k_py in (("completionRate", "completion_rate"), ("meanXp", "mean_xp"),
                                ("pvaTotal", "pva_total"), ("pvaPerPass", "pva_per_pass")):
                 assert s[k_js] == pytest.approx(getattr(ref, k_py), abs=1e-12), (case, k_js)
-            # the recap card's counting: the sum of xP in seq order, rounded half-up; completed minus that
-            expected = half_up(sum(m.xp for m in own))
-            assert (s["expected"], s["vsExpected"]) == (expected, ref.completed - expected), case
-            assert s["expectedRate"] == expected / ref.passes, case
+            # what the recap card shows as Expected and vs expected, before round2: the same floats
+            xp = xp_sum(own)   # left to right in seq order, as the page adds
+            assert (s["expectedXp"], s["vsExpectedXp"]) == (xp, ref.completed - xp), case
         assert js["hardest"] == hardest_completed(own), case
         assert js["narrated"] == narrated_ids(b, pid, now, period), case
         assert js["tiers"] == tier_counts(own), case
@@ -144,20 +143,42 @@ def test_unknown_player_and_kick_off_give_nothing(match, tmp_path):
                       "completedTiers": {"very easy": 0, "easy": 0, "tricky": 0, "difficult": 0, "very difficult": 0}}
 
 
-def synthetic(xps):
-    """Completed passes of one player with these xP values (exact in binary), in seq order."""
-    return [{"event_id": f"e{i}", "player_id": "p", "t": float(i), "period": 1, "seq": i, "completed": True,
-             "xp": x, "delta": 1.0 - x} for i, x in enumerate(xps)]
+FIXED2 = r"""
+const P = require(process.argv[1]);
+const xs = JSON.parse(process.argv[2]);
+process.stdout.write(JSON.stringify(xs.map((x) => [P.fixed2(x, false), P.fixed2(x, true)])));
+"""
 
 
-@pytest.mark.parametrize("xps, expected", [([0.75, 0.75, 0.5, 0.5], 3), ([0.25, 0.25], 1)])
-def test_expected_rounds_a_sum_ending_in_half_up(tmp_path, xps, expected):
-    total = sum(xps)
-    assert total % 1 == 0.5 and half_up(total) == expected
-    assert round(total) != expected   # Python's round() goes to even here: the case tells the two apart
-    got = run_node(tmp_path, synthetic(xps), [], [{"player": "p", "now": None, "period": None}])
-    s = got[0]["stats"]
-    assert (s["expected"], s["vsExpected"], s["expectedRate"]) == (expected, len(xps) - expected, expected / len(xps))
+def fixed2_py(x, signed):
+    """The Python twin of player.js fixed2: recap.round2 of |x|, the sign written as the Studio writes it."""
+    text = f"{round2(abs(x)):.2f}"
+    if text == "0.00":
+        return text
+    if signed:
+        return ("+" if x > 0 else MINUS) + text
+    return MINUS + text if x < 0 else text
+
+
+# exact binary halves (0.125, 0.375), values stored just below a half (1.005, 2.675, 43.515), negatives, zeroes,
+# and the demo bundle's card values; each also once already rounded by round2, as the card stores them
+VALUES = [0.125, 0.375, -0.125, 1.005, 2.675, 43.515, -19.115, 0.005, -0.005, 0.004, -0.004, 0.0, -0.0,
+          393.55, 19.45, -19.11, 5.48, 43.52, 336.11, 1234.565]
+
+
+def test_fixed2_is_toFixed_and_round2(tmp_path):
+    values = VALUES + [round2(x) for x in VALUES]
+    done = subprocess.run([NODE, "-e", FIXED2, str(PLAYER_JS), json.dumps(values)], capture_output=True, text=True,
+                          encoding="utf-8", timeout=60)
+    assert done.returncode == 0, done.stderr
+    got = json.loads(done.stdout)
+    assert got == [[fixed2_py(x, False), fixed2_py(x, True)] for x in values]
+    assert got[0] == ["0.13", "+0.13"] and got[3] == ["1.00", "+1.00"] and got[2] == ["−0.13", "−0.13"]
+    assert got[11] == ["0.00", "0.00"] and got[12] == ["0.00", "0.00"]   # no sign on a zero
+    # formatting a stored card value again changes nothing
+    n = len(VALUES)
+    assert all(fixed2_py(round2(x), s) == fixed2_py(x, s) for x in VALUES for s in (False, True))
+    assert got[n:] == got[:n]
 
 
 @pytest.mark.skipif(not BUNDLE_3001.exists(), reason="data/ is git-ignored: the demo bundle is local only")
@@ -173,8 +194,10 @@ def test_star_numbers_in_players_equal_the_recap_card(tmp_path, scope):
         now, period = [m for m in b["marks"] if m["period"] == 1][-1]["t"], 1
     got = run_node(tmp_path, b["marks"], b["moments"], [{"player": star["player_id"], "now": now, "period": period}])
     s = got[0]["stats"]
-    card = (star["passes"], star["completed"], star["expected"], star["pva"])
-    assert (s["passes"], s["completed"], s["expected"], s["vsExpected"]) == card
+    assert (s["passes"], s["completed"]) == (star["passes"], star["completed"])
+    # two decimals on both screens; the text's whole numbers are those values rounded
+    assert (round2(s["expectedXp"]), round2(s["vsExpectedXp"])) == (star["expected_xp"], star["vs_expected_xp"])
+    assert half_up(s["expectedXp"]) == star["expected"] and star["completed"] - star["expected"] == star["pva"]
 
 
 def mean(values):

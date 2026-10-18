@@ -59,7 +59,7 @@ from .contracts import MomentBundle, PassGeometry, PassMark, PlayerSummary
 from .narration import NarratorOut, difficulty_tier, pass_tier
 from .narrator import NarrationResult, Narrator
 from .pipeline import analyse_match, ensure_match_file, load_events, player_summary, reports
-from .recap import RECAP_SCOPES, RecapCard, RecapOut
+from .recap import RECAP_SCOPES, RecapCard, RecapOut, star_player, team_passing
 from .schema import PITCH_LENGTH, PITCH_WIDTH, MatchMetaEvent, ShotEvent
 from .scoring import XPassScorer, find_default_model
 from .trace import TraceStep, code_step, reused
@@ -568,6 +568,28 @@ def offline_outcomes(events: Sequence, scorer: XPassScorer, stored: dict[str, Na
 
 def to_json(bundle: MatchBundle) -> str:
     return bundle.model_dump_json()
+
+
+# the card fields added after bundles were first written; refresh_recap_cards fills them in
+ADDED_CARD_FIELDS = {"expected_xp", "vs_expected_xp"}
+
+
+def refresh_recap_cards(bundle: MatchBundle) -> MatchBundle:
+    """The bundle with each recap card's passing and star recomputed from the bundle's own marks
+    (recap.team_passing, recap.star_player), with no model call. Every field the card already had must come out
+    the same, since the recap text's numbers come from them; only ADDED_CARD_FIELDS are filled in."""
+    added = {"home": ADDED_CARD_FIELDS, "away": ADDED_CARD_FIELDS, "star": ADDED_CARD_FIELDS}
+    recaps: dict[str, RecapEntry] = {}
+    for scope, entry in bundle.recaps.items():
+        card = entry.card
+        new = card.model_copy(update={
+            "home": team_passing(bundle.marks, card.home.team_id, card.home.name, scope),
+            "away": team_passing(bundle.marks, card.away.team_id, card.away.name, scope),
+            "star": star_player(bundle.marks, scope)})
+        if new.model_dump(exclude=added) != card.model_dump(exclude=added):
+            raise ValueError(f"recap {scope!r}: the recomputed card differs from the stored one beyond the added fields")
+        recaps[scope] = entry.model_copy(update={"card": new})
+    return bundle.model_copy(update={"recaps": recaps})
 
 
 def summary_line(bundle: MatchBundle, size_bytes: int) -> str:
