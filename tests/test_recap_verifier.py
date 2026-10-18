@@ -5,7 +5,8 @@ from xplain.prompts import RECAP_EXAMPLES, recap_instructions
 from xplain.recap import recap_claims
 from xplain.recap_verifier import RECAP_WORD_LIMIT, verify_recap
 
-FT, HT, DRAW_FT = RECAP_EXAMPLES
+_, HT, DRAW_FT = RECAP_EXAMPLES
+from .recap_fixtures import FT  # noqa: E402  (frozen case)
 PLAYERS = ["Dario Pell", "Joss Marlin", "Tomas Avery", "Ollie Branck", "Ivo Grant"]
 
 
@@ -32,7 +33,7 @@ def test_the_examples_pass(example):
 
 def test_the_brief_holds_the_examples_and_the_limits():
     brief = recap_instructions()
-    assert FT.out.text_el in brief and HT.out.text_en in brief
+    assert RECAP_EXAMPLES[0].out.text_el in brief and HT.out.text_en in brief
     assert f"{RECAP_WORD_LIMIT} words" in brief
 
 
@@ -194,6 +195,11 @@ def test_a_real_draw_still_needs_a_draw_word():
 def test_the_brief_lists_the_late_words_and_the_greek_after():
     brief = recap_instructions()
     assert "en el tiempo añadido" in brief and "στις καθυστερήσεις" in brief and "μετά" in brief
+
+
+def test_the_brief_asks_for_greek_clause_breaks_and_the_late_scorer():
+    brief = recap_instructions()
+    assert 'never ";"' in brief and "name its scorer" in brief and "scored the late winner and stood out" in brief
 
 
 def test_the_brief_lists_the_spanish_equaliser_phrases_and_forbids_logro():

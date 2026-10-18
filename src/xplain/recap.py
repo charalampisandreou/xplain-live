@@ -110,6 +110,8 @@ class RecapCard(_Strict):
     comeback_team_id: str | None = None        # the winner (or leader) was behind at some point
     late_winner_team_id: str | None = None     # full time: the goal that put the winner ahead for good was late
     late_equaliser_team_id: str | None = None  # full time: a draw whose last goal levelled it late
+    late_winner_scorer: str | None = None      # who scored that late winner / late equaliser (None: unnamed)
+    late_equaliser_scorer: str | None = None
     star: StarPlayer | None = None
 
 
@@ -190,7 +192,7 @@ def recap_card(events: Sequence, marks: Sequence[PassMark], scope: str) -> Recap
                                late=c.minute >= LATE_MINUTE[shot.period], home=home, away=away))
     result = _result(home, away, scope)
     ahead = meta.home_team_id if home > away else meta.away_team_id if away > home else None
-    comeback = late_winner = late_equaliser = None
+    comeback = late_winner = late_equaliser = late_winner_scorer = late_equaliser_scorer = None
     if ahead is not None:
         behind_once = any((g.home < g.away) if ahead == meta.home_team_id else (g.away < g.home) for g in goals)
         comeback = ahead if behind_once else None
@@ -200,13 +202,16 @@ def recap_card(events: Sequence, marks: Sequence[PassMark], scope: str) -> Recap
                             if g.team_id == ahead and abs(g.home - g.away) == 1
                             and all((x.home != x.away) for x in goals[goals.index(g):]))
             late_winner = ahead if decisive.late else None
+            late_winner_scorer = decisive.player_name if decisive.late else None
     elif scope == "full_time" and goals and goals[-1].late:
         late_equaliser = goals[-1].team_id
+        late_equaliser_scorer = goals[-1].player_name
     return RecapCard(scope=scope, match_id=meta.match_id,
                      home=team_passing(marks, meta.home_team_id, meta.home_name, scope),
                      away=team_passing(marks, meta.away_team_id, meta.away_name, scope),
                      score_home=home, score_away=away, goals=goals, result=result, comeback_team_id=comeback,
                      late_winner_team_id=late_winner, late_equaliser_team_id=late_equaliser,
+                     late_winner_scorer=late_winner_scorer, late_equaliser_scorer=late_equaliser_scorer,
                      star=star_player(marks, scope))
 
 
@@ -238,9 +243,11 @@ def recap_claims(card: RecapCard) -> dict[str, str]:
     if (team := _team_name(card, card.comeback_team_id)) is not None:
         claims[f"comeback:{team}"] = f"{team} came from behind"
     if (team := _team_name(card, card.late_winner_team_id)) is not None:
-        claims[f"late_winner:{team}"] = f"{team} scored the winning goal late in the match"
+        claims[f"late_winner:{team}"] = f"{team} scored the winning goal late in the match" + (
+            f", through {card.late_winner_scorer}" if card.late_winner_scorer else "")
     if (team := _team_name(card, card.late_equaliser_team_id)) is not None:
-        claims[f"late_equaliser:{team}"] = f"{team} levelled the match late on"
+        claims[f"late_equaliser:{team}"] = f"{team} levelled the match late on" + (
+            f", through {card.late_equaliser_scorer}" if card.late_equaliser_scorer else "")
     for g in card.goals:
         if g.player_name and f"scorer:{g.player_name}" not in claims:
             claims[f"scorer:{g.player_name}"] = f"{g.player_name} scored for {g.team_name}"
@@ -298,6 +305,16 @@ def _slot_meanings(card: RecapCard) -> dict[str, str]:
     return meanings
 
 
+def star_facts(card: RecapCard) -> dict:
+    """What the model may say about the star besides {star_name} and {star_pva}: the team, whether the star scored
+    in the scope, and whether that was the late winner or late equaliser (categories, no numbers)."""
+    star = card.star
+    scored = any(g.player_name == star.name for g in card.goals)
+    return {"team": star.team_name, "scored": scored,
+            "scored_late_winner": card.late_winner_scorer == star.name,
+            "scored_late_equaliser": card.late_equaliser_scorer == star.name}
+
+
 def recap_facts(card: RecapCard) -> dict:
     """The facts the RecapEditor may write about: categories and names only, no numbers and no minutes."""
     margin = abs(card.score_home - card.score_away)
@@ -311,7 +328,7 @@ def recap_facts(card: RecapCard) -> dict:
         "goals": [{"team": g.team_name, "scorer": g.player_name, "half": "first" if g.period == 1 else "second",
                    "late": g.late} for g in card.goals],
         "passing": {card.home.name: card.home.band, card.away.name: card.away.band},
-        "star": None if card.star is None else {"team": card.star.team_name},
+        "star": None if card.star is None else star_facts(card),
         "claims": recap_claims(card),
         "slots": _slot_meanings(card),
     }

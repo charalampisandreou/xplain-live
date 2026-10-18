@@ -7,7 +7,8 @@ from xplain.recap_verifier import RECAP_WORD_LIMIT, verify_recap
 from .test_pipeline import WIDE, seed42_events, tiny_model, tiny_scorer  # noqa: F401  (fixtures)
 from .test_recap import card, marks  # noqa: F401  (fixture)
 
-FT, HT, DRAW_FT = RECAP_EXAMPLES
+_, HT, DRAW_FT = RECAP_EXAMPLES
+from .recap_fixtures import FT  # noqa: E402  (frozen case)
 PLAYERS = ["Dario Pell", "Joss Marlin", "Tomas Avery", "Ollie Branck", "Ivo Grant"]
 
 
@@ -66,7 +67,7 @@ def test_the_star_on_the_card_and_its_claim(seed42_events, marks):  # noqa: F811
     assert c.star == star_player(marks, "full_time")
     if c.star is not None:
         assert recap_claims(c)[f"star:{c.star.name}"].endswith("in the match")
-        assert recap_facts(c)["star"] == {"team": c.star.team_name}
+        assert recap_facts(c)["star"]["team"] == c.star.team_name
 
 
 def test_slots_exist_only_for_above_or_below_teams_and_a_star():
@@ -79,6 +80,29 @@ def test_slots_exist_only_for_above_or_below_teams_and_a_star():
 
 
 # --- recap_slots and the filled text ---------------------------------------------------------------------
+
+def test_the_live_ft1_example_has_the_late_winner_scorer_as_star():
+    ft1 = RECAP_EXAMPLES[0]
+    v = verify_recap(ft1.out, ft1.card, PLAYERS)
+    assert v.ok, v.reasons
+    assert v.filled.text_en.endswith("Tomas Avery scored the late winner and stood out with 6 more passes than expected.")
+    assert recap_facts(ft1.card)["star"] == {"team": "Harbourne Athletic", "scored": True, "scored_late_winner": True,
+                                             "scored_late_equaliser": False}
+    assert recap_claims(ft1.card)["late_winner:Harbourne Athletic"].endswith("through Tomas Avery")
+
+
+def test_the_star_who_scored_with_commas_is_rejected_by_the_clause_binding():
+    ft1 = RECAP_EXAMPLES[0]
+    comma = ft1.out.model_copy(update={"text_en": ft1.out.text_en.replace(
+        "{star_name} scored the late winner and stood out", "{star_name}, who scored the late winner, stood out")})
+    v = verify_recap(comma, ft1.card, PLAYERS)
+    assert any("{star_pva} in a clause without {star_name}" in r for r in failed(v, "recap_slots"))
+
+
+def test_star_facts_when_the_star_did_not_score():
+    assert recap_facts(FT.card)["star"] == {"team": "Harbourne Athletic", "scored": False,
+                                            "scored_late_winner": False, "scored_late_equaliser": False}
+
 
 def test_the_three_examples_pass_and_fill():
     for ex in RECAP_EXAMPLES:

@@ -8,7 +8,8 @@ from xplain.prompts import RECAP_EXAMPLES
 from xplain.recap import RecapOut
 from xplain.recap_editor import MAX_ATTEMPTS, RecapEditor, RecapResult
 
-FT, HT, DRAW_FT = RECAP_EXAMPLES
+_, HT, DRAW_FT = RECAP_EXAMPLES
+from .recap_fixtures import FT  # noqa: E402  (frozen case)
 PLAYERS = ["Dario Pell", "Joss Marlin", "Tomas Avery", "Ollie Branck"]
 GOOD = FT.out
 BAD = GOOD.model_copy(update={"text_en": GOOD.text_en.replace("came from behind", "came from behind 2-1")})

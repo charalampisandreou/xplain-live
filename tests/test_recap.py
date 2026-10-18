@@ -72,6 +72,7 @@ def test_comeback_with_a_late_winner(seed42_events, marks):  # noqa: F811
     assert [(g.minute_label, g.late, g.home, g.away) for g in c.goals] == [
         ("23", False, 0, 1), ("83", False, 1, 1), ("90", True, 2, 1)]
     assert c.comeback_team_id == meta.home_team_id and c.late_winner_team_id == meta.home_team_id
+    assert c.late_winner_scorer == c.goals[-1].player_name
     claims = recap_claims(c)
     assert {f"comeback:{meta.home_name}", f"late_winner:{meta.home_name}", "result"} <= set(claims)
 
@@ -86,6 +87,7 @@ def test_an_early_winner_is_not_late_and_half_time_has_no_late_claims(seed42_eve
     events, meta = with_goals(seed42_events, [("home", 1, 10), ("home", 2, 88)])
     c = card(events, marks)
     assert c.result == "home_win" and c.late_winner_team_id is None and c.comeback_team_id is None
+    assert c.late_winner_scorer is None
     ht = card(events, marks, "half_time")
     assert (ht.score_home, ht.score_away, ht.result) == (1, 0, "home_lead") and len(ht.goals) == 1
     assert not any(k.startswith(("late_", "comeback")) for k in recap_claims(ht))
@@ -95,6 +97,7 @@ def test_late_equaliser(seed42_events, marks):  # noqa: F811
     events, meta = with_goals(seed42_events, [("home", 1, 30), ("away", 2, 90)])
     c = card(events, marks)
     assert c.result == "draw" and c.late_equaliser_team_id == meta.away_team_id
+    assert c.late_equaliser_scorer == c.goals[-1].player_name
     assert f"late_equaliser:{meta.away_name}" in recap_claims(c)
 
 

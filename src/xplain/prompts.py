@@ -360,7 +360,7 @@ _HBA, _KWR = "Harbourne Athletic", "Kellsworth Rovers"
 
 RECAP_EXAMPLES: tuple[RecapExample, ...] = (
     RecapExample(
-        name="FT1 (comeback, late winner, star)",
+        name="FT1 (comeback, late winner, the star scored it)",
         card=RecapCard(
             scope="full_time", match_id="example", home=_team("hba", _HBA, "above"),
             away=_team("kwr", _KWR, "below"), score_home=2, score_away=1,
@@ -370,25 +370,25 @@ RECAP_EXAMPLES: tuple[RecapExample, ...] = (
                              minute_label="62", period=2, late=False, home=1, away=1),
                    RecapGoal(team_id="hba", team_name=_HBA, player_name="Tomas Avery",
                              minute_label="90+2", period=2, late=True, home=2, away=1)],
-            result="home_win", comeback_team_id="hba", late_winner_team_id="hba",
-            star=_star("Ollie Branck", "hba", _HBA, 6)),
+            result="home_win", comeback_team_id="hba", late_winner_team_id="hba", late_winner_scorer="Tomas Avery",
+            star=_star("Tomas Avery", "hba", _HBA, 6)),
         out=RecapOut(
-            text_en="Harbourne Athletic came from behind to beat Kellsworth Rovers, with Tomas Avery's late winner "
-                    "after Joss Marlin had cancelled out Dario Pell's opener. Harbourne Athletic completed "
-                    "{home_vs_expected} more passes than expected; Kellsworth Rovers completed {away_vs_expected} "
-                    "fewer than expected. {star_name} stood out with {star_pva} more passes than expected.",
-            text_es="Harbourne Athletic remontó y venció a Kellsworth Rovers con un gol tardío de Tomas Avery, después "
-                    "de que Joss Marlin igualara el tanto inicial de Dario Pell. Harbourne Athletic completó "
-                    "{home_vs_expected} pases más de lo esperado; Kellsworth Rovers completó {away_vs_expected} menos "
-                    "de lo esperado. {star_name} destacó con {star_pva} pases más de lo esperado.",
+            text_en="Harbourne Athletic came from behind to beat Kellsworth Rovers with a late winner from Tomas "
+                    "Avery. Harbourne Athletic completed {home_vs_expected} more passes than expected; Kellsworth "
+                    "Rovers completed {away_vs_expected} fewer than expected. {star_name} scored the late winner and "
+                    "stood out with {star_pva} more passes than expected.",
+            text_es="Harbourne Athletic remontó y venció a Kellsworth Rovers con un gol tardío de Tomas Avery. "
+                    "Harbourne Athletic completó {home_vs_expected} pases más de lo esperado; Kellsworth Rovers "
+                    "completó {away_vs_expected} menos de lo esperado. {star_name} marcó el gol tardío de la victoria "
+                    "y destacó con {star_pva} pases más de lo esperado.",
             text_el="Η Harbourne Athletic έκανε την ανατροπή και νίκησε την Kellsworth Rovers με γκολ του Tomas Avery "
-                    "στο φινάλε, μετά την ισοφάριση του Joss Marlin στο γκολ του Dario Pell. Η Harbourne Athletic "
-                    "ολοκλήρωσε {home_vs_expected} περισσότερες πάσες από τις αναμενόμενες· η Kellsworth Rovers "
-                    "{away_vs_expected} λιγότερες από τις αναμενόμενες. Ο {star_name} ξεχώρισε με {star_pva} "
-                    "περισσότερες πάσες από τις αναμενόμενες.",
+                    "στο φινάλε. Η Harbourne Athletic ολοκλήρωσε {home_vs_expected} περισσότερες πάσες από τις "
+                    "αναμενόμενες· η Kellsworth Rovers {away_vs_expected} λιγότερες από τις αναμενόμενες. Ο "
+                    "{star_name} σκόραρε το νικητήριο γκολ στο φινάλε και ξεχώρισε με {star_pva} περισσότερες πάσες "
+                    "από τις αναμενόμενες.",
             claims_used=["result", "comeback:Harbourne Athletic", "late_winner:Harbourne Athletic",
-                         "scorer:Dario Pell", "scorer:Joss Marlin", "scorer:Tomas Avery",
-                         "passing:Harbourne Athletic", "passing:Kellsworth Rovers", "star:Ollie Branck"]),
+                         "scorer:Tomas Avery", "passing:Harbourne Athletic", "passing:Kellsworth Rovers",
+                         "star:Tomas Avery"]),
     ),
     RecapExample(
         name="HT1 (level, goalless, star)",
@@ -461,7 +461,12 @@ braces; code puts the right number in its place. Slots:
 - {{star_name}} and {{star_pva}} (only when listed): the star player and how many more passes than expected they
   completed. Use the star claim; write both in one clause, "{{star_name}} stood out with {{star_pva}} more passes
   than expected" (Greek: "Ο {{star_name}} ξεχώρισε με {{star_pva}} περισσότερες πάσες από τις αναμενόμενες");
-  do not name a team in that clause.
+  do not name a team in that clause. If facts.star.scored is true, say so in that same clause, joined with "and",
+  never with commas: EN "{{star_name}} scored the late winner and stood out with {{star_pva}} more passes than
+  expected" (or "scored and stood out ..."); ES "{{star_name}} marcó el gol tardío de la victoria y destacó con
+  {{star_pva}} pases más de lo esperado"; EL "Ο {{star_name}} σκόραρε το νικητήριο γκολ στο φινάλε και ξεχώρισε με
+  {{star_pva}} περισσότερες πάσες από τις αναμενόμενες". Say "late winner" only when facts.star.scored_late_winner
+  is true, and also use that scorer claim.
 - Use the same slots in all three languages. A team in the "close" band gets no slot: say it completed about as
   many passes as expected.
 
@@ -478,13 +483,15 @@ Rules:
 - Passing: say a team completed more passes than expected, fewer than expected, or about as many as expected,
   exactly as its claim says. Put that team's name in the same clause as the phrase, and separate the two teams'
   passing with a comma or a semicolon.
+- With a late_winner or late_equaliser claim, name its scorer (given in the claim) in the same sentence.
 - Late: with a late_winner or late_equaliser claim (or a scorer claim for a goal marked late) say it with one of:
   EN "late", "in added time", "in stoppage time"; ES "tardío", "en el tiempo añadido", "en el descuento";
   EL "στο φινάλε", "στις καθυστερήσεις". Without such a claim use none of them. Comeback words only with a
   comeback claim.
 - Half time: nobody has won or lost yet. Say who leads, or that the teams are level.
 - Greek: teams take the feminine article (η Harbourne Athletic, την Kellsworth Rovers), players the masculine
-  (ο, του, τον). For "after" write "μετά"; never "αφού", "επειδή" or "γιατί" (they read as a cause).
+  (ο, του, τον). For "after" write "μετά"; never "αφού", "επειδή" or "γιατί" (they read as a cause). Between
+  clauses use "·" or a comma, never ";" (in Greek ";" is a question mark and ends a sentence).
 - Every scorer claim you list: name that scorer in all three languages.
 - Spanish equaliser: in a match that was won, "empate" alone reads as a draw. For the equalising goal write
   "consiguió el empate", "puso el empate" or "el gol del empate". Never "logró" (not allowed), and not
