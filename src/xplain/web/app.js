@@ -131,7 +131,7 @@
       enterReplay(r.bundle.moment.moment_id);
     }
     // ?mode=player opens Player mode, with ?player=<player_id> when it names one of the 22
-    XplainPlayer.mount({ teamName: (id) => idx.teams[id] || '', percent, pva, enterReplay });
+    XplainPlayer.mount({ teamName: (id) => idx.teams[id] || '', teamCode: (id) => teamCode(id, ''), percent, pva });
     if (bundle.meta.players.some((p) => p.player_id === params.get('player'))) state.player = params.get('player');
     if (params.get('mode') === 'player') setMode('player');
     requestAnimationFrame(frame);
@@ -225,6 +225,7 @@
   function setMode(mode) {
     state.mode = mode;
     if (mode === 'player' && !state.player) state.player = defaultPlayer();
+    XplainPlayer.invalidate();   // the pitch and its tab are drawn again by whichever mode is shown
     $('stage').classList.toggle('mode-player', mode === 'player');
     for (const b of $('mode').querySelectorAll('button[data-mode]')) {
       const on = b.dataset.mode === mode;
@@ -336,6 +337,7 @@
     document.addEventListener('keydown', (e) => {
       const control = e.target.closest && e.target.closest('button, [role="button"]');
       if (control && (e.key === ' ' || e.key === 'Enter')) return;
+      if (state.mode === 'player' && e.key !== ' ') return;   // Player mode: no stepping, replay or narration keys
       if (e.key === 'Escape') {   // leaves replay and step mode
         if (state.replay || !state.follow) { leaveReplay(); e.preventDefault(); }
       }
@@ -367,6 +369,12 @@
       narr.reached, narr.pos, goal, state.mode, state.player].join('/');
     if (key === state.renderedKey) return;   // every DOM write below runs in this one animation frame
     state.renderedKey = key;
+    if (state.mode === 'player') {   // Player mode: the score bug stays live; player.js draws the rest
+      renderScoreBug(tick, score, live >= 0 ? half : null);
+      XplainPlayer.render({ bundle: state.bundle, now: state.now, scope: state.scope, playerId: state.player,
+        notStarted: state.scope === '2' && half !== 2 });
+      return;
+    }
 
     $('live').classList.toggle('is-live', isLive());
     $('prev').disabled = sel <= 0;
@@ -379,10 +387,6 @@
     KINDS.forEach((k, i) => renderTable(k, snaps[i], plate, notStarted));
     renderNarrNav(narr);
     if (goal >= 0) renderGoalPlate(goal); else renderPlate(plate);
-    if (state.mode === 'player') {
-      XplainPlayer.render({ bundle: state.bundle, now: state.now, scope: state.scope, playerId: state.player,
-        selected: plate ? plate.bundle.moment.moment_id : null, replay: state.replay, notStarted });
-    }
   }
 
   // --- transitions ---------------------------------------------------------------------------

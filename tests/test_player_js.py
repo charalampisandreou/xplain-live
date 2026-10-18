@@ -132,6 +132,40 @@ def test_unknown_player_and_kick_off_give_nothing(match, tmp_path):
                       "bands": {"routine": 0, "moderate": 0, "hard": 0, "exceptional": 0}}
 
 
+def mean(values):
+    values = list(values)
+    assert values
+    return sum(values) / len(values)
+
+
+def test_pass_geometry_is_the_passers_frame_and_display_flips(match, seed42_events):  # noqa: F811
+    """Player mode draws mark.pass_geometry (set in pipeline.py from the event's inputs/details, the
+    schema's frame: "the attacking goal centre is at (120, 40)"). In that frame every team attacks
+    +x in both halves; display{} is the broadcast pitch, which turns round at half-time."""
+    b = match
+    meta = next(e for e in seed42_events if type(e).__name__ == "MatchMetaEvent")
+    keepers = {p.player_id for p in meta.players if p.position == "GK"}
+    shots = [e for e in seed42_events if type(e).__name__ == "ShotEvent"]
+    home, away = b.meta.home.team_id, b.meta.away.team_id
+    for team in (home, away):
+        for period in (1, 2):
+            own = [m for m in b.marks if m.team_id == team and m.period == period]
+            g = [m.pass_geometry for m in own]
+            assert mean(p.end_x - p.start_x for p in g) > 0, (team, period)   # forward on average: toward +x
+            gk = [m.pass_geometry.start_x for m in own if m.player_id in keepers]
+            assert mean(gk) < 40, (team, period)                              # the keeper plays from x near 0
+            team_shots = [s.x for s in shots if s.team_id == team and s.period == period]
+            if team_shots:
+                assert mean(team_shots) > 80, (team, period)                  # shots go toward x = 120
+            # display: unchanged where the team attacks right on the broadcast pitch, turned round elsewhere
+            right = b.meta.attacks_right[str(period)] == team
+            dx = mean(m.display.end_x - m.display.start_x for m in own)
+            assert (dx > 0) == right, (team, period)
+            for m in own:
+                same = (m.display.start_x, m.display.end_x) == (m.pass_geometry.start_x, m.pass_geometry.end_x)
+                assert same == right, m.event_id
+
+
 def test_player_js_names_its_python_references():
     js = PLAYER_JS.read_text(encoding="utf-8")
     assert "Browser computation exception" in js and "player_summary" in js

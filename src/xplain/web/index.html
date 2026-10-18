@@ -117,6 +117,8 @@
           </div>
         </div>
       </div>
+      <!-- Player mode: the plate stays empty, its slot kept for a player recap -->
+      <div class="recap-slot">Player recap</div>
       <div class="right">
         <div class="pvanum" id="lower-pva">–</div>
         <div class="pvalabel" id="lower-pva-label">PVA</div>
@@ -157,7 +159,6 @@
       <div class="pv-stat"><div class="pv-label">Expected <span class="xp">xP</span></div><div class="pv-value" id="pv-expected">–</div></div>
       <div class="pv-stat"><div class="pv-label">vs expected</div><div class="pv-value" id="pv-vs">–</div></div>
     </div>
-    <div class="pv-note">vs expected: completed passes minus the completions <span class="xp">xP</span> expected.</div>
     <div class="thead"><h2>How hard the passes were</h2><div class="tsub">by difficulty band</div></div>
     <div class="pv-bandbar" id="pv-bandbar" aria-hidden="true"></div>
     <div class="pv-bands">
@@ -167,8 +168,16 @@
       <span><span class="key exceptional" aria-hidden="true"></span>Exceptional <b id="pv-band-exceptional">0</b></span>
     </div>
     <div class="thead"><h2>Moments</h2><div class="tsub">surprises so far</div></div>
-    <div class="rows pv-rows" id="pv-rows"></div>
-    <div class="footnote">Green arrow: completed. Red dashed line: not completed. Brighter line: harder pass. PVA: the result minus the chance the pass had (<span class="xp">xP</span>), in points.</div>
+    <div class="rows pv-rows" id="pv-rows" role="list"></div>
+    <div class="pv-foot">
+      <div class="pv-legend" aria-label="Pass map key">
+        <span><svg width="22" height="10" viewBox="0 0 22 10" aria-hidden="true"><line x1="1" y1="5" x2="15" y2="5" stroke="#3BD16F" stroke-width="2"></line><path d="M14 1 L21 5 L14 9 z" fill="#3BD16F"></path></svg>Completed</span>
+        <span><svg width="22" height="10" viewBox="0 0 22 10" aria-hidden="true"><line x1="1" y1="5" x2="15" y2="5" stroke="#FF4B47" stroke-width="2" stroke-dasharray="3 2"></line><path d="M16 1.5 L21 8.5 M21 1.5 L16 8.5" stroke="#FF4B47" stroke-width="2" stroke-linecap="round"></path></svg>Not completed</span>
+        <span><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="4.5" fill="none" stroke="#3FD0FF" stroke-width="1.8"></circle></svg>Surprise</span>
+        <span><svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><circle cx="5" cy="5" r="3.5" fill="#FFFFFF"></circle></svg>Latest pass</span>
+      </div>
+      <div class="footnote">vs expected: completed passes minus the completions <span class="xp">xP</span> expected. PVA: the result minus the chance the pass had, in points.</div>
+    </div>
   </section>
 
   <div class="status" id="status" role="status" hidden></div>
