@@ -14,6 +14,7 @@ minutes and calls no model:
              passer's own frame. meta.attacks_right names the team attacking right per half
   * moments: every outlier's MomentBundle, with its line (or None) and its narration record
   * reports: per half, the moment_ids of pipeline.reports
+  * meta.players: every player of match_meta with team, position and shirt number
   * players: pipeline.player_summary at full time for all 22 players (None: no passes)
   * score:   0-0 at the first event, then one entry per goal (ShotEvent.goal), with the score after it
   * rankings: per commentated moment, in order, two snapshots of its kind as they stood at its t:
@@ -21,7 +22,8 @@ minutes and calls no model:
              of all moments of that kind in the scope with t <= that t (analyst.select_highlights,
              the gate's sort), each entry with its rank in the previous snapshot of the same scope
              and kind (None: new); the page shows the latest snapshot with t <= now
-  * tier:    each moment's difficulty tier words (narration.difficulty_tier), for the plate
+  * tier:    each moment's difficulty tier words (narration.difficulty_tier), for the plate; each mark's
+             tier words (narration.pass_tier, the same words on one xP scale) wherever a pass's difficulty is shown
   * recaps:  (schema "5", --recaps) per scope ("full_time", "half_time"): the recap card (recap.RecapCard, every
              number computed in code), the RecapEditor's verified text (or None) and how it came about
   * trace:   (schema "5") per commentated moment, its agent steps (trace.TraceStep: one per agent per
@@ -54,7 +56,7 @@ from .analyst import select_highlights
 from .analytics import Outlier
 from .config import PHRASE_MODES, AnalyticsConfig, phrase_mode
 from .contracts import MomentBundle, PassGeometry, PassMark, PlayerSummary
-from .narration import NarratorOut, difficulty_tier
+from .narration import NarratorOut, difficulty_tier, pass_tier
 from .narrator import NarrationResult, Narrator
 from .pipeline import analyse_match, ensure_match_file, load_events, player_summary, reports
 from .recap import RECAP_SCOPES, RecapCard, RecapOut
@@ -83,9 +85,13 @@ class TeamRef(_Strict):
 
 
 class PlayerRef(_Strict):
+    """A player as in match_meta; position and shirt_number are None in bundles written before they were added."""
+
     player_id: str
     name: str
     team_id: str
+    position: Literal["GK", "DEF", "MID", "FWD"] | None = None
+    shirt_number: Annotated[int, Field(ge=1, le=99)] | None = None
 
 
 class BundleMeta(_Strict):
@@ -210,9 +216,11 @@ class DisplayGeometry(_Strict):
 
 
 class BundleMark(PassMark):
-    """A PassMark with its display geometry."""
+    """A PassMark with its display geometry and its difficulty tier words (narration.pass_tier), which the page
+    shows wherever a pass's difficulty is shown. tier is None in bundles written before it was added."""
 
     display: DisplayGeometry
+    tier: Tier | None = None
 
 
 def display_rotated(team_id: str, period: int, home_team_id: str) -> bool:
@@ -229,9 +237,15 @@ def display_geometry(g: PassGeometry, team_id: str, period: int, home_team_id: s
                            end_x=PITCH_LENGTH - g.end_x, end_y=PITCH_WIDTH - g.end_y)
 
 
+def mark_tier(xp: float) -> Tier:
+    """A pass's tier words from narration.pass_tier."""
+    t = pass_tier(xp)
+    return Tier(family=t.family, en=t.en, es=t.es, el=t.el)
+
+
 def display_mark(mark: PassMark, home_team_id: str) -> BundleMark:
     return BundleMark(**dict(mark), display=display_geometry(mark.pass_geometry, mark.team_id, mark.period,
-                                                             home_team_id))
+                                                             home_team_id), tier=mark_tier(mark.xp))
 
 
 class RecapEntry(_Strict):
@@ -316,6 +330,9 @@ class MatchBundle(_Strict):
                  if m.display != display_geometry(m.pass_geometry, m.team_id, m.period, home)]
         if wrong:
             raise ValueError(f"marks with a wrong display geometry: {wrong[:5]}")
+        wrong = [m.event_id for m in self.marks if m.tier is not None and m.tier != mark_tier(m.xp)]
+        if wrong:
+            raise ValueError(f"marks with a wrong tier: {wrong[:5]}")
         return self
 
 
@@ -436,7 +453,8 @@ def build_bundle(events: Sequence, scorer: XPassScorer, outcomes: Sequence[Momen
             match_id=meta.match_id,
             home=TeamRef(team_id=meta.home_team_id, name=meta.home_name),
             away=TeamRef(team_id=meta.away_team_id, name=meta.away_name),
-            players=[PlayerRef(player_id=p.player_id, name=p.name, team_id=p.team_id) for p in meta.players],
+            players=[PlayerRef(player_id=p.player_id, name=p.name, team_id=p.team_id, position=p.position,
+                               shirt_number=p.shirt_number) for p in meta.players],
             model_version=scorer.model_version,
             generator_version=meta.generator_version,
             phrase_mode=mode or phrase_mode(),

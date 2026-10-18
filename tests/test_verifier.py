@@ -8,7 +8,7 @@ from xplain.analyst import build_evidence
 from xplain.clock import clock_label
 from xplain.contracts import Driver, Explanation, Moment, MomentBundle, PassGeometry
 from xplain.generator import generate_match
-from xplain.narration import DIFFICULTY_TIERS, NarratorOut, difficulty_tier
+from xplain.narration import DIFFICULTY_TIERS, NarratorOut, difficulty_tier, pass_tier
 from xplain.pipeline import process_match
 from xplain.scoring import ModelLoadError, XPassScorer, find_default_model
 from xplain.phrases import driver_phrases
@@ -176,6 +176,20 @@ def test_real_seed42_bundle_passes():
 def test_difficulty_tier_cutoffs(xp, completed, en, family):
     tier = difficulty_tier(make_bundle(xp=xp, completed=completed).moment)
     assert (tier.en, tier.family) == (en, family)
+
+
+@pytest.mark.parametrize("xp, en", [
+    (0.999, "very easy"), (0.96, "very easy"), (0.9599, "easy"), (0.60, "easy"), (0.5999, "tricky"),
+    (0.30, "tricky"), (0.2999, "difficult"), (0.20, "difficult"), (0.1999, "very difficult"), (0.0, "very difficult"),
+])
+def test_pass_tier_scale(xp, en):
+    assert pass_tier(xp).en == en
+
+
+@pytest.mark.parametrize("xp, completed", [(0.997, False), (0.96, False), (0.92, False), (0.35, True), (0.30, True),
+                                           (0.25, True), (0.1999, True), (0.0, True)])
+def test_pass_tier_agrees_with_difficulty_tier_on_outliers(xp, completed):
+    assert pass_tier(xp) == difficulty_tier(make_bundle(xp=xp, completed=completed).moment)
 
 
 def test_every_tier_word_matches_its_own_family_only():

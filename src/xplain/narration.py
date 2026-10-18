@@ -8,6 +8,11 @@ Verifier checks it against the MomentBundle before anything is shown.
 DIFFICULTY_TIERS turns a Moment's xP into a plain difficulty phrase per language. The cutoffs are
 editorial constants chosen from the xP distribution of the outliers over seeds 1-10 (failures sit at
 xP 0.920-0.997, median 0.951; successes at 0.112-0.350, median 0.302); change them here only.
+
+pass_tier gives ANY pass the same words on one xP scale, for the page (the marks): the failure tiers
+from EASY_FROM_XP up, the success tiers below it. EASY_FROM_XP is not a new cutoff: it is the lower
+xP of the "hard" difficulty band (AnalyticsConfig.band_hard_from). Every outlier gets the same tier
+from pass_tier as from difficulty_tier (failures sit above it, successes below).
 """
 from __future__ import annotations
 
@@ -16,7 +21,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
-from .analytics import Outlier
+from .analytics import DEFAULT, Outlier
 from .contracts import Moment
 
 Family = Literal["easy", "hard"]
@@ -56,9 +61,22 @@ DIFFICULTY_TIERS: dict[Outlier, tuple[tuple[float, DifficultyTier], ...]] = {
 }
 
 
+EASY_FROM_XP = 1 - DEFAULT.band_hard_from / 100   # 0.60: xP above which a pass is in the easy family
+
+
+def _tier(kind: Outlier, xp: float) -> DifficultyTier:
+    for lowest, tier in DIFFICULTY_TIERS[kind]:
+        if xp >= lowest:
+            return tier
+    raise ValueError(f"no difficulty tier for {kind} at xp={xp}")
+
+
 def difficulty_tier(moment: Moment) -> DifficultyTier:
     """The difficulty tier of a Moment, from its kind and xP."""
-    for lowest, tier in DIFFICULTY_TIERS[moment.kind]:
-        if moment.xp >= lowest:
-            return tier
-    raise ValueError(f"no difficulty tier for {moment.kind} at xp={moment.xp}")
+    return _tier(moment.kind, moment.xp)
+
+
+def pass_tier(xp: float) -> DifficultyTier:
+    """The difficulty tier of any pass from its xP alone: the failure tiers at xP >= EASY_FROM_XP, the success
+    tiers below (very easy / easy / tricky / difficult / very difficult)."""
+    return _tier("surprise_failure" if xp >= EASY_FROM_XP else "surprise_success", xp)

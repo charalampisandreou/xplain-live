@@ -9,6 +9,7 @@ from xplain import bundle as bundle_mod
 from xplain import clock
 from xplain.bundle import (
     MatchBundle,
+    PlayerRef,
     build_bundle,
     clock_track,
     main,
@@ -18,7 +19,7 @@ from xplain.bundle import (
     to_json,
 )
 from xplain.bundle import narrator_steps
-from xplain.narration import difficulty_tier
+from xplain.narration import difficulty_tier, pass_tier
 from xplain.trace import reused
 from xplain.narrator import Narrator
 from xplain.pipeline import analyse_match, reports, timeline, write_jsonl
@@ -53,11 +54,21 @@ def test_json_round_trips(offline, online):
 
 def test_bundle_holds_every_pass_and_outlier(seed42_events, tiny_scorer, offline):  # noqa: F811
     bundles, marks = analyse_match(seed42_events, tiny_scorer, WIDE)
-    assert [PassMark(**m.model_dump(exclude={"display"})) for m in offline.marks] == marks
+    assert [PassMark(**m.model_dump(exclude={"display", "tier"})) for m in offline.marks] == marks
     assert [m.bundle for m in offline.moments] == bundles
     assert offline.meta.schema_version == "5" and offline.meta.model_version == tiny_scorer.model_version
     meta = next(e for e in seed42_events if isinstance(e, MatchMetaEvent))
     assert offline.meta.generator_version == meta.generator_version and len(offline.meta.players) == 22
+
+
+def test_meta_players_carry_position_and_shirt_number(seed42_events, offline):  # noqa: F811
+    meta = next(e for e in seed42_events if isinstance(e, MatchMetaEvent))
+    assert [(p.player_id, p.name, p.team_id, p.position, p.shirt_number) for p in offline.meta.players] ==         [(p.player_id, p.name, p.team_id, p.position, p.shirt_number) for p in meta.players]
+
+
+def test_meta_players_without_position_still_load():
+    old = PlayerRef.model_validate({"player_id": "h_p1", "name": "A", "team_id": "h"})
+    assert old.position is None and old.shirt_number is None
 
 
 def test_minute_labels_come_from_match_clock(seed42_events, offline):  # noqa: F811
@@ -300,6 +311,24 @@ def test_all_scope_holds_both_halves_and_only_commentated_moments(offline):
         assert all(in_scope(by_id[e.moment_id].moment, snap.scope) for e in snap.entries)
     halves = {by_id[e.moment_id].moment.period for s in offline.rankings if s.scope == "all" for e in s.entries}
     assert halves == {1, 2}
+
+
+def test_mark_tiers_come_from_pass_tier_and_match_the_moments(offline):
+    for m in offline.marks:
+        t = pass_tier(m.xp)
+        assert (m.tier.family, m.tier.en, m.tier.es, m.tier.el) == (t.family, t.en, t.es, t.el)
+    tier_of_moment = {e.bundle.moment.moment_id: e.tier for e in offline.moments}
+    for m in offline.marks:
+        if m.moment_id is not None:
+            assert m.tier == tier_of_moment[m.moment_id]
+
+
+def test_a_wrong_mark_tier_is_rejected(offline):
+    data = offline.model_dump(mode="json")
+    m = data["marks"][0]
+    m["tier"] = {"family": "hard", "en": "very difficult", "es": "muy difícil", "el": "πολύ δύσκολη"}         if m["xp"] >= 0.6 else {"family": "easy", "en": "very easy", "es": "muy fácil", "el": "πολύ εύκολη"}
+    with pytest.raises(ValidationError, match="wrong tier"):
+        MatchBundle.model_validate(data)
 
 
 def test_tier_words_come_from_difficulty_tier(offline):
