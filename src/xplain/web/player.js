@@ -117,11 +117,141 @@
     rows.addEventListener('focusin', light);
     rows.addEventListener('mouseleave', () => spotlight(null));
     rows.addEventListener('focusout', () => spotlight(null));
+    buildPicker();
   }
 
   // draw everything again on the next render (entering Player mode, after Studio used the pitch)
   function invalidate() {
-    if (view) view.sig = '';
+    if (!view) return;
+    view.sig = '';
+    $('passes').classList.remove('spot');
+    closePicker(false);
+  }
+
+  // --- the picker: a pop-up list of both teams, the current player checked ---------------------------
+
+  const CHECK = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" '
+    + 'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7"></path></svg>';
+
+  // Two columns, home then away, each player in meta.players order; built once per bundle.
+  function buildPicker() {
+    const { bundle } = view.api;
+    const panel = $('player-picker');
+    const cols = [bundle.meta.home, bundle.meta.away].map((team) => {
+      const col = div('pk-col');
+      col.setAttribute('role', 'group');
+      const head = div('pk-head');
+      head.id = 'pk-head-' + team.team_id;
+      head.appendChild(div('pk-team', team.name));
+      head.appendChild(div('pk-sub', 'passes'));
+      col.setAttribute('aria-labelledby', head.id);
+      col.appendChild(head);
+      for (const pl of bundle.meta.players) {
+        if (pl.team_id !== team.team_id) continue;
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'pk-opt';
+        b.setAttribute('role', 'option');
+        b.dataset.player = pl.player_id;
+        b.tabIndex = -1;
+        const check = document.createElement('span');
+        check.className = 'pk-check';
+        check.innerHTML = CHECK;
+        const name = document.createElement('span');
+        name.className = 'pk-name';
+        name.textContent = pl.name;
+        const n = document.createElement('span');
+        n.className = 'pk-n';
+        b.append(check, name, n);
+        col.appendChild(b);
+      }
+      return col;
+    });
+    panel.replaceChildren(...cols);
+    const button = $('player-pick');
+    button.addEventListener('click', () => (panel.hidden ? openPicker() : closePicker(true)));
+    panel.addEventListener('click', (e) => {
+      const opt = e.target.closest('.pk-opt');
+      if (opt) choose(opt.dataset.player);
+    });
+    panel.addEventListener('keydown', pickerKey);
+    // a press anywhere outside the list and its button closes it
+    document.addEventListener('pointerdown', (e) => {
+      if (!panel.hidden && !panel.contains(e.target) && !button.contains(e.target)) closePicker(false);
+    }, true);
+  }
+
+  // passes so far (playerPasses, t <= now, whole match) and the current player, checked
+  function refreshPicker() {
+    const { bundle, now, player } = view.api.current();
+    for (const b of $('player-picker').querySelectorAll('.pk-opt')) {
+      const n = playerPasses(bundle.marks, b.dataset.player, now, null).length;
+      const nText = String(n);
+      const nNode = b.querySelector('.pk-n');
+      if (nNode.textContent !== nText) nNode.textContent = nText;
+      b.classList.toggle('none', n === 0);
+      const on = b.dataset.player === player;
+      b.setAttribute('aria-selected', String(on));
+      b.setAttribute('aria-label', b.querySelector('.pk-name').textContent + ', ' + n + (n === 1 ? ' pass' : ' passes') + ' so far');
+    }
+  }
+
+  function openPicker() {
+    const panel = $('player-picker');
+    refreshPicker();
+    panel.hidden = false;
+    $('player-pick').setAttribute('aria-expanded', 'true');
+    const current = panel.querySelector('.pk-opt[aria-selected="true"]') || panel.querySelector('.pk-opt');
+    focusOption(current);
+  }
+
+  function closePicker(returnFocus) {
+    const panel = $('player-picker');
+    if (!panel || panel.hidden) return;
+    panel.hidden = true;
+    $('player-pick').setAttribute('aria-expanded', 'false');
+    if (returnFocus) $('player-pick').focus();
+  }
+
+  function focusOption(opt) {
+    if (!opt) return;
+    for (const b of $('player-picker').querySelectorAll('.pk-opt')) b.tabIndex = b === opt ? 0 : -1;
+    opt.focus();
+  }
+
+  function choose(playerId) {
+    closePicker(true);   // first: setting the player redraws the mode, which also closes the list, without focus
+    view.api.setPlayer(playerId);
+  }
+
+  // arrows move (up / down within a team, left / right across at the same row), Home / End, Enter or
+  // space picks, Esc closes back to the button, Tab closes and moves on
+  function pickerKey(e) {
+    const opt = e.target.closest('.pk-opt');
+    if (e.key === 'Escape') { closePicker(true); e.preventDefault(); e.stopPropagation(); return; }
+    if (e.key === 'Tab') { closePicker(false); return; }
+    if (!opt) return;
+    const col = opt.parentElement;
+    const opts = [...col.querySelectorAll('.pk-opt')];
+    const i = opts.indexOf(opt);
+    const cols = [...$('player-picker').querySelectorAll('.pk-col')];
+    let target = null;
+    if (e.key === 'ArrowDown') target = opts[Math.min(i + 1, opts.length - 1)];
+    else if (e.key === 'ArrowUp') target = opts[Math.max(i - 1, 0)];
+    else if (e.key === 'Home') target = opts[0];
+    else if (e.key === 'End') target = opts[opts.length - 1];
+    else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+      const other = cols[(cols.indexOf(col) + 1) % cols.length].querySelectorAll('.pk-opt');
+      target = other[Math.min(i, other.length - 1)];
+    } else if (e.key === 'Enter' || e.key === ' ') {
+      choose(opt.dataset.player);
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    } else return;
+    focusOption(target);
+    e.preventDefault();
+    e.stopPropagation();
   }
 
   function spotlight(momentId) {
@@ -162,6 +292,7 @@
   // the moments. Redrawn only when the player, the scope or the player's passes change.
   // ctx: bundle, now, scope, playerId, notStarted.
   function render(ctx) {
+    if (!$('player-picker').hidden) refreshPicker();
     const player = ctx.bundle.meta.players.find((p) => p.player_id === ctx.playerId);
     const period = scopePeriod(ctx.scope);
     const passes = ctx.notStarted ? [] : playerPasses(ctx.bundle.marks, ctx.playerId, ctx.now, period);
@@ -193,14 +324,13 @@
   // One pass in the passer's own frame (mark.pass_geometry: the player always attacks +x, in both
   // halves). Studio's marks, thinner: green arrow = completed, red dashed line ending in a cross =
   // not completed. A surprise moment is thicker with a cyan ring at its start; the newest pass has a
-  // small white dot at its end.
+  // small white dot at its start (inside the ring when it is also a surprise).
   function drawPass(parent, mark, newest) {
     const p = mark.pass_geometry;
     const surprise = Boolean(mark.moment_id);
     const g = el('g', surprise ? { 'data-moment': mark.moment_id, class: 'surprise' } : {});
     const width = surprise ? 0.6 : 0.32;
     const colour = mark.completed ? '#3BD16F' : '#FF4B47';
-    if (newest) g.appendChild(el('circle', { cx: p.end_x, cy: p.end_y, r: 0.8, fill: '#FFFFFF', class: 'newest' }));
     if (mark.completed) {
       g.appendChild(el('line', { x1: p.start_x, y1: p.start_y, x2: p.end_x, y2: p.end_y, stroke: colour,
         'stroke-width': width, 'marker-end': 'url(#arrow-green)' }));
@@ -217,6 +347,7 @@
       g.appendChild(el('circle', { cx: p.start_x, cy: p.start_y, r: 1.5, fill: '#10294A', stroke: '#3FD0FF',
         'stroke-width': 0.45 }));
     }
+    if (newest) g.appendChild(el('circle', { cx: p.start_x, cy: p.start_y, r: 0.8, fill: '#FFFFFF', class: 'newest' }));
     parent.appendChild(g);
   }
 

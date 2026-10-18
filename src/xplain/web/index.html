@@ -39,7 +39,7 @@
 
   <!-- Player mode: the player's name and team in the title's slot (player.js sets them), and the picker button -->
   <h1 class="player-head"><span class="player-name" id="player-name"></span><span class="player-team" id="player-team"></span></h1>
-  <button type="button" class="player-change" id="player-pick" aria-haspopup="dialog" disabled title="Coming soon">Change player<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg></button>
+  <button type="button" class="player-change" id="player-pick" aria-haspopup="listbox" aria-expanded="false" aria-controls="player-picker">Change player<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg></button>
 
   <!-- pitch, with the possession tab on its top edge -->
   <div class="pitch">
@@ -172,11 +172,14 @@
         <span><svg width="22" height="10" viewBox="0 0 22 10" aria-hidden="true"><line x1="1" y1="5" x2="15" y2="5" stroke="#3BD16F" stroke-width="2"></line><path d="M14 1 L21 5 L14 9 z" fill="#3BD16F"></path></svg>Completed</span>
         <span><svg width="22" height="10" viewBox="0 0 22 10" aria-hidden="true"><line x1="1" y1="5" x2="15" y2="5" stroke="#FF4B47" stroke-width="2" stroke-dasharray="3 2"></line><path d="M16 1.5 L21 8.5 M21 1.5 L16 8.5" stroke="#FF4B47" stroke-width="2" stroke-linecap="round"></path></svg>Not completed</span>
         <span><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="4.5" fill="none" stroke="#3FD0FF" stroke-width="1.8"></circle></svg>Surprise</span>
-        <span><svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><circle cx="5" cy="5" r="3.5" fill="#FFFFFF"></circle></svg>Latest pass</span>
+        <span><svg width="22" height="10" viewBox="0 0 22 10" aria-hidden="true"><line x1="5" y1="5" x2="21" y2="5" stroke="#D6E2F0" stroke-opacity="0.45" stroke-width="2"></line><circle cx="5" cy="5" r="3.5" fill="#FFFFFF"></circle></svg>Latest pass</span>
       </div>
       <div class="footnote">vs expected: completed passes minus the completions <span class="xp">xP</span> expected. PVA: the result minus the chance the pass had, in points.</div>
     </div>
   </section>
+
+  <!-- Player mode: the picker, over the player's column (player.js builds the two team lists) -->
+  <div class="player-picker" id="player-picker" role="listbox" aria-label="Players" hidden></div>
 
   <div class="status" id="status" role="status" hidden></div>
 </main>
