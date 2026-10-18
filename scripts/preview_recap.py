@@ -36,7 +36,7 @@ def card_lines(card: RecapCard) -> list[str]:
     rows += [f"  goal {g.minute_label}' {g.team_name}: {g.player_name or '-'}{' (late)' if g.late else ''}"
              for g in card.goals]
     for t in (card.home, card.away):
-        rows.append(f"  {t.name}: {t.completed}/{t.passes} completed, expected {t.expected:.1f}, {t.label} "
+        rows.append(f"  {t.name}: {t.completed}/{t.passes} completed, expected {t.expected}, {t.label} "
                     f"({t.band})")
     return rows
 
