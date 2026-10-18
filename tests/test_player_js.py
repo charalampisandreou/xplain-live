@@ -113,9 +113,10 @@ def test_player_numbers_equal_python(match, tmp_path):
         else:
             s = js["stats"]
             assert (s["passes"], s["completed"]) == (ref.passes, ref.completed), case
+            # exact: both sides add left to right (analytics.seq_sum), so the floats are equal, not just close
             for k_js, k_py in (("completionRate", "completion_rate"), ("meanXp", "mean_xp"),
                                ("pvaTotal", "pva_total"), ("pvaPerPass", "pva_per_pass")):
-                assert s[k_js] == pytest.approx(getattr(ref, k_py), abs=1e-12), (case, k_js)
+                assert s[k_js] == getattr(ref, k_py), (case, k_js)
             # what the recap card shows as Expected and vs expected, before round2: the same floats
             xp = xp_sum(own)   # left to right in seq order, as the page adds
             assert (s["expectedXp"], s["vsExpectedXp"]) == (xp, ref.completed - xp), case

@@ -15,8 +15,9 @@ overlay cards that a graphics system can render alongside the match.
 > workflow that runs them end to end (Analyst -> Explainer -> Narrator -> Verifier), a per-match JSON
 > bundle, the Studio web page that plays the bundle on the match clock (goal flash, stepping through
 > narrated moments, an in-plate narration language switch, half-time and full-time recap cards), the
-> Recap Editor (the recap texts, with every number filled in by code), Players mode (one player's pass
-> map, numbers and moments up to the match clock), a script that compares Narrator models
+> Recap Editor (the recap texts, with every number filled in by code), Players mode, the player-focus
+> personalization mode (one player's pass map, numbers and moments up to the match clock; from a recap it
+> opens on the star player), a script that compares Narrator models
 > (`scripts/compare_models.py`, see "Model comparison"), and the Azure deployment (Container Apps from
 > an ARM template, see "Deploy to Azure"). The deployed page serves a precomputed bundle: its lines were
 > generated with Foundry (gpt-6.1-sol) and checked by the Verifier when the bundle was built.
@@ -25,8 +26,8 @@ overlay cards that a graphics system can render alongside the match.
 > bundle CC BY 4.0). The bundle there was replaced after the narration retune; its SHA-256 is
 > `48f18c2bac40ca3cf91a08768c655d6d3f77585602b41910f52c38fae49d5a1b`.
 >
-> Not built yet: the Analyst screen, the agent trace (planned for the Analyst screen), personalization
-> modes (analyst, casual fan, player focus, favourite club or player), and live mode (the deployed app
+> Not built yet: the Analyst screen, the agent trace (planned for the Analyst screen), the other
+> personalization modes (analyst, casual fan, favourite club or player), and live mode (the deployed app
 > calling Foundry itself).
 > Results and demo sections are filled in as they are measured.
 
@@ -269,7 +270,8 @@ Also in the Studio:
   moments and back, and stepping or replaying keeps the recap. Half time resumes by itself after 10
   seconds unless you step away; full time stays. `?recap=ht` or `?recap=ft` opens one, paused.
 
-**Players mode** (the Players button in the header, or `?mode=player&player=PLAYER_ID`, e.g.
+**Players mode** (the player-focus personalization mode: the Players button in the header, or
+`?mode=player&player=PLAYER_ID`, e.g.
 `?mode=player&player=dsk-p10`) follows one player's match on the same clock, score and narration
 language as the Studio:
 
@@ -291,7 +293,9 @@ These numbers are the one place the page computes anything (the browser computat
 counts, means and rates over the bundle's marks at the clock, shown to two decimals with `toFixed(2)`,
 in `src/xplain/web/player.js`, each checked against its Python twin (`pipeline.player_summary`,
 `recap.xp_sum`, `recap.round2` and others) in `tests/test_player_js.py`, which runs
-`player.js` under Node (skipped when `node` is not installed).
+`player.js` under Node and compares exactly: both sides add floats left to right (`analytics.seq_sum`;
+Python's own `sum()` corrects for rounding since 3.12 and would differ in the last bits). The test is
+skipped when `node` is not installed.
 
 ## Docker
 

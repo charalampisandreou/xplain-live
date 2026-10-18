@@ -17,17 +17,19 @@ slots only when the card has a star. Completed, expected and passes stay on the 
 Expected and vs expected show two decimals, on screen and in the text: expected_xp (the sum of xP, xp_sum) and
 vs_expected_xp (completed minus that sum), each rounded by round2, the same rounding as the page's toFixed(2)
 (player.js fixed2). The number slots carry vs_expected_xp to two decimals ("19.45"); fill writes them with each
-language's decimal mark (DECIMAL_MARK: "19.45" in EN, "19,45" in ES and EL). The whole numbers stay for the bands
-and the star rule; a card written before the decimals existed fills whole numbers.
+language's decimal mark (DECIMAL_MARK: "19.45" in EN, "19,45" in ES and EL). The passing bands and the star rule
+use that same two-decimal value, so what the card and the text show is what was gated. The whole numbers (expected,
+vs_expected, pva) stay on the card; a card written before the decimals existed fills whole numbers.
 
 Editorial constants (change them here only):
   * LATE_MINUTE: a goal is "late" from this base minute of its half on, added time included (85' in the second
     half, 40' in the first)
-  * PASSING_BAND: a team is "above" or "below" expected when |vs expected| is at least this many passes, else
-    "close". Chosen from seeds 3001, 42 and 7 (full time: +19.4 / -19.1, +16.8 / -10.4, -0.7 / -1.0; halves
+  * PASSING_BAND: a team is "above" or "below" expected when its shown vs expected (vs_expected_xp, two decimals)
+    is at least this many passes either way, else "close". Chosen from seeds 3001, 42 and 7 (full time: +19.4 / -19.1, +16.8 / -10.4, -0.7 / -1.0; halves
     between -13.4 and +16.0), so a clear gap reads as one and a near-zero one does not.
-  * STAR_MIN_PVA: the star must have completed at least this many passes more than expected (after rounding), so
-    the text always reads "passes" in the plural and the star is a clear, positive standout
+  * STAR_MIN_PVA: the star must have completed at least this many passes more than expected, on the shown
+    two-decimal value (vs_expected_xp), so the text always reads "passes" in the plural and the star is a clear,
+    positive standout
 """
 from __future__ import annotations
 
@@ -39,6 +41,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from . import clock
+from .analytics import seq_sum
 from .contracts import PassMark
 from .schema import MatchMetaEvent, ShotEvent
 
@@ -142,12 +145,8 @@ def half_up(x: float) -> int:
 
 
 def xp_sum(marks: Sequence[PassMark]) -> float:
-    """The sum of xP added one pass at a time, left to right, as player.js adds it. Python's sum() compensates for
-    float rounding (since 3.12), so it can differ from the page in the last bits."""
-    total = 0.0
-    for m in marks:
-        total += m.xp
-    return total
+    """The sum of xP, one pass at a time, left to right (analytics.seq_sum), as player.js adds it."""
+    return seq_sum(m.xp for m in marks)
 
 
 def round2(x: float) -> float:
@@ -164,15 +163,17 @@ def team_passing(marks: Sequence[PassMark], team_id: str, name: str, scope: str)
     xp = xp_sum(ps)
     expected = half_up(xp)
     value = completed - expected
-    band: Band = "above" if value >= PASSING_BAND[scope] else "below" if value <= -PASSING_BAND[scope] else "close"
+    shown = round2(completed - xp)   # the band is decided on the value the card and the text show
+    band: Band = "above" if shown >= PASSING_BAND[scope] else "below" if shown <= -PASSING_BAND[scope] else "close"
     return TeamPassing(team_id=team_id, name=name, passes=len(ps), completed=completed, expected=expected,
                        vs_expected=value, label=vs_expected_label(value), band=band,
-                       expected_xp=round2(xp), vs_expected_xp=round2(completed - xp))
+                       expected_xp=round2(xp), vs_expected_xp=shown)
 
 
 def star_player(marks: Sequence[PassMark], scope: str) -> StarPlayer | None:
     """The player with the highest PVA total (completed - sum of xP) in the scope, both teams; ties go to more
-    passes, then the earlier first pass. None when that player's rounded PVA is below STAR_MIN_PVA."""
+    passes, then the earlier first pass. None when that player's shown vs expected (two decimals, round2) is below
+    STAR_MIN_PVA."""
     by_player: dict[str, list[PassMark]] = {}
     for m in sorted(marks, key=lambda m: m.seq):
         if m.period in SCOPE_PERIODS[scope] and m.player_id:
@@ -180,16 +181,16 @@ def star_player(marks: Sequence[PassMark], scope: str) -> StarPlayer | None:
     if not by_player:
         return None
     ps = max(by_player.values(),
-             key=lambda ps: (sum(m.completed for m in ps) - sum(m.xp for m in ps), len(ps), -ps[0].seq))
+             key=lambda ps: (sum(m.completed for m in ps) - xp_sum(ps), len(ps), -ps[0].seq))
     completed, xp = sum(m.completed for m in ps), xp_sum(ps)   # ps in seq order, as Players adds them
-    expected = half_up(xp)
-    if completed - expected < STAR_MIN_PVA:
+    expected, shown = half_up(xp), round2(completed - xp)
+    if shown < STAR_MIN_PVA:   # gated on the value the card and the text show
         return None
     first = ps[0]
     return StarPlayer(player_id=first.player_id, name=first.player_name or first.player_id, team_id=first.team_id,
                       team_name=first.team_name or first.team_id, passes=len(ps), completed=completed,
                       expected=expected, pva=completed - expected,
-                      expected_xp=round2(xp), vs_expected_xp=round2(completed - xp))
+                      expected_xp=round2(xp), vs_expected_xp=shown)
 
 
 def _result(home: int, away: int, scope: str) -> Result:

@@ -6,6 +6,7 @@ not pass quality. Band and outlier thresholds live in ``AnalyticsConfig`` and ar
 """
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import Literal
 
 from .config import AnalyticsConfig
@@ -14,6 +15,16 @@ Band = Literal["routine", "moderate", "hard", "exceptional"]
 Outlier = Literal["surprise_success", "surprise_failure"]
 
 DEFAULT = AnalyticsConfig()
+
+
+def seq_sum(values: Iterable[float]) -> float:
+    """Floats added one at a time, left to right, from 0.0: the way the page (player.js) adds. Python's sum()
+    corrects for float rounding since 3.12, so it can differ from the page in the last bits; every sum the page
+    must match (player.js parity, the recap card's two-decimal values) uses this."""
+    total = 0.0
+    for v in values:
+        total += v
+    return total
 
 
 def percent(x: float) -> int:

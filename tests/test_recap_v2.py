@@ -1,7 +1,7 @@
 """Recap v2: the star player, the slots, and the recap_slots checks on the raw text."""
 from xplain.prompts import RECAP_EXAMPLES
 from xplain.recap import (STAR_MIN_PVA, half_up, recap_claims, recap_facts, slot_directions, slot_values,
-                          star_player)
+                          star_player, team_passing)
 from xplain.recap_verifier import RECAP_WORD_LIMIT, verify_recap
 
 from .test_pipeline import WIDE, seed42_events, tiny_model, tiny_scorer  # noqa: F401  (fixtures)
@@ -52,6 +52,23 @@ def test_the_star_is_the_top_pva_with_ties_to_more_passes(marks):  # noqa: F811
     assert (ft.name, ft.pva, ft.passes, ft.completed, ft.expected) == ("Cyd", 5, 5, 5, 0)
     ht = star_player(fake_marks(marks, spec), "half_time")
     assert (ht.name, ht.pva, ht.passes, ht.team_id) == ("Bob", 3, 4, "a")
+
+
+def test_the_star_and_the_bands_are_gated_on_the_shown_two_decimal_value(marks):  # noqa: F811
+    # the star: 3 completed passes; xP 1.49 -> shown +1.51 (the whole number would be 2): no star
+    assert star_player(fake_marks(marks, [("ann", "h", 1, [(True, 0.49), (True, 0.5), (True, 0.5)])]),
+                       "full_time") is None
+    s = star_player(fake_marks(marks, [("ann", "h", 1, [(True, 0.5), (True, 0.25), (True, 0.25)])]), "full_time")
+    assert (s.vs_expected_xp, s.pva) == (2.0, 2)   # exactly +2.00: a star
+    # the bands (full time: 8): +7.51 is close (the whole number would be 8), +8.00 above, -8.00 below
+    near = fake_marks(marks, [("ann", "h", 1, [(True, 0.249)] * 10)])
+    t = team_passing(near, "h", "H", "full_time")
+    assert (t.vs_expected_xp, t.vs_expected, t.band) == (7.51, 8, "close")
+    above = team_passing(fake_marks(marks, [("ann", "h", 1, [(True, 0.25)] * 8 + [(True, 0.0)] * 2)]),
+                         "h", "H", "full_time")
+    assert (above.vs_expected_xp, above.band) == (8.0, "above")
+    below = team_passing(fake_marks(marks, [("ann", "h", 1, [(False, 0.5)] * 16)]), "h", "H", "full_time")
+    assert (below.vs_expected_xp, below.vs_expected, below.band) == (-8.0, -8, "below")
 
 
 def test_no_star_below_the_minimum(marks):  # noqa: F811

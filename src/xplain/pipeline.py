@@ -210,13 +210,14 @@ def player_pass_map(marks: Sequence[PassMark], player_id: str, as_of_t: float | 
 
 
 def player_summary(marks: Sequence[PassMark], player_id: str, as_of_t: float | None = None) -> PlayerSummary | None:
-    """Counts, completion rate, mean xP and PVA of the player's passes so far; None when there are none."""
+    """Counts, completion rate, mean xP and PVA of the player's passes so far; None when there are none. The float
+    sums run left to right in seq order (analytics.seq_sum), as player.js adds them, so the two match exactly."""
     own = player_pass_map(marks, player_id, as_of_t)
     if not own:
         return None
     n = len(own)
     done = sum(m.completed for m in own)
-    pva = sum(m.delta for m in own)
+    pva = analytics.seq_sum(m.delta for m in own)
     return PlayerSummary(
         player_id=player_id,
         player_name=own[0].player_name,
@@ -224,7 +225,7 @@ def player_summary(marks: Sequence[PassMark], player_id: str, as_of_t: float | N
         passes=n,
         completed=done,
         completion_rate=done / n,
-        mean_xp=sum(m.xp for m in own) / n,
+        mean_xp=analytics.seq_sum(m.xp for m in own) / n,
         pva_total=pva,
         pva_per_pass=pva / n,
         outliers=sum(m.outlier is not None for m in own),

@@ -34,8 +34,9 @@
       .sort((a, b) => a.seq - b.seq);
   }
 
-  // Counts, completion rate, mean xP and PVA of the passes: pipeline.player_summary. Sums run in
-  // seq order from 0, as Python's sum does, so the floats match. null when there are no passes.
+  // Counts, completion rate, mean xP and PVA of the passes: pipeline.player_summary. Sums run left to right
+  // in seq order from 0, as analytics.seq_sum does (Python's sum() corrects for rounding since 3.12 and would
+  // not match the last bits), so the floats are equal. null when there are no passes.
   // expectedXp and vsExpectedXp are what the recap card shows as Expected and vs expected (recap.star_player):
   // the sum of xP, and completed minus that sum; fixed2 shows them to two decimals.
   function playerStats(passes) {
