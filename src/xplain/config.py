@@ -220,11 +220,13 @@ def phrase_mode() -> str:
 class FoundryConfig:
     """Where the Narrator's model lives. Auth is Entra ID (a credential object), never an API key.
 
-    Override with XPLAIN_FOUNDRY_ENDPOINT and XPLAIN_FOUNDRY_DEPLOYMENT.
+    Override with XPLAIN_FOUNDRY_ENDPOINT and XPLAIN_FOUNDRY_DEPLOYMENT. The default deployment builds the bundles
+    (owner's pick 2026-10-18, after reports/model_compare/2026-10-18); gpt-4.1-mini stays selectable by
+    XPLAIN_FOUNDRY_DEPLOYMENT. Request parameters per deployment: models.MODEL_PARAMS.
     """
 
     endpoint: str = "https://plhack-foundry-candreou-resource.openai.azure.com/openai/v1/"
-    deployment: str = "gpt-4.1-mini"
+    deployment: str = "gpt-6.1-sol"
 
     @classmethod
     def from_env(cls) -> FoundryConfig:

@@ -242,7 +242,9 @@ The facts:
 The voice:
 - One natural spoken sentence per language, as a commentator says it live.
 - Tense: the rating in the past ("was easy", "era fácil", "ήταν εύκολη"), the outcome in the present
-  ("reaches", "is lost"; "llega", "se pierde"; "φτάνει", "χάνεται").
+  ("reaches", "is lost"; "llega", "se pierde"; "φτάνει", "χάνεται"). Never rate in the present ("is easy",
+  "es fácil", "είναι εύκολη").
+- One contrast per line: either "but" / "yet" after the rating, or "even though" on the outcome, never both.
 - Name the player. Write the player's name exactly as given, in the same Latin letters, in every
   language: never transliterate it (in Greek, "Fenel Ravani" stays "Fenel Ravani").
 - Greek: the player's name always takes its article, in the case the sentence needs: "η πάσα του Ivo
@@ -284,6 +286,8 @@ Languages:
   not a word-for-word translation of the English. Prefer simple everyday phrasing
   (Spanish e.g. "el pase se pierde", "encuentra a un compañero"; Greek e.g. "η πάσα χάνεται",
   "βρίσκει συμπαίκτη").
+- Spanish: prefer "El envío de X" or "El pase de X" to "Un pase de X era ...", and "no llega a su destino"
+  to "no llega a nada".
 
 Form:
 - About {target} words per line, never more than {limit} words, in English, Spanish and Greek.

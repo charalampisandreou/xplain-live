@@ -378,8 +378,11 @@ deployments (same prompt, frames, phrase table and Verifier, hints mode, up to 3
 cost and every line side by side. It is a measurement only; it changes nothing in the Narrator. Results:
 gpt-4.1-mini, gpt-4.1 and gpt-6.1-sol all gave 17 accepted on the first try, 0 retried and 0 rejected.
 gpt-4.1 produced nearly identical lines at about five times the estimated cost per bundle (0.13 against
-0.03 USD, from the script's price table), so the Narrator still uses gpt-4.1-mini. gpt-6.1-sol has no
-price in the script and is to be re-tested. Caveats: one run per model, and the same model gives
+0.03 USD, from the script's price table), so gpt-4.1 was dropped. A second run on 2026-10-18
+(`reports/model_compare/2026-10-18/`, seed3001 and seed42, gpt-6.1-sol priced at 2.00 / 10.00 USD per 1M
+input / output tokens) gave gpt-6.1-sol 17 of 17 on the first try on both matches against 15 and 16 for
+gpt-4.1-mini, at about 0.15 against 0.03 USD per bundle and with no gain in variety. gpt-6.1-sol is now the
+default for building bundles; gpt-4.1-mini stays selectable with `XPLAIN_FOUNDRY_DEPLOYMENT`. Caveats: one run per model, and the same model gives
 different repetition numbers in different runs (gpt-4.1-mini: 24% / 65% / 65% near-duplicates in this
 run, 24% / 53% / 47% in the run above), so small differences between models mean little; and gpt-6.1-sol
 rejects any temperature but 1 (it ran with `reasoning_effort=low`) while the gpt-4.1 models ran at 0.2,
@@ -403,8 +406,8 @@ so that row is not a like-for-like comparison.
 
 No third-party data and no pre-built scoring model is used anywhere in the current version. The
 generator's rules are designed and the scoring model is trained in this repository on generated
-matches only. The only third-party model is the Microsoft Foundry language model (gpt-4.1-mini)
-that phrases the commentary lines; it never sees or produces a football statistic (the only
+matches only. The only third-party model is the Microsoft Foundry language model (gpt-6.1-sol by
+default, gpt-4.1-mini selectable) that phrases the commentary lines and the recaps; it never sees or produces a football statistic (the only
 numbers it handles are the driver ranks 1 to 3).
 
 History: an earlier version of the generator used pass-completion weights fitted on StatsBomb Open

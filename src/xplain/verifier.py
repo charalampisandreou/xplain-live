@@ -36,6 +36,10 @@ Checks (every failing check adds a reason; all reasons are collected, not just t
                 marker and a causal marker ("even though it was very easy because it came from deep")
   * tier_first_contrast: a line that opens with its difficulty word ("Easy because ...") has a contrast word
                 before the outcome (CONTRAST_WORDS: yet / but, pero, αλλά)
+  * rating_tense: no present-tense rating: a present copula (PRESENT_COPULA: is/are, es/son, είναι), an optional
+                intensifier, then a difficulty word ("is easy"); the rating is in the past ("was easy")
+  * double_contrast: a line holds a contrast word (CONTRAST_WORDS) or a concession marker (CONCESSION_MARKERS),
+                not both ("is easy but does not reach a teammate, even though ...")
 
 Reasons start with the check name, e.g. "no_numbers: line_en has '94%'". Notes are observations that
 do not fail a line, e.g. "difficulty: line_en has no difficulty word".
@@ -514,6 +518,46 @@ def check_tier_first_contrast(out: NarratorOut) -> list[str]:
     return reasons
 
 
+# A present-tense copula before a difficulty word rates the pass in the present ("is easy"); the rating is in the
+# past ("was easy", "era fácil", "ήταν εύκολη"). English "'s" is left out: it is mostly the possessive.
+PRESENT_COPULA: dict[str, str] = {
+    "en": r"\b(?:is|are)\s+", "es": r"\b(?:es|son)\s+", "el": r"\bείναι\s+",
+}
+_PRESENT_COPULA_RE = {lang: re.compile(p, re.IGNORECASE) for lang, p in PRESENT_COPULA.items()}
+_INTENSIFIER_RE = {lang: re.compile(p, re.IGNORECASE) for lang, p in OPENING_INTENSIFIERS.items()}
+
+
+def check_rating_tense(out: NarratorOut) -> list[str]:
+    """No present-tense rating: a present copula (PRESENT_COPULA), an optional intensifier, then a difficulty word
+    of either family ("is easy", "es muy fácil", "είναι δύσκολη")."""
+    reasons = []
+    for lang, line in _lines(out).items():
+        for m in _PRESENT_COPULA_RE[lang].finditer(line):
+            rest = line[m.end():]
+            if (i := _INTENSIFIER_RE[lang].match(rest)) is not None:
+                rest = rest[i.end():]
+            if any(p.match(rest) for table in _FAMILY_RE.values() for p in table[lang]):
+                end = len(line) - len(rest) + len(WORD.match(rest).group(0))   # through the difficulty word
+                said = line[m.start():end]
+                reasons.append(f"rating_tense: line_{lang} rates the pass in the present ({said.strip()!r}); "
+                               f"the rating is in the past")
+                break
+    return reasons
+
+
+def check_double_contrast(out: NarratorOut) -> list[str]:
+    """One contrast per line: not both a contrast word (CONTRAST_WORDS: but / yet, pero, αλλά) and a concession
+    marker (CONCESSION_MARKERS: even though, aunque, παρόλο που ...)."""
+    reasons = []
+    for lang, line in _lines(out).items():
+        contrast = next((m.group(0) for p in _CONTRAST_RE[lang] if (m := p.search(line))), None)
+        concession = next((m.group(0) for p in _CONCESSION_RE[lang] if (m := p.search(line))), None)
+        if contrast and concession:
+            reasons.append(f"double_contrast: line_{lang} has both {contrast!r} and {concession!r}; one contrast "
+                           f"per line")
+    return reasons
+
+
 def verify(out: NarratorOut, bundle: MomentBundle, mode: str | None = None) -> VerifierResult:
     """Run every check and collect every failing reason; ok when there are none. Notes never fail a line.
 
@@ -540,5 +584,7 @@ def verify(out: NarratorOut, bundle: MomentBundle, mode: str | None = None) -> V
         *(check_one_position_piece(out, bundle) if mode != "strict" else []),
         *check_one_role_per_clause(out),
         *check_tier_first_contrast(out),
+        *check_rating_tense(out),
+        *check_double_contrast(out),
     ]
     return VerifierResult(ok=not reasons, reasons=reasons, notes=notes)

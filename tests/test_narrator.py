@@ -97,11 +97,40 @@ def test_invalid_structured_output_is_retried():
     assert result.reasons == ["attempt 1: format: the answer is not a valid NarratorOut (ValidationError)"]
 
 
-def test_timeout_gives_no_line():
-    result = narrate(FakeAgent("slow"), timeout_s=0.05)
-    assert result.line is None
-    assert result.reasons == ["attempt 1: timeout after 0.05 s"]
+def test_two_timeouts_give_no_line_with_both_attempts_in_the_trace():
+    agent = FakeAgent("slow", "slow")
+    result = narrate(agent, timeout_s=0.05)
+    assert result.line is None and result.attempts == 2 and agent.answers == []
+    assert result.reasons == ["attempt 1: timeout after 0.05 s", "attempt 2: timeout after 0.05 s"]
+    assert [(s.agent, s.kind, s.attempt, s.ok, s.reasons) for s in result.trace] == [
+        ("narrator", "llm", 1, False, ["timeout after 0.05 s"]),
+        ("narrator", "llm", 2, False, ["timeout after 0.05 s"])]
     assert result.latency_s < 5
+
+
+def test_a_timeout_is_retried_once_with_the_same_message():
+    agent = FakeAgent("slow", make_out())
+    result = narrate(agent, timeout_s=0.05)
+    assert result.line == make_out() and result.attempts == 2
+    assert result.reasons == ["attempt 1: timeout after 0.05 s"]
+    assert agent.messages[0] == agent.messages[1]   # no rejected_because: nothing was rejected
+    assert [(s.agent, s.attempt, s.ok) for s in result.trace] == [
+        ("narrator", 1, False), ("narrator", 2, True), ("verifier", 2, True)]
+
+
+def test_a_timeout_retry_stays_within_the_attempt_cap():
+    agent = FakeAgent(BAD, BAD, "slow")
+    result = narrate(agent, timeout_s=0.05)
+    assert result.line is None and result.attempts == MAX_ATTEMPTS == 3 and agent.answers == []
+    assert result.reasons[-1] == "attempt 3: timeout after 0.05 s"
+
+
+def test_only_one_timeout_retry():
+    agent = FakeAgent("slow", BAD, "slow")
+    result = narrate(agent, timeout_s=0.05)
+    assert result.line is None and result.attempts == 3
+    assert [r.split(": ", 1)[1] for r in result.reasons] == ["timeout after 0.05 s", BAD_REASON,
+                                                              "timeout after 0.05 s"]
 
 
 def test_exception_gives_no_line_and_does_not_raise():
@@ -400,8 +429,8 @@ def test_trace_records_the_verifier_notes_of_the_accepted_line():
 
 
 def test_trace_of_a_timeout_an_error_and_an_invalid_answer():
-    timeout = narrate(FakeAgent("slow"), timeout_s=0.05)
-    assert steps(timeout) == [("narrator", "llm", 1, False)]
+    timeout = narrate(FakeAgent("slow", "slow"), timeout_s=0.05)
+    assert steps(timeout) == [("narrator", "llm", 1, False), ("narrator", "llm", 2, False)]
     assert timeout.trace[0].reasons == ["timeout after 0.05 s"]
     error = narrate(FakeAgent(BAD, ConnectionError("gone")))
     assert steps(error) == [("narrator", "llm", 1, True), ("verifier", "code", 1, False),

@@ -2,8 +2,9 @@
 Narrator: one verified line per Moment in English, Spanish and Greek, from the Foundry model.
 
 Flow per moment: facts -> model (structured output NarratorOut) -> Verifier. A rejected answer is
-retried (up to MAX_ATTEMPTS calls in all) with the Verifier's reasons added to the facts; a rejection on the
-last attempt, a timeout or any error gives no line. narrate() never raises. Every result is stored by moment_id, so a moment is
+retried (up to MAX_ATTEMPTS calls in all) with the Verifier's reasons added to the facts. A timeout is retried
+once (TIMEOUT_RETRIES), same timeout and same message, as its own attempt within MAX_ATTEMPTS; a second timeout,
+a rejection on the last attempt or any error gives no line. narrate() never raises. Every result is stored by moment_id, so a moment is
 narrated at most once and a second call does not reach the model.
 
 The model sees only the facts from build_facts: no numbers, no minute (the card shows those), no SHAP
@@ -39,6 +40,7 @@ from .verifier import verify
 
 NARRATOR_TIMEOUT_S = DEFAULT_TIMEOUT_S   # per model call, for a deployment not in models.MODEL_PARAMS
 MAX_ATTEMPTS = 3            # the first call and up to two retries, each with the Verifier's reasons
+TIMEOUT_RETRIES = 1         # a timed-out call is retried this many times (counted in MAX_ATTEMPTS)
 TEMPERATURE = DEFAULT_TEMPERATURE
 
 
@@ -100,11 +102,12 @@ OUTCOMES: dict[str, tuple[str, ...]] = {
     "surprise_failure": ("does not find a teammate", "is lost", "goes astray", "does not reach a teammate"),
     "surprise_success": ("reaches a teammate", "comes off", "finds a teammate", "is completed"),
 }
-# The outcome phrase per language (wordings from lines the Verifier has accepted); the facts carry all three.
+# The outcome phrase per language (wordings from lines the Verifier has accepted; Spanish "no llega a su destino"
+# and the opening "El envío de" by the owner's preference, 2026-10-18); the facts carry all three.
 OUTCOME_WORDS: dict[str, dict[str, str]] = {
     "does not find a teammate": {"es": "no encuentra a un compañero", "el": "δεν βρίσκει συμπαίκτη"},
     "is lost": {"es": "se pierde", "el": "χάνεται"},
-    "goes astray": {"es": "no llega a nada", "el": "δεν καταλήγει πουθενά"},
+    "goes astray": {"es": "no llega a su destino", "el": "δεν καταλήγει πουθενά"},
     "does not reach a teammate": {"es": "no llega a un compañero", "el": "δεν φτάνει σε συμπαίκτη"},
     "reaches a teammate": {"es": "llega a un compañero", "el": "φτάνει σε συμπαίκτη"},
     "comes off": {"es": "sale bien", "el": "πετυχαίνει"},
@@ -115,7 +118,7 @@ OUTCOME_WORDS: dict[str, dict[str, str]] = {
 OPENING_FRAMES: frozenset[str] = frozenset({"reason", "concession"})
 OPENINGS: tuple[dict[str, str], ...] = (
     {"en": "{p}'s pass", "es": "El pase de {p}", "el": "Η πάσα του {p}"},
-    {"en": "The pass from {p}", "es": "Un pase de {p}", "el": "Η μπαλιά του {p}"},
+    {"en": "The pass from {p}", "es": "El envío de {p}", "el": "Η μπαλιά του {p}"},
 )
 
 
@@ -236,6 +239,7 @@ class Narrator:
         candidates: list[NarratorOut] = []   # answers the Verifier rejected, for diagnostics only
         trace: list[TraceStep] = []
         attempts = 0
+        timeouts = 0
         options = adapt_options({"response_format": NarratorOut, "temperature": TEMPERATURE}, self.params)
 
         def result(line: NarratorOut | None, notes: list[str] | None = None) -> NarrationResult:
@@ -256,6 +260,10 @@ class Narrator:
                            else f"error {type(exc).__name__}: {str(exc)[:200]}")
                     trace.append(llm_step("narrator", self.model, attempts, False,
                                           time.perf_counter() - call_start, [why]))
+                    if isinstance(exc, TimeoutError) and timeouts < TIMEOUT_RETRIES and attempts < MAX_ATTEMPTS:
+                        timeouts += 1
+                        reasons.append(f"attempt {attempts}: {why}")
+                        continue   # the same message again, as its own attempt
                     raise
                 call_s = time.perf_counter() - call_start
                 try:

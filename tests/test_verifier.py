@@ -823,3 +823,67 @@ def test_centrally_counts_as_the_width_piece():
                       line_el="Η εύκολη πάσα του Weso Wendez χάνεται, παρόλο που έγινε από την άμυνα.", drivers_used=[1])
     assert reasons_for(out, make_bundle(drivers=deep), "hints") == [
         "one_position_piece: line_en names both the depth and the width of driver 1; use one of them"]
+
+
+# --- rating_tense and double_contrast (the 74' line) ------------------------------------------------
+
+from xplain.verifier import check_double_contrast, check_rating_tense  # noqa: E402
+
+LINE_74 = NarratorOut(
+    line_en="The pass from Garus Dornic is easy but does not reach a teammate, even though it was played along the ground.",
+    line_es="Un pase de Garus Dornic es fácil pero no llega a un compañero, aunque iba raso.",
+    line_el="Η μπαλιά του Garus Dornic ήταν εύκολη αλλά δεν φτάνει σε συμπαίκτη, παρόλο που ήταν συρτή.",
+    drivers_used=[1])
+
+
+def test_the_74_line_fails_both_new_checks():
+    tense = check_rating_tense(LINE_74)
+    assert tense == ["rating_tense: line_en rates the pass in the present ('is easy'); the rating is in the past",
+                     "rating_tense: line_es rates the pass in the present ('es fácil'); the rating is in the past"]
+    contrast = check_double_contrast(LINE_74)
+    assert [r.split(":")[1].split()[0] for r in contrast] == ["line_en", "line_es", "line_el"]
+    assert "'but' and 'even though'" in contrast[0]
+    assert not verify(LINE_74, make_bundle(), "hints").ok
+
+
+@pytest.mark.parametrize("lang, text", [
+    ("en", "Weso Wendez's pass is easy, yet it goes astray."),
+    ("en", "Weso Wendez's pass is very easy, yet it goes astray."),
+    ("en", "These passes are easy, yet one goes astray."),
+    ("es", "El pase de Weso Wendez es muy fácil, pero se pierde."),
+    ("es", "El pase de Weso Wendez es complicado, pero llega."),
+    ("el", "Η πάσα του Weso Wendez είναι εύκολη, αλλά χάνεται."),
+    ("el", "Η πάσα του Weso Wendez είναι πολύ δύσκολη, αλλά φτάνει."),
+])
+def test_present_tense_ratings_are_rejected(lang, text):
+    out = make_out(**{f"line_{lang}": text})
+    [reason] = check_rating_tense(out)
+    assert reason.startswith(f"rating_tense: line_{lang} rates the pass in the present")
+
+
+@pytest.mark.parametrize("lang, text", [
+    ("en", "Weso Wendez's easy pass goes astray, even though it was along the ground."),   # possessive 's
+    ("en", "Weso Wendez's pass was easy, yet it is lost."),                                 # "is lost": an outcome
+    ("en", "It is Weso Wendez whose easy pass goes astray."),
+    ("es", "El pase de Weso Wendez era fácil, pero se pierde."),
+    ("el", "Η πάσα του Weso Wendez ήταν εύκολη, αλλά χάνεται."),
+])
+def test_past_ratings_and_other_present_verbs_pass(lang, text):
+    assert check_rating_tense(make_out(**{f"line_{lang}": text})) == []
+
+
+def test_one_contrast_per_line():
+    assert check_double_contrast(make_out()) == []   # a concession only
+    but_only = make_out(line_en="Weso Wendez's pass was easy because it was along the ground, but it goes astray.")
+    assert check_double_contrast(but_only) == []
+    both = make_out(line_el="Ο Weso Wendez πασάρει εύκολα, αλλά η πάσα του χάνεται, παρόλο που πήγε συρτά.")
+    assert check_double_contrast(both) == ["double_contrast: line_el has both 'αλλά' and 'παρόλο που'; one "
+                                           "contrast per line"]
+
+
+def test_the_worked_examples_pass_the_new_checks():
+    from xplain.prompts import EXAMPLES
+    for ex in EXAMPLES:
+        out = NarratorOut(line_en=ex.line_en, line_es=ex.line_es, line_el=ex.line_el,
+                          drivers_used=list(ex.drivers_used))
+        assert check_rating_tense(out) == [] and check_double_contrast(out) == [], ex.name

@@ -66,3 +66,14 @@ def test_unknown_model_logs_a_warning_with_the_settings_used(caplog):
         params_for("gpt-4.1-mini")
         params_for("gpt-6.1-sol")
     assert caplog.text == ""   # known models: no warning
+
+
+def test_the_default_deployment_is_gpt_6_1_sol_and_mini_stays_selectable(monkeypatch):
+    from xplain.config import FoundryConfig
+    monkeypatch.delenv("XPLAIN_FOUNDRY_DEPLOYMENT", raising=False)
+    assert FoundryConfig().deployment == FoundryConfig.from_env().deployment == "gpt-6.1-sol"
+    narrator = Narrator(RecordingAgent(), mode="hints")
+    assert narrator.model == "gpt-6.1-sol" and narrator.timeout_s == 60.0
+    monkeypatch.setenv("XPLAIN_FOUNDRY_DEPLOYMENT", "gpt-4.1-mini")
+    narrator = Narrator(RecordingAgent(), mode="hints")
+    assert narrator.model == "gpt-4.1-mini" and narrator.timeout_s == 15.0
