@@ -259,7 +259,7 @@ language as the Studio:
   dashed lines ending in a cross not completed, a cyan ring at the start of each surprise moment and a
   white dot at the start of the latest pass. All / 1st / 2nd filter it; it grows as the player passes.
 - **Numbers so far.** Passes, completion, expected completion (mean xP), vs expected (completed passes
-  minus the completions xP expected), a bar of the passes per difficulty band, and the player's
+  minus the completions xP expected), a bar of the completed passes per difficulty band, and the player's
   surprise moments with their PVA (hover or focus a row to bring its pass forward on the map).
 - **Narration plate** with only this player's narrated moments (the latest; chevrons or `[` `]` page
   back), or "No commentated moment for NAME yet."

@@ -211,6 +211,17 @@ def test_players_mode_draws_the_passers_frame_and_keeps_studio_rules(client):
     assert "state.mode === 'player' && ![' ', '[', ']'].includes(e.key)" in app
 
 
+def luminance(hex_colour):
+    channels = [int(hex_colour.lstrip("#")[i:i + 2], 16) / 255 for i in (0, 2, 4)]
+    lin = [c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4 for c in channels]
+    return 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2]
+
+
+def contrast(a, b):
+    hi, lo = sorted((luminance(a), luminance(b)), reverse=True)
+    return (hi + 0.05) / (lo + 0.05)
+
+
 def test_players_mode_layout_and_contrast(client):
     css = client.get("/static/app.css").text
     assert "#stage.mode-player .title, #stage.mode-player .tables { display: none; }" in css
@@ -221,10 +232,14 @@ def test_players_mode_layout_and_contrast(client):
     assert "top: 196px" in view and "height: 520px" in view   # the pitch's top and bottom lines
     picker = css.split("\n.player-picker {")[1].split("}")[0]
     assert "top: 196px" in picker and "height: 520px" in picker
-    # the band steps stay at 3:1 or more on --bg: cyan alpha 0.50 is the faintest
-    alphas = [float(css.split(f"--band-{b}: rgba(63, 208, 255, ")[1].split(")")[0])
-              for b in ("routine", "moderate", "hard", "exceptional")]
-    assert alphas == sorted(alphas) and alphas[0] >= 0.5
+    # the band colours: each at 3:1 or more on --bg, and brighter as the band gets harder
+    bg = css.split("--bg: ")[1].split(";")[0]
+    colours = [css.split(f"--band-{b}: ")[1].split(";")[0] for b in ("routine", "moderate", "hard", "exceptional")]
+    lums = [luminance(c) for c in colours]
+    assert lums == sorted(lums) and len(set(colours)) == 4
+    assert all(contrast(c, bg) >= 3.0 for c in colours), [round(contrast(c, bg), 2) for c in colours]
+    html = client.get("/").text
+    assert "<h2>Completed passes' difficulty</h2>" in html and "How hard the passes were" not in html
 
 
 def test_no_league_names_in_the_page(client):

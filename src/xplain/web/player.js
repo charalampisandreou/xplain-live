@@ -8,6 +8,7 @@
 //   hardestCompleted            ->  the completed pass with the lowest xp, ties to the earlier seq
 //   narratedFor                 ->  the player's moments with a line, t <= now, in seq order
 //   bandCounts                  ->  how many of the passes fall in each difficulty band (mark.band)
+//   completedBandCounts         ->  the same over the completed passes only (the column's bar)
 //   momentsFor                  ->  the player's commentated moments, t <= now, newest first
 // Nothing computed here is ever sent to a model.
 (function (root) {
@@ -80,6 +81,11 @@
     const out = { routine: 0, moderate: 0, hard: 0, exceptional: 0 };
     for (const m of passes) out[m.band] += 1;
     return out;
+  }
+
+  // bandCounts over the completed passes only: how hard the passes were that the player did complete.
+  function completedBandCounts(passes) {
+    return bandCounts(passes.filter((m) => m.completed));
   }
 
   // The player's commentated moments (qualifies_live) with t <= now and in the period, newest first.
@@ -306,7 +312,7 @@
     renderTab(player);
     renderMap(passes, player, stats, moments.length);
     renderNumbers(stats);
-    renderBands(bandCounts(passes));
+    renderBands(completedBandCounts(passes));
     renderMoments(moments, ctx.notStarted);
   }
 
@@ -378,7 +384,7 @@
     $('pv-vs').classList.toggle('neg', text[0] === '−');
   }
 
-  // one bar, a segment per band as wide as its count; the four counts below it
+  // one bar of the completed passes, a segment per band as wide as its count; the four counts below it
   function renderBands(counts) {
     const bar = $('pv-bandbar');
     bar.replaceChildren();
@@ -424,7 +430,8 @@
     }
   }
 
-  const api = { scopePeriod, playerPasses, playerStats, hardestCompleted, narratedFor, bandCounts, momentsFor,
+  const api = { scopePeriod, playerPasses, playerStats, hardestCompleted, narratedFor, bandCounts,
+    completedBandCounts, momentsFor,
     mount, invalidate, render };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.XplainPlayer = api;

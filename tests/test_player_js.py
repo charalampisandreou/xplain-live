@@ -37,6 +37,7 @@ const out = d.cases.map((c) => {
     hardest: hardest ? hardest.event_id : null,
     narrated: P.narratedFor(d.moments, c.player, c.now, c.period).map((e) => e.bundle.moment.moment_id),
     bands: P.bandCounts(passes),
+    completedBands: P.completedBandCounts(passes),
     moments: P.momentsFor(d.moments, c.player, c.now, c.period).map((e) => e.bundle.moment.moment_id),
   };
 });
@@ -113,6 +114,7 @@ def test_player_numbers_equal_python(match, tmp_path):
         assert js["hardest"] == hardest_completed(own), case
         assert js["narrated"] == narrated_ids(b, pid, now, period), case
         assert js["bands"] == band_counts(own), case
+        assert js["completedBands"] == band_counts([m for m in own if m.completed]), case
         assert js["moments"] == commentated_ids(b, pid, now, period), case
         narrated_seen += bool(js["narrated"])
         hardest_seen += js["hardest"] is not None
@@ -129,7 +131,8 @@ def test_unknown_player_and_kick_off_give_nothing(match, tmp_path):
     ])
     for js in got:
         assert js == {"event_ids": [], "stats": None, "hardest": None, "narrated": [], "moments": [],
-                      "bands": {"routine": 0, "moderate": 0, "hard": 0, "exceptional": 0}}
+                      "bands": {"routine": 0, "moderate": 0, "hard": 0, "exceptional": 0},
+                      "completedBands": {"routine": 0, "moderate": 0, "hard": 0, "exceptional": 0}}
 
 
 def mean(values):
