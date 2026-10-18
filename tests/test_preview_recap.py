@@ -25,7 +25,10 @@ def test_result_lines_show_the_texts_rejections_and_trace():
                            code_step("recap_verifier", ok=False, reasons=["length: x"])], rejected=[bad])
     rows = pr.result_lines(r)
     assert rows[0] == "status retried, 2 attempt(s), 1.0 s"
-    assert f"  EL: {FT.out.text_el}" in rows and "  rejected candidate 1:" in rows and "    EN: x" in rows
+    assert "  filled (shown):" in rows and f"    EL: {FT.out.text_el}" in rows
+    assert "  rejected candidate 1:" in rows and "    EN: x" in rows
+    raw = pr.result_lines(r.model_copy(update={"raw_text": FT.out, "slots": {"star_pva": "6"}}))
+    assert "  raw (as the model wrote it):" in raw and "  slots: {'star_pva': '6'}" in raw
     assert "  recap_editor (llm) attempt 1: pass, gpt-4.1-mini, 0.50 s" in rows
     assert "  recap_verifier (code) attempt 1: fail | length: x" in rows
 
