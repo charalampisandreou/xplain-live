@@ -28,3 +28,11 @@ def test_result_lines_show_the_texts_rejections_and_trace():
     assert f"  EL: {FT.out.text_el}" in rows and "  rejected candidate 1:" in rows and "    EN: x" in rows
     assert "  recap_editor (llm) attempt 1: pass, gpt-4.1-mini, 0.50 s" in rows
     assert "  recap_verifier (code) attempt 1: fail | length: x" in rows
+
+
+def test_usage_lines_count_reasoning_inside_output():
+    from compare_models import CallRecord
+    calls = [CallRecord(1.0, 3000, 500, 300), CallRecord(1.0, 1000, 100, None)]
+    [row] = pr.usage_lines(calls, (2.00, 10.00))
+    assert row == "tokens: 2 call(s), input 4000, output 600 (of which reasoning 300); cost 0.0140 USD"
+    assert pr.usage_lines(calls, None)[0].endswith("cost n/a")

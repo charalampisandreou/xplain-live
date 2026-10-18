@@ -80,9 +80,15 @@ def test_report_from_saved_runs(tmp_path):
     text = cm.write_report(["gpt-4.1-mini", "gpt-6.1-sol", "gpt-4.1"], tmp_path).read_text(encoding="utf-8")
     assert "| gpt-4.1-mini | temperature=0.2 | 2 | 1 | 0 | 1 | 4 (0) |" in text
     assert "| gpt-6.1-sol | temperature=0.2 | 2 | 0 | 1 | 1 |" in text
-    assert "| 0.0022 |" in text and "| n/a |" in text   # 4000 in, 400 out at mini prices; no price for sol
+    assert "| 0.0022 |" in text and "| 0.0120 |" in text   # 4000 in, 400 out at mini and at sol prices
     assert "attempt 1: no_numbers: x" in text and "attempt 3: words: too long" in text
     assert text.count("- **gpt-4.1-mini**: Even though it was lofted high") == 1
     assert "- **gpt-6.1-sol**: (no line: rejected)" in text
     assert "- **gpt-4.1-mini EL**: Η πάσα φτάνει." in text
     assert "gpt-4.1 |" not in text.replace("gpt-4.1-mini", "")   # no saved run: skipped
+
+
+def test_files_are_named_by_the_match(tmp_path):
+    assert cm.match_label(Path("data/match_seed42.jsonl")) == "seed42"
+    assert cm.bundle_path("gpt-4.1-mini", tmp_path, "seed42").name == "bundle_seed42_gpt-4.1-mini.json"
+    assert cm.bundle_path("gpt-4.1-mini", tmp_path).name == "bundle_seed3001_gpt-4.1-mini.json"

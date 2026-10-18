@@ -3,6 +3,7 @@ Model comparison for the Narrator (measurement only: nothing here changes the sh
 
     python -u scripts/compare_models.py [--file data/match_seed3001.jsonl] [--models gpt-4.1-mini gpt-4.1 ...]
     python -u scripts/compare_models.py --report-only      # rebuild the report from the saved scratch bundles
+    python -u scripts/compare_models.py --file data/match_seed42.jsonl --out-dir reports/model_compare/seed42
 
 For each deployment the same commentated moments are narrated exactly as the bundle builder does it
 (bundle.narrate_match -> workflow.run_match -> Narrator, hints mode, narrator.MAX_ATTEMPTS, the current prompt,
@@ -13,6 +14,10 @@ uses too): ModelAgent wraps the Foundry agent, applies them, and times every cal
 Report (reports/model_compare/report.md): first try / retried / rejected with the Verifier's reasons, the
 repetition metrics of scripts/line_variety.py, latency p50/p95 per call and per line, tokens per line, a rough
 cost per bundle, then every English line side by side per moment (ES and EL in an appendix).
+Tokens: output tokens are the API's completion_tokens, which include a reasoning model's reasoning tokens (billed
+as output); the reasoning column is that part, shown separately and not added again. Cached input is priced at the
+full input price, so the cost is an upper bound. Files are named by the match label (the --file stem without
+"match_", e.g. seed3001).
 Confound: gpt-6.1-sol runs at temperature 1 (it rejects any other value); the others at narrator.TEMPERATURE.
 """
 from __future__ import annotations
@@ -43,7 +48,7 @@ DEFAULT_MATCH = Path("data/match_seed3001.jsonl")
 PRICES: dict[str, tuple[float, float] | None] = {
     "gpt-4.1-mini": (0.40, 1.60),
     "gpt-4.1": (2.00, 8.00),
-    "gpt-6.1-sol": None,
+    "gpt-6.1-sol": (2.00, 10.00),   # owner-given, Azure Global Standard (2026-10-18)
 }
 
 
@@ -99,8 +104,13 @@ async def run_model(name: str, events, scorer, credential) -> tuple[Any, list[Ca
     return build_bundle(events, scorer, outcomes, MODE), agent.calls, wall
 
 
-def bundle_path(name: str, out_dir: Path) -> Path:
-    return out_dir / f"bundle_seed3001_{name}.json"
+def match_label(match: Path) -> str:
+    """data/match_seed42.jsonl -> "seed42"."""
+    return match.stem.removeprefix("match_")
+
+
+def bundle_path(name: str, out_dir: Path, label: str = "seed3001") -> Path:
+    return out_dir / f"bundle_{label}_{name}.json"
 
 
 def calls_path(name: str, out_dir: Path) -> Path:
@@ -124,7 +134,7 @@ async def run_all(models: list[str], match: Path, out_dir: Path) -> None:
         for name in models:
             print(f"running {name} ...", flush=True)
             bundle, calls, wall = await run_model(name, events, scorer, credential)
-            bundle_path(name, out_dir).write_text(to_json(bundle), encoding="utf-8")
+            bundle_path(name, out_dir, match_label(match)).write_text(to_json(bundle), encoding="utf-8")
             calls_path(name, out_dir).write_text(json.dumps(
                 {"model": name, "params": asdict(MODEL_PARAMS[name]), "wall_s": wall,
                  "calls": [asdict(c) for c in calls]}, indent=1), encoding="utf-8")
@@ -183,9 +193,9 @@ def _s(x: float | None, fmt: str = "{:.1f}") -> str:
     return "n/a" if x is None else fmt.format(x)
 
 
-def render(stats: list[dict], bundles: dict[str, dict]) -> str:
+def render(stats: list[dict], bundles: dict[str, dict], label: str = "seed3001") -> str:
     names = [s["model"] for s in stats]
-    out = ["# Narrator model comparison (seed3001, hints mode, measurement only)", "",
+    out = [f"# Narrator model comparison ({label}, hints mode, measurement only)", "",
            f"Same commentated moments, prompt, frames, phrase table and Verifier for every model; MAX_ATTEMPTS "
            f"{MAX_ATTEMPTS}. Confound: gpt-6.1-sol runs at temperature 1 (it rejects any other value), with "
            f"reasoning_effort=low; the gpt-4.1 models at temperature {TEMPERATURE}.", "",
@@ -244,10 +254,10 @@ def render(stats: list[dict], bundles: dict[str, dict]) -> str:
     return "\n".join(out)
 
 
-def write_report(models: list[str], out_dir: Path) -> Path:
+def write_report(models: list[str], out_dir: Path, label: str = "seed3001") -> Path:
     bundles, stats = {}, []
     for name in models:
-        bp, cp = bundle_path(name, out_dir), calls_path(name, out_dir)
+        bp, cp = bundle_path(name, out_dir, label), calls_path(name, out_dir)
         if not bp.exists() or not cp.exists():
             print(f"skipping {name}: no saved run in {out_dir}", file=sys.stderr)
             continue
@@ -255,7 +265,7 @@ def write_report(models: list[str], out_dir: Path) -> Path:
         stats.append(model_stats(name, bundles[name], json.loads(cp.read_text(encoding="utf-8"))))
     path = out_dir / "report.md"
     if stats:
-        path.write_text(render(stats, bundles), encoding="utf-8")
+        path.write_text(render(stats, bundles, label), encoding="utf-8")
     return path
 
 
@@ -268,7 +278,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if not args.report_only:
         asyncio.run(run_all(args.models, args.file, args.out_dir))
-    print(f"report: {write_report(args.models, args.out_dir)}")
+    print(f"report: {write_report(args.models, args.out_dir, match_label(args.file))}")
     return 0
 
 

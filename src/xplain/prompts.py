@@ -245,6 +245,8 @@ The voice:
   ("reaches", "is lost"; "llega", "se pierde"; "φτάνει", "χάνεται").
 - Name the player. Write the player's name exactly as given, in the same Latin letters, in every
   language: never transliterate it (in Greek, "Fenel Ravani" stays "Fenel Ravani").
+- Greek: the player's name always takes its article, in the case the sentence needs: "η πάσα του Ivo
+  Varga", "ο Ivo Varga", "τον Ivo Varga"; never a bare name.
 - Carry the idea of difficulty_word: how easy or hard the pass was. Use your own natural words for
   it (any form that fits the sentence), never the opposite idea.
 - Say what happened in plain football language (the pass goes astray, does not find its man, comes

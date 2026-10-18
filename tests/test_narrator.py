@@ -417,3 +417,10 @@ def test_trace_survives_json():
     result = narrate(FakeAgent(BAD, make_out()))
     again = NarrationResult.model_validate_json(result.model_dump_json())
     assert again.trace == result.trace
+
+
+@pytest.mark.parametrize("mode", PHRASE_MODES)
+def test_prompt_asks_for_the_greek_article_before_player_names(mode):
+    text = INSTRUCTIONS[mode]
+    assert "the player's name always takes its article" in text and '"η πάσα του Ivo' in text
+    assert "never a bare name" in text
