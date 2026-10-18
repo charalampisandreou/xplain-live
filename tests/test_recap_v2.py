@@ -85,7 +85,9 @@ def test_the_live_ft1_example_has_the_late_winner_scorer_as_star():
     ft1 = RECAP_EXAMPLES[0]
     v = verify_recap(ft1.out, ft1.card, PLAYERS)
     assert v.ok, v.reasons
-    assert v.filled.text_en.endswith("Tomas Avery scored the late winner and stood out with 6 more passes than expected.")
+    assert v.filled.text_en.endswith("Tomas Avery also stood out with 6 more passes than expected.")
+    assert v.filled.text_en.count("late winner") == 1   # the goal is named once, in the result sentence
+    assert "también destacó con 6" in v.filled.text_es and "ξεχώρισε επίσης με 6" in v.filled.text_el
     assert recap_facts(ft1.card)["star"] == {"team": "Harbourne Athletic", "scored": True, "scored_late_winner": True,
                                              "scored_late_equaliser": False}
     assert recap_claims(ft1.card)["late_winner:Harbourne Athletic"].endswith("through Tomas Avery")
@@ -94,7 +96,7 @@ def test_the_live_ft1_example_has_the_late_winner_scorer_as_star():
 def test_the_star_who_scored_with_commas_is_rejected_by_the_clause_binding():
     ft1 = RECAP_EXAMPLES[0]
     comma = ft1.out.model_copy(update={"text_en": ft1.out.text_en.replace(
-        "{star_name} scored the late winner and stood out", "{star_name}, who scored the late winner, stood out")})
+        "{star_name} also stood out", "{star_name}, who scored the late winner, stood out")})
     v = verify_recap(comma, ft1.card, PLAYERS)
     assert any("{star_pva} in a clause without {star_name}" in r for r in failed(v, "recap_slots"))
 

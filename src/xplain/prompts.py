@@ -375,16 +375,16 @@ RECAP_EXAMPLES: tuple[RecapExample, ...] = (
         out=RecapOut(
             text_en="Harbourne Athletic came from behind to beat Kellsworth Rovers with a late winner from Tomas "
                     "Avery. Harbourne Athletic completed {home_vs_expected} more passes than expected; Kellsworth "
-                    "Rovers completed {away_vs_expected} fewer than expected. {star_name} scored the late winner and "
-                    "stood out with {star_pva} more passes than expected.",
+                    "Rovers completed {away_vs_expected} fewer than expected. {star_name} also stood out with "
+                    "{star_pva} more passes than expected.",
             text_es="Harbourne Athletic remontó y venció a Kellsworth Rovers con un gol tardío de Tomas Avery. "
                     "Harbourne Athletic completó {home_vs_expected} pases más de lo esperado; Kellsworth Rovers "
-                    "completó {away_vs_expected} menos de lo esperado. {star_name} marcó el gol tardío de la victoria "
-                    "y destacó con {star_pva} pases más de lo esperado.",
+                    "completó {away_vs_expected} menos de lo esperado. {star_name} también destacó con "
+                    "{star_pva} pases más de lo esperado.",
             text_el="Η Harbourne Athletic έκανε την ανατροπή και νίκησε την Kellsworth Rovers με γκολ του Tomas Avery "
                     "στο φινάλε. Η Harbourne Athletic ολοκλήρωσε {home_vs_expected} περισσότερες πάσες από τις "
                     "αναμενόμενες· η Kellsworth Rovers {away_vs_expected} λιγότερες από τις αναμενόμενες. Ο "
-                    "{star_name} σκόραρε το νικητήριο γκολ στο φινάλε και ξεχώρισε με {star_pva} περισσότερες πάσες "
+                    "{star_name} ξεχώρισε επίσης με {star_pva} περισσότερες πάσες "
                     "από τις αναμενόμενες.",
             claims_used=["result", "comeback:Harbourne Athletic", "late_winner:Harbourne Athletic",
                          "scorer:Tomas Avery", "passing:Harbourne Athletic", "passing:Kellsworth Rovers",
@@ -461,12 +461,15 @@ braces; code puts the right number in its place. Slots:
 - {{star_name}} and {{star_pva}} (only when listed): the star player and how many more passes than expected they
   completed. Use the star claim; write both in one clause, "{{star_name}} stood out with {{star_pva}} more passes
   than expected" (Greek: "Ο {{star_name}} ξεχώρισε με {{star_pva}} περισσότερες πάσες από τις αναμενόμενες");
-  do not name a team in that clause. If facts.star.scored is true, say so in that same clause, joined with "and",
-  never with commas: EN "{{star_name}} scored the late winner and stood out with {{star_pva}} more passes than
-  expected" (or "scored and stood out ..."); ES "{{star_name}} marcó el gol tardío de la victoria y destacó con
-  {{star_pva}} pases más de lo esperado"; EL "Ο {{star_name}} σκόραρε το νικητήριο γκολ στο φινάλε και ξεχώρισε με
-  {{star_pva}} περισσότερες πάσες από τις αναμενόμενες". Say "late winner" only when facts.star.scored_late_winner
-  is true, and also use that scorer claim.
+  do not name a team in that clause. If the star scored the late winner or late equaliser
+  (facts.star.scored_late_winner / scored_late_equaliser), that goal is already named in the result sentence:
+  do not repeat it, write "also": EN "{{star_name}} also stood out with {{star_pva}} more passes than expected";
+  ES "{{star_name}} también destacó con {{star_pva}} pases más de lo esperado"; EL "Ο {{star_name}} ξεχώρισε
+  επίσης με {{star_pva}} περισσότερες πάσες από τις αναμενόμενες". If the star scored another goal
+  (facts.star.scored is true) that is not named elsewhere in your text, say so in that same clause, joined with
+  "and", never with commas: EN "{{star_name}} scored and stood out with {{star_pva}} more passes than
+  expected"; ES "{{star_name}} marcó y destacó con {{star_pva}} pases más de lo esperado"; EL "Ο {{star_name}}
+  σκόραρε και ξεχώρισε με {{star_pva}} περισσότερες πάσες από τις αναμενόμενες". Use that scorer claim too.
 - Use the same slots in all three languages. A team in the "close" band gets no slot: say it completed about as
   many passes as expected.
 

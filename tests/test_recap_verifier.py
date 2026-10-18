@@ -199,7 +199,7 @@ def test_the_brief_lists_the_late_words_and_the_greek_after():
 
 def test_the_brief_asks_for_greek_clause_breaks_and_the_late_scorer():
     brief = recap_instructions()
-    assert 'never ";"' in brief and "name its scorer" in brief and "scored the late winner and stood out" in brief
+    assert 'never ";"' in brief and "name its scorer" in brief and "also stood out" in brief and "scored and stood out" in brief
 
 
 def test_the_brief_lists_the_spanish_equaliser_phrases_and_forbids_logro():
