@@ -426,6 +426,9 @@ Rules:
 - Greek: teams take the feminine article (η Harbourne Athletic, την Kellsworth Rovers). For "after" write
   "μετά"; never "αφού", "επειδή" or "γιατί" (they read as a cause).
 - Every scorer claim you list: name that scorer in all three languages.
+- Spanish equaliser: in a match that was won, "empate" alone reads as a draw. For the equalising goal write
+  "consiguió el empate", "puso el empate" or "el gol del empate". Never "logró" (not allowed), and not
+  "marcó el empate" or "anotó el empate".
 
 === EXAMPLES ===
 {examples}

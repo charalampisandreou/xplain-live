@@ -193,3 +193,9 @@ def test_a_real_draw_still_needs_a_draw_word():
 def test_the_brief_lists_the_late_words_and_the_greek_after():
     brief = recap_instructions()
     assert "en el tiempo añadido" in brief and "στις καθυστερήσεις" in brief and "μετά" in brief
+
+
+def test_the_brief_lists_the_spanish_equaliser_phrases_and_forbids_logro():
+    brief = recap_instructions()
+    assert "consiguió el empate" in brief and "puso el empate" in brief and "el gol del empate" in brief
+    assert 'Never "logró"' in brief
