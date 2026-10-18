@@ -19,6 +19,7 @@
   const RECAP_COL = { half_time: 'HT', full_time: 'FT' };
   const RECAP_WHEN = { half_time: 'Half time', full_time: 'Full time' };
   const RECAP_PAUSE_MS = 10000;      // the half-time recap holds this long in real time, then play resumes
+  const RECAP_TEXT_PX = 19, RECAP_MIN_PX = 16;   // the recap text's size, and the least fitRecapText goes to
   const HALF_LABEL = { 1: '1st half', 2: '2nd half' };
   const SCOPES = ['all', '1', '2'];
   const FADED = [0.8, 0.55, 0.35];   // opacity of the 1st, 2nd and 3rd pass before the selected one
@@ -269,7 +270,7 @@
   // ?mode and ?player for demo links, the way it drops ?replay on leaving replay.
   function setMode(mode) {
     state.mode = mode;
-    if (mode === 'player') { closeRecap(); state.pendingRecap = null; }   // Players mode has no recap
+    // Players mode shows no recap, but an open one stays open: back in Studio it is there again
     if (mode === 'player' && !state.player) state.player = defaultPlayer();
     state.playerNarr = null;
     XplainPlayer.invalidate();   // the pitch and its tab are drawn again by whichever mode is shown
@@ -386,6 +387,9 @@
     $('next').addEventListener('click', () => step(1));
     $('live').addEventListener('click', backToLive);
     $('narr-prev').addEventListener('click', () => narrStep(-1));
+    for (const b of $('recap-view').querySelectorAll('button')) {
+      b.addEventListener('click', () => setRecapView(b.dataset.view));
+    }
     $('narr-next').addEventListener('click', () => narrStep(1));
     for (const kind of KINDS) {
       const rows = $('rows-' + kind);
@@ -433,7 +437,7 @@
     const key = [sel, live, tick, score, half, state.scope, snaps.map((s) => (s ? s.t : '-')).join('|'),
       plate ? plate.bundle.moment.moment_id : '-', state.lang, state.follow, state.replay,
       narr.reached, narr.pos, goal, state.mode, state.player, state.playerNarr,
-      state.recap ? state.recap.scope + (state.recap.resumeAt !== null) : '-'].join('/');
+      state.recap ? state.recap.scope + (state.recap.resumeAt !== null) + state.recap.view : '-'].join('/');
     if (key === state.renderedKey) return;   // every DOM write below runs in this one animation frame
     state.renderedKey = key;
     if (state.mode === 'player') {   // Player mode: the score bug stays live; player.js draws the rest
@@ -549,8 +553,9 @@
 
   // --- recap: the card in the pitch's slot, the plate in its recap state ---
 
+  // view: what the pitch's slot shows while the recap is open, the card ('recap') or the pass map ('map')
   function openRecap(scope, resumeAt) {
-    state.recap = { scope, resumeAt };
+    state.recap = { scope, resumeAt, view: 'recap' };
     state.goal = null;
   }
 
@@ -577,11 +582,20 @@
   // Every number is the card's (bundle.recaps[scope].card, computed in recap.py); the position comes
   // from meta.players. The text is the recap's filled text in the narration language.
   function renderRecap() {
-    const on = Boolean(state.recap) && state.mode === 'studio';
+    const open = Boolean(state.recap) && state.mode === 'studio';
+    const on = open && state.recap.view === 'recap';
     $('stage').classList.toggle('recap-on', on);
     $('recap').hidden = !on;
+    $('recap-view').hidden = !open;
+    if (open) {
+      for (const b of $('recap-view').querySelectorAll('button')) {
+        const sel = b.dataset.view === state.recap.view;
+        b.classList.toggle('on', sel);
+        b.setAttribute('aria-pressed', String(sel));
+      }
+    }
     const title = $('title');
-    title.textContent = on ? title.dataset[state.recap.scope === 'half_time' ? 'ht' : 'ft'] : title.dataset.live;
+    title.textContent = open ? title.dataset[state.recap.scope === 'half_time' ? 'ht' : 'ft'] : title.dataset.live;
     if (!on) return;
     const entry = state.bundle.recaps[state.recap.scope];
     const c = entry.card;
@@ -608,17 +622,50 @@
         span('rc-n' + signClass(t.vs_expected), signed(t.vs_expected)));
       teams.appendChild(row);
     }
-    const star = $('rc-star');
-    star.replaceChildren();
-    if (c.star) {
-      const who = state.bundle.meta.players.find((p) => p.player_id === c.star.player_id);
-      star.append(span('rc-label', 'Star player'), span('rc-who', c.star.name),
-        span('rc-tag', [who && who.position, teamCode(c.star.team_id, c.star.team_name)].filter(Boolean).join(' · ')),
-        span('rc-n' + signClass(c.star.pva), signed(c.star.pva) + ' vs expected'));
-    }
+    $('rc-starblock').hidden = !c.star;
+    if (c.star) renderStar(c);
     const text = $('rc-text');
     text.textContent = (entry.text && entry.text['text_' + state.lang]) || '';
     text.setAttribute('lang', state.lang);
+    fitRecapText();
+  }
+
+  // The star's row: the shirt number and position from meta.players; the name, team, passes, completed,
+  // expected and vs expected from the card; the minutes of the card's goals the star scored.
+  function renderStar(c) {
+    const s = c.star;
+    const who = state.bundle.meta.players.find((p) => p.player_id === s.player_id);
+    const row = $('rc-star');
+    row.replaceChildren();
+    const num = span('st-num', '');
+    if (who && who.shirt_number != null) num.append(span('st-hash', '#'), String(who.shirt_number));
+    const meta = div('st-meta');
+    if (who && who.position) meta.appendChild(span('st-pos', who.position));
+    meta.appendChild(span('st-team', s.team_name));
+    const scored = c.goals.filter((g) => g.player_name === s.name).map((g) => g.minute_label + "'");
+    if (scored.length) meta.appendChild(span('st-goal', (scored.length > 1 ? 'Goals ' : 'Goal ') + scored.join(', ')));
+    const ident = div('st-who');
+    ident.append(div('st-name', s.name), meta);
+    const stats = div('st-stats');
+    for (const label of ['Passes', 'Completed', 'Expected', 'vs expected']) stats.appendChild(div('pv-label', label));
+    stats.append(div('st-val', String(s.passes)), div('st-val', String(s.completed)), div('st-val', String(s.expected)),
+      div('st-val' + signClass(s.pva), signed(s.pva)));
+    row.append(num, ident, stats);
+  }
+
+  // A long recap (many goals, a long Greek text) steps its text down 1px at a time, to RECAP_MIN_PX, until
+  // the card's content fits its 520px. Formatting only.
+  function fitRecapText() {
+    const card = $('recap'), text = $('rc-text');
+    let size = RECAP_TEXT_PX;
+    text.style.fontSize = '';
+    while (size > RECAP_MIN_PX && card.scrollHeight > card.clientHeight) text.style.fontSize = --size + 'px';
+  }
+
+  function setRecapView(view) {
+    if (!state.recap) return;
+    state.recap.view = view;
+    render();
   }
 
   function renderRecapPlate() {
@@ -644,8 +691,10 @@
     // the drain line runs over the pause, from full to empty; with reduced motion it stays hidden
     if (r.resumeAt !== null && !reducedMotion.matches && drainLine.animate) {
       lower.classList.add('ticking');
-      drain = drainLine.animate([{ transform: 'scaleX(1)' }, { transform: 'scaleX(0)' }],
-        { duration: RECAP_PAUSE_MS, easing: 'linear', fill: 'forwards' });
+      // from what is left of the pause: back from Players mode, it goes on where it was
+      const left = Math.max(0, r.resumeAt - performance.now());
+      drain = drainLine.animate([{ transform: 'scaleX(' + left / RECAP_PAUSE_MS + ')' }, { transform: 'scaleX(0)' }],
+        { duration: left, easing: 'linear', fill: 'forwards' });
     }
     fadePlate();
   }
@@ -904,6 +953,7 @@
     probe.remove();
     document.documentElement.dataset.lineFit = shrunk + '/' + total;
     if (state.fit.has(state.plateId)) $('lower-line').style.fontSize = state.fit.get(state.plateId);
+    if (state.recap && !$('recap').hidden) fitRecapText();   // measured again with the web fonts in
   }
 
   // --- stage scaling -------------------------------------------------------------------------

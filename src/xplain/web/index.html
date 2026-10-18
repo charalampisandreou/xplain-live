@@ -91,9 +91,19 @@
         <div id="rc-team-rows"></div>
       </div>
     </div>
-    <div class="rc-row rc-star" id="rc-star"></div>
+    <div class="rc-starblock" id="rc-starblock">
+      <div class="thead"><h2>Star player</h2><div class="tsub">most completions above expected</div></div>
+      <div class="st" id="rc-star"></div>
+    </div>
     <p class="rc-text" id="rc-text"></p>
   </section>
+
+  <!-- while a recap is open: the pitch's slot shows the recap card or the pass map (the .seg of the tables'
+       half selector, on the same row) -->
+  <div class="seg recapview" role="group" aria-label="Recap view" id="recap-view" hidden>
+    <button type="button" data-view="recap" class="on" aria-pressed="true">Recap</button>
+    <button type="button" data-view="map" aria-pressed="false">Map</button>
+  </div>
 
   <!-- half selector for the tables -->
   <div class="seg scope" role="group" aria-label="Moments from" id="scope">

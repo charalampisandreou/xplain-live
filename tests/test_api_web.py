@@ -300,7 +300,8 @@ def test_recap_plate_state_and_drain(client):
     assert ".lower.recap-plate .pvanum" in css and ".lower.recap " not in css
     # the half-time drain is a Web Animation, cancelled with the plate, none under reduced motion
     plate = app.split("function renderRecapPlate()")[1].split("function stopDrain()")[0]
-    assert "drainLine.animate(" in plate and "duration: RECAP_PAUSE_MS" in plate
+    assert "drainLine.animate(" in plate and "duration: left" in plate
+    assert "const left = Math.max(0, r.resumeAt - performance.now());" in plate   # goes on where it was
     assert "!reducedMotion.matches" in plate
     assert "drain.cancel()" in app and "@keyframes drain" not in css
     # Passing rows carry the team code (the tables' token); the full names sit under the score
@@ -316,12 +317,40 @@ def test_recap_opens_only_on_live_playback_and_by_link(client):
     link = app.split("const rs = RECAP_KEYS[params.get('recap')];")[1].split("requestAnimationFrame(frame);")[0]
     assert "openRecap(rs, null);" in link   # ?recap: static, no auto-resume
     assert "if (state.recap) { closeRecap(); e.preventDefault(); }" in app   # Esc closes
-    assert "if (mode === 'player') { closeRecap();" in app   # Players mode: no recap
+    # Players mode shows no recap but keeps it open: back in Studio it is there again
+    mode = app.split("function setMode(mode) {")[1].split("history.replaceState")[0]
+    assert "closeRecap" not in mode
     render = app.split("function renderRecap() {")[1].split("function renderRecapPlate()")[0]
-    for field in ("c.score_home", "c.goals", "t.completed", "t.expected", "t.vs_expected", "c.star.pva",
-                  "who.position", "entry.text['text_' + state.lang]"):
+    for field in ("c.score_home", "c.goals", "t.completed", "t.expected", "t.vs_expected", "s.passes",
+                  "s.completed", "s.expected", "s.pva", "who.position", "who.shirt_number",
+                  "entry.text['text_' + state.lang]"):
         assert field in render
     assert "Math." not in render and "reduce(" not in render   # numbers from the card only
+
+
+def test_recap_star_text_and_view_switch(client):
+    html = client.get("/").text
+    app = client.get("/static/app.js").text
+    css = client.get("/static/app.css").text.replace("\r\n", "\n")
+    # the star: a .thead like Goals and Passing, then one row (shirt number, name, meta, the card's numbers)
+    star = html.split('id="rc-starblock"')[1].split('<p class="rc-text"')[0]
+    assert "<h2>Star player</h2>" in star and 'id="rc-star"' in star
+    assert "for (const label of ['Passes', 'Completed', 'Expected', 'vs expected'])" in app
+    assert "c.goals.filter((g) => g.player_name === s.name)" in app   # the star's goals: the card's minutes
+    # the text follows the star; it is not pushed to the card's bottom
+    text = css.split("\n.rc-text {")[1].split("}")[0]
+    assert "margin: 24px 0 0;" in text and "auto" not in text
+    assert "while (size > RECAP_MIN_PX && card.scrollHeight > card.clientHeight)" in app
+    # Recap / Map: shown while a recap is open in Studio; the title stays the recap's in both views
+    switch = html.split('id="recap-view"')[1].split("</div>")[0]
+    assert 'data-view="recap" class="on" aria-pressed="true">Recap<' in switch
+    assert 'data-view="map" aria-pressed="false">Map<' in switch
+    assert ".seg.recapview { position: absolute; top: 150px; right: 620px;" in css
+    assert "state.recap = { scope, resumeAt, view: 'recap' };" in app
+    render = app.split("function renderRecap() {")[1].split("function renderStar(")[0]
+    assert "const on = open && state.recap.view === 'recap';" in render
+    assert "$('recap-view').hidden = !open;" in render
+    assert "title.textContent = open ?" in render
 
 
 def test_no_league_names_in_the_page(client):

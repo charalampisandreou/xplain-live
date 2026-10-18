@@ -137,11 +137,32 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .rc-row .rc-n.neg { color: var(--failed-text); }
 .rc-colhead { padding-top: 6px; padding-bottom: 6px; }
 .rc-colhead .rc-n { white-space: nowrap; font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
-.rc-star { margin-top: 18px; border-top: 2px solid var(--accent); }
-.rc-star:empty { display: none; }
-.rc-star .rc-label { flex: none; font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
-.rc-star .rc-n { width: auto; white-space: nowrap; }
-.rc-text { margin: auto 0 0; font-size: 19px; font-weight: 500; line-height: 1.45; color: #E6EEF7; }
+/* the star: a .thead like Goals and Passing, then one row: the shirt number in the accent, the name over a
+   muted meta line (position, team, the star's goals), and the card's numbers under the Passing column words */
+.rc-starblock { margin-top: 26px; }
+.rc-starblock[hidden] { display: none; }
+.st { display: flex; align-items: center; gap: 18px; padding: 14px 12px; border-bottom: 1px solid var(--hairline); }
+.st-num { flex: none; min-width: 64px; font-size: 56px; font-weight: 800; font-stretch: 85%; line-height: 0.85;
+  color: var(--accent); font-variant-numeric: tabular-nums; }
+.st-num .st-hash { font-size: 0.5em; font-weight: 700; margin-right: 2px; vertical-align: 0.5em; color: var(--muted); }
+.st-who { flex: 1; min-width: 0; }
+.st-name { font-size: 26px; font-weight: 800; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.st-meta { display: flex; align-items: baseline; gap: 10px; margin-top: 6px; font-size: 15px; color: var(--muted); white-space: nowrap; }
+.st-pos { font-size: 13px; font-weight: 700; letter-spacing: 0.06em; }
+.st-goal { font-size: 13px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+.st-stats { flex: none; display: grid; grid-template-columns: repeat(4, auto); column-gap: 26px; row-gap: 6px;
+  align-items: baseline; text-align: right; }
+.st-stats .pv-label { font-size: 12px; letter-spacing: 0.08em; }
+.st-val { font-size: 32px; font-weight: 800; font-stretch: 85%; line-height: 1; font-variant-numeric: tabular-nums; }
+.st-val.pos { color: var(--completed); }
+.st-val.neg { color: var(--failed-text); }
+/* the text follows the star (no push to the card's bottom); fitRecapText steps it down if a long recap
+   would run past the card */
+.rc-text { margin: 24px 0 0; font-size: 19px; font-weight: 500; line-height: 1.45; color: #E6EEF7; }
+/* Recap / Map: the tables' half selector's size, on its row, at the slot's right edge */
+.seg.recapview { position: absolute; top: 150px; right: 620px; padding: 3px; }
+.seg.recapview[hidden] { display: none; }
+.seg.recapview button { height: 28px; padding: 0 14px; font-size: 13px; }
 
 /* half selector */
 .seg.scope { position: absolute; top: 150px; right: 40px; padding: 3px; }
