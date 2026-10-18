@@ -36,8 +36,8 @@ const out = d.cases.map((c) => {
     stats: P.playerStats(passes),
     hardest: hardest ? hardest.event_id : null,
     narrated: P.narratedFor(d.moments, c.player, c.now, c.period).map((e) => e.bundle.moment.moment_id),
-    bands: P.bandCounts(passes),
-    completedBands: P.completedBandCounts(passes),
+    tiers: P.tierCounts(passes),
+    completedTiers: P.completedTierCounts(passes),
     moments: P.momentsFor(d.moments, c.player, c.now, c.period).map((e) => e.bundle.moment.moment_id),
   };
 });
@@ -79,8 +79,11 @@ def narrated_ids(b, player_id, now, period):
     return [m.moment_id for m in sorted(found, key=lambda m: m.seq)]
 
 
-def band_counts(marks):
-    return {band: sum(m.band == band for m in marks) for band in ("routine", "moderate", "hard", "exceptional")}
+TIERS = ("very easy", "easy", "tricky", "difficult", "very difficult")
+
+
+def tier_counts(marks):
+    return {t: sum(m.tier.en == t for m in marks) for t in TIERS}
 
 
 def commentated_ids(b, player_id, now, period):
@@ -113,8 +116,8 @@ def test_player_numbers_equal_python(match, tmp_path):
                 assert s[k_js] == pytest.approx(getattr(ref, k_py), abs=1e-12), (case, k_js)
         assert js["hardest"] == hardest_completed(own), case
         assert js["narrated"] == narrated_ids(b, pid, now, period), case
-        assert js["bands"] == band_counts(own), case
-        assert js["completedBands"] == band_counts([m for m in own if m.completed]), case
+        assert js["tiers"] == tier_counts(own), case
+        assert js["completedTiers"] == tier_counts([m for m in own if m.completed]), case
         assert js["moments"] == commentated_ids(b, pid, now, period), case
         narrated_seen += bool(js["narrated"])
         hardest_seen += js["hardest"] is not None
@@ -131,8 +134,8 @@ def test_unknown_player_and_kick_off_give_nothing(match, tmp_path):
     ])
     for js in got:
         assert js == {"event_ids": [], "stats": None, "hardest": None, "narrated": [], "moments": [],
-                      "bands": {"routine": 0, "moderate": 0, "hard": 0, "exceptional": 0},
-                      "completedBands": {"routine": 0, "moderate": 0, "hard": 0, "exceptional": 0}}
+                      "tiers": {"very easy": 0, "easy": 0, "tricky": 0, "difficult": 0, "very difficult": 0},
+                      "completedTiers": {"very easy": 0, "easy": 0, "tricky": 0, "difficult": 0, "very difficult": 0}}
 
 
 def mean(values):

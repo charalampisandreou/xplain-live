@@ -7,8 +7,8 @@
 //   playerPasses + playerStats  ->  pipeline.player_pass_map / player_summary(marks, id, as_of_t)
 //   hardestCompleted            ->  the completed pass with the lowest xp, ties to the earlier seq
 //   narratedFor                 ->  the player's moments with a line, t <= now, in seq order
-//   bandCounts                  ->  how many of the passes fall in each difficulty band (mark.band)
-//   completedBandCounts         ->  the same over the completed passes only (the column's bar)
+//   tierCounts                  ->  how many of the passes have each difficulty tier (mark.tier.en)
+//   completedTierCounts         ->  the same over the completed passes only (the column's bar)
 //   momentsFor                  ->  the player's commentated moments, t <= now, newest first
 // Nothing computed here is ever sent to a model.
 (function (root) {
@@ -74,18 +74,21 @@
       .sort((a, b) => a.bundle.moment.seq - b.bundle.moment.seq);
   }
 
-  const BANDS = ['routine', 'moderate', 'hard', 'exceptional'];
+  // the narration's difficulty tiers (narration.pass_tier), easiest first
+  const TIERS = ['very easy', 'easy', 'tricky', 'difficult', 'very difficult'];
 
-  // How many of the passes fall in each difficulty band (the bundle's mark.band), in BANDS order.
-  function bandCounts(passes) {
-    const out = { routine: 0, moderate: 0, hard: 0, exceptional: 0 };
-    for (const m of passes) out[m.band] += 1;
+  // How many of the passes have each difficulty tier (the bundle's mark.tier.en), in TIERS order. A
+  // mark without a tier (a bundle written before tiers) is not counted.
+  function tierCounts(passes) {
+    const out = {};
+    for (const t of TIERS) out[t] = 0;
+    for (const m of passes) if (m.tier && m.tier.en in out) out[m.tier.en] += 1;
     return out;
   }
 
-  // bandCounts over the completed passes only: how hard the passes were that the player did complete.
-  function completedBandCounts(passes) {
-    return bandCounts(passes.filter((m) => m.completed));
+  // tierCounts over the completed passes only: how hard the passes were that the player did complete.
+  function completedTierCounts(passes) {
+    return tierCounts(passes.filter((m) => m.completed));
   }
 
   // The player's commentated moments (qualifies_live) with t <= now and in the period, newest first.
@@ -104,7 +107,7 @@
 
   const SVG = 'http://www.w3.org/2000/svg';
   const KIND_LABEL = { surprise_failure: 'Surprise failure', surprise_success: 'Surprise success' };
-  const NOT_STARTED = 'Starts in the 2nd half';
+  const NOT_STARTED = 'Starts in the 2nd half.';
   const NO_MOMENTS = 'No surprises yet.';
 
   let view = null;   // what app.js handed over in mount(), and what was last drawn
@@ -166,9 +169,12 @@
         const name = document.createElement('span');
         name.className = 'pk-name';
         name.textContent = pl.name;
+        const pos = document.createElement('span');   // GK / DEF / MID / FWD from meta.players, muted
+        pos.className = 'pk-pos';
+        pos.textContent = pl.position || '';
         const n = document.createElement('span');
         n.className = 'pk-n';
-        b.append(check, name, n);
+        b.append(check, name, pos, n);
         col.appendChild(b);
       }
       return col;
@@ -312,7 +318,7 @@
     renderTab(player);
     renderMap(passes, player, stats, moments.length);
     renderNumbers(stats);
-    renderBands(completedBandCounts(passes));
+    renderTiers(completedTierCounts(passes));
     renderMoments(moments, ctx.notStarted);
   }
 
@@ -376,7 +382,8 @@
   function renderNumbers(s) {
     const { api } = view;
     setText('pv-passes', s ? String(s.passes) : '–');
-    setText('pv-completed', s ? api.percent(s.completionRate) + '%' : '–');
+    setText('pv-completed', s ? String(s.completed) : '–');
+    setText('pv-completed-pct', s ? api.percent(s.completionRate) + '%' : '');
     setText('pv-expected', s ? api.percent(s.meanXp) + '%' : '–');
     const text = s ? signed1(s.pvaTotal) : '–';
     setText('pv-vs', text);
@@ -384,17 +391,17 @@
     $('pv-vs').classList.toggle('neg', text[0] === '−');
   }
 
-  // one bar of the completed passes, a segment per band as wide as its count; the four counts below it
-  function renderBands(counts) {
+  // one bar of the completed passes, a segment per tier as wide as its count; the five counts below it
+  function renderTiers(counts) {
     const bar = $('pv-bandbar');
     bar.replaceChildren();
-    for (const band of BANDS) {
-      setText('pv-band-' + band, String(counts[band]));
-      if (counts[band] === 0) continue;
-      const seg = div('band ' + band);
-      seg.style.flexGrow = String(counts[band]);
+    TIERS.forEach((tier, i) => {
+      setText('pv-tier-' + i, String(counts[tier]));
+      if (counts[tier] === 0) return;
+      const seg = div('band t' + i);
+      seg.style.flexGrow = String(counts[tier]);
       bar.appendChild(seg);
-    }
+    });
   }
 
   // Studio's table rows: minute, kind over the tier words, |PVA| bar, PVA. Not buttons: hover or
@@ -430,8 +437,8 @@
     }
   }
 
-  const api = { scopePeriod, playerPasses, playerStats, hardestCompleted, narratedFor, bandCounts,
-    completedBandCounts, momentsFor,
+  const api = { scopePeriod, playerPasses, playerStats, hardestCompleted, narratedFor, tierCounts,
+    completedTierCounts, momentsFor,
     mount, invalidate, render };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.XplainPlayer = api;

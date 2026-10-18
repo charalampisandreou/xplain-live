@@ -110,6 +110,39 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   font-size: 15px; font-weight: 500; letter-spacing: 0.02em; color: var(--accent);
 }
 
+/* recap card: the pitch's slot (780 x 520), Studio rules only: no box, a cyan rule under each heading
+   (.thead), hairline rows, tabular figures, numbers right-aligned */
+.recap { position: absolute; top: 196px; left: 40px; width: 780px; height: 520px; display: flex; flex-direction: column; }
+.recap[hidden] { display: none; }
+#stage.recap-on .pitch { display: none; }
+.rc-score { display: flex; align-items: baseline; gap: 18px; font-weight: 800; }
+.rc-code { font-size: 30px; letter-spacing: 0.02em; }
+.rc-num { font-size: 44px; line-height: 1; font-variant-numeric: tabular-nums; }
+.rc-when { margin-left: auto; font-size: 13px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.rc-names { display: flex; gap: 24px; margin: 6px 0 22px; font-size: 15px; color: var(--muted); }
+.rc-names span + span::before { content: "v  "; white-space: pre; }
+.rc-grid { display: grid; grid-template-columns: minmax(0, 1fr) 392px; gap: 36px; }
+.rc-row {
+  display: flex; align-items: baseline; gap: 14px; padding: 9px 12px; border-bottom: 1px solid var(--hairline);
+  font-size: 17px; font-variant-numeric: tabular-nums;
+}
+.rc-row .rc-min { width: 52px; flex: none; font-weight: 800; }
+.rc-row .rc-who { flex: 1; min-width: 0; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rc-row .rc-tag { flex: none; font-size: 14px; font-weight: 500; color: var(--muted); }
+.rc-row .rc-after { width: 44px; flex: none; text-align: right; font-weight: 700; color: var(--text-soft); }
+.rc-row .rc-team { flex: 1; min-width: 0; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rc-row .rc-n { width: 88px; flex: none; text-align: right; font-weight: 800; }
+.rc-passing .rc-n:last-child { width: 104px; }
+.rc-row .rc-n.pos { color: var(--completed); }
+.rc-row .rc-n.neg { color: var(--failed-text); }
+.rc-colhead { padding-top: 6px; padding-bottom: 6px; }
+.rc-colhead .rc-n { white-space: nowrap; font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.rc-star { margin-top: 18px; border-top: 2px solid var(--accent); }
+.rc-star:empty { display: none; }
+.rc-star .rc-label { flex: none; font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.rc-star .rc-n { width: auto; white-space: nowrap; }
+.rc-text { margin: auto 0 0; font-size: 19px; font-weight: 500; line-height: 1.45; color: #E6EEF7; }
+
 /* half selector */
 .seg.scope { position: absolute; top: 150px; right: 40px; padding: 3px; }
 .seg.scope button { height: 28px; padding: 0 14px; font-size: 13px; }
@@ -225,6 +258,13 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .lower.waiting .pvanum { color: var(--muted); }
 .lower.goal .pvanum { color: var(--accent); letter-spacing: 0.02em; }
 .lower.goal .pvalabel { font-size: 13px; letter-spacing: 0.06em; color: var(--text-soft); }
+/* recap state: the name tab without its minute, "HT" / "FT" in the PVA column; at half time a cyan
+   line under the text drains over the pause (RECAP_PAUSE_MS), then play resumes */
+.lower.recap-plate .tab-div, .lower.recap-plate .tab-when { display: none; }
+.lower.recap-plate .pvanum { color: var(--accent); letter-spacing: 0.02em; }
+.drain { position: absolute; left: 18px; right: 18px; top: 50px; height: 2px; background: var(--accent); opacity: 0;
+  transform-origin: left center; pointer-events: none; }
+.lower.recap-plate.ticking .drain { opacity: 0.8; }   /* the scaleX drain is a Web Animation in app.js */
 .pvalabel { font-size: 11px; font-weight: 700; letter-spacing: 0.12em; color: var(--muted); }
 
 /* controls */
@@ -299,7 +339,8 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   color: var(--text); font-size: 15px; font-weight: 600; text-align: left;
 }
 .pk-check { width: 14px; flex: none; display: flex; color: var(--accent); visibility: hidden; }
-.pk-name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pk-name { flex: 0 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pk-pos { flex: 1; font-size: 12px; font-weight: 600; letter-spacing: 0.06em; color: var(--muted); }
 .pk-n { flex: none; font-size: 15px; font-weight: 500; color: var(--muted); font-variant-numeric: tabular-nums; }
 .pk-opt.none .pk-name { color: var(--muted); font-weight: 500; }
 .pk-opt:hover { background: rgba(255, 255, 255, 0.05); }
@@ -309,23 +350,30 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 /* the player's column, in the tables' slot and the pitch's height (196..716): numbers, the band bar,
    the moments (Studio's rows); the key and the footnote sit on the pitch's bottom line */
 .player-view { position: absolute; top: 196px; left: 860px; width: 540px; height: 520px; flex-direction: column; }
-.pv-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+/* the numbers: one grid, four equal columns; labels share one baseline, values the next (tabular
+   figures); a hairline closes the row, as under a table row */
+.pv-stats {
+  display: grid; grid-template-columns: repeat(4, 1fr); column-gap: 12px; row-gap: 8px; align-items: baseline;
+  padding-bottom: 14px; border-bottom: 1px solid var(--hairline);
+}
 .pv-label { font-size: 13px; font-weight: 700; letter-spacing: 1.3px; text-transform: uppercase; color: var(--muted); }
 .pv-value { margin-top: 8px; font-size: 36px; font-weight: 800; font-stretch: 85%; line-height: 1; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.pv-value .pv-sub { margin-left: 8px; font-size: 18px; font-weight: 600; font-stretch: 100%; color: var(--muted); }
 .pv-value.pos { color: var(--completed); }
 .pv-value.neg { color: var(--failed-text); }
-.pv-stats { margin-bottom: 26px; }
+.pv-stats { margin-bottom: 22px; }
 .player-view .thead + .pv-bandbar { margin-top: 14px; }
-/* the four bands, brighter is harder: steel, blue, the accent cyan, ice. On --bg they are 3.3 / 4.4 /
-   9.7 / 16.1 : 1; neighbours differ in hue and saturation as well as lightness (1.4 / 2.2 / 1.7 : 1) */
-:root { --band-routine: #4E6E8E; --band-moderate: #2F86C8; --band-hard: #3FD0FF; --band-exceptional: #E6FAFF; }
+/* the five narration tiers (very easy .. very difficult), brighter is harder: steel, blue, the accent
+   cyan, pale cyan, white; each at 3:1 or more on --bg */
+:root { --tier-0: #4E6E8E; --tier-1: #2F86C8; --tier-2: #3FD0FF; --tier-3: #A6EBFF; --tier-4: #FFFFFF; }
 .pv-bandbar { display: flex; gap: 3px; height: 14px; border-radius: 2px; background: rgba(255, 255, 255, 0.08); }
 .pv-bandbar .band { min-width: 4px; border-radius: 2px; }
-.band.routine, .key.routine { background: var(--band-routine); }
-.band.moderate, .key.moderate { background: var(--band-moderate); }
-.band.hard, .key.hard { background: var(--band-hard); }
-.band.exceptional, .key.exceptional { background: var(--band-exceptional); }
-.pv-bands { display: flex; justify-content: space-between; margin: 10px 0 26px; font-size: 15px; font-weight: 500; color: var(--muted); }
+.band.t0, .key.t0 { background: var(--tier-0); }
+.band.t1, .key.t1 { background: var(--tier-1); }
+.band.t2, .key.t2 { background: var(--tier-2); }
+.band.t3, .key.t3 { background: var(--tier-3); }
+.band.t4, .key.t4 { background: var(--tier-4); }
+.pv-bands { display: flex; justify-content: space-between; margin: 10px 0 26px; font-size: 14px; font-weight: 500; color: var(--muted); white-space: nowrap; }
 .pv-bands b { margin-left: 4px; font-weight: 800; color: var(--text); }
 .pv-bands .key { display: inline-block; width: 10px; height: 10px; margin-right: 6px; border-radius: 2px; }
 /* the moments: Studio's rows, the minute in the rank's place; three rows show, more scroll inside */

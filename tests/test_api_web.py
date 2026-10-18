@@ -131,7 +131,7 @@ def test_pitch_is_pinned_and_plate_columns_are_scoped(client):
 
 def test_language_switch_is_in_the_plate_not_the_header(client):
     html = client.get("/").text.replace("\r\n", "\n")
-    header = html.split('class="topright"')[1].split('<h1 class="title">')[0]
+    header = html.split('class="topright"')[1].split('<h1 class="title"')[0]
     assert "data-lang" not in header and "language" not in header.lower()
     plate = html.split('id="plate"')[1].split('<div class="controls">')[0]
     group = plate.split('role="group" aria-label="Narration language"')[1].split("</button>\n            </div>")[0]
@@ -192,7 +192,7 @@ def test_players_mode_is_on_the_page(client):
                  'id="pv-rows"', 'aria-label="Pass map key"'):
         assert node in view
     assert '>Expected <span class="xp">xP</span><' in view
-    assert "recap" not in html.lower()   # the plate is Studio's narration plate in both modes
+    assert "recap" not in view.lower()   # Players mode has no recap
 
 
 def test_players_mode_draws_the_passers_frame_and_keeps_studio_rules(client):
@@ -232,14 +232,96 @@ def test_players_mode_layout_and_contrast(client):
     assert "top: 196px" in view and "height: 520px" in view   # the pitch's top and bottom lines
     picker = css.split("\n.player-picker {")[1].split("}")[0]
     assert "top: 196px" in picker and "height: 520px" in picker
-    # the band colours: each at 3:1 or more on --bg, and brighter as the band gets harder
+    # the tier colours: each at 3:1 or more on --bg, and brighter as the tier gets harder
     bg = css.split("--bg: ")[1].split(";")[0]
-    colours = [css.split(f"--band-{b}: ")[1].split(";")[0] for b in ("routine", "moderate", "hard", "exceptional")]
+    colours = [css.split(f"--tier-{i}: ")[1].split(";")[0] for i in range(5)]
     lums = [luminance(c) for c in colours]
-    assert lums == sorted(lums) and len(set(colours)) == 4
+    assert lums == sorted(lums) and len(set(colours)) == 5
     assert all(contrast(c, bg) >= 3.0 for c in colours), [round(contrast(c, bg), 2) for c in colours]
     html = client.get("/").text
     assert "<h2>Completed passes' difficulty</h2>" in html and "How hard the passes were" not in html
+
+
+def test_tier_words_replace_the_band_words(client):
+    html = client.get("/").text
+    js = client.get("/static/player.js").text
+    for word in ("Very easy", "Easy", "Tricky", "Difficult", "Very difficult"):
+        assert f"{word} <b id=" in html
+    for word in ("Routine", "Moderate", "Exceptional", "difficulty band"):
+        assert word not in html
+    assert "m.band" not in js and "m.tier.en" in js
+
+
+def test_players_stats_show_count_and_percent_on_one_grid(client):
+    html = client.get("/").text.replace("\r\n", "\n")
+    css = client.get("/static/app.css").text.replace("\r\n", "\n")
+    js = client.get("/static/player.js").text
+    assert '<span id="pv-completed">–</span><span class="pv-sub" id="pv-completed-pct"></span>' in html
+    assert "setText('pv-completed', s ? String(s.completed) : '–');" in js
+    grid = css.split("\n.pv-stats {")[1].split("}")[0]
+    assert "repeat(4, 1fr)" in grid and "align-items: baseline" in grid
+    assert "tabular-nums" in css.split("\n.pv-value {")[1].split("}")[0]
+
+
+def test_picker_shows_positions(client):
+    js = client.get("/static/player.js").text
+    assert "pos.className = 'pk-pos';" in js and "pl.position" in js
+    assert ".pk-pos {" in client.get("/static/app.css").text
+
+
+def test_empty_states_end_with_a_full_stop(client):
+    app = client.get("/static/app.js").text
+    js = client.get("/static/player.js").text
+    for text in (app, js):
+        assert "const NOT_STARTED = 'Starts in the 2nd half.';" in text
+    assert "emptyText = 'No commentated moment yet.'" in app
+    assert "'No surprises yet.'" in js
+
+
+def test_title_and_recap_card_are_on_the_page(client):
+    html = client.get("/").text
+    assert 'data-live="Live pass map" data-ht="HT Recap" data-ft="FT Recap">Live pass map</h1>' in html
+    assert "Pass outliers" not in html
+    recap = html.split('<section class="recap" id="recap"')[1].split("</section>")[0]
+    for node in ('id="rc-score"', 'id="rc-goal-rows"', 'id="rc-team-rows"', 'id="rc-star"', 'id="rc-text"'):
+        assert node in recap
+    assert 'id="lower-drain"' in html
+    css = client.get("/static/app.css").text.replace("\r\n", "\n")
+    box = css.split("\n.recap { position")[1].split("}")[0]
+    assert "top: 196px" in box and "left: 40px" in box and "width: 780px" in box and "height: 520px" in box
+    assert "border:" not in box and "box-shadow" not in box and "background" not in box   # no box: Studio rules
+
+
+def test_recap_plate_state_and_drain(client):
+    app = client.get("/static/app.js").text
+    css = client.get("/static/app.css").text
+    # the card's .recap rule (absolute, 780 x 520) also caught a plate with the class "recap"
+    assert "classList.add('recap')" not in app and "classList.add('recap-plate')" in app
+    assert ".lower.recap-plate .pvanum" in css and ".lower.recap " not in css
+    # the half-time drain is a Web Animation, cancelled with the plate, none under reduced motion
+    plate = app.split("function renderRecapPlate()")[1].split("function stopDrain()")[0]
+    assert "drainLine.animate(" in plate and "duration: RECAP_PAUSE_MS" in plate
+    assert "!reducedMotion.matches" in plate
+    assert "drain.cancel()" in app and "@keyframes drain" not in css
+    # Passing rows carry the team code (the tables' token); the full names sit under the score
+    assert "span('rc-team', teamCode(t.team_id, t.name))" in app
+
+
+def test_recap_opens_only_on_live_playback_and_by_link(client):
+    app = client.get("/static/app.js").text
+    assert "const RECAP_KEYS = { ht: 'half_time', ft: 'full_time' };" in app
+    assert "!(prevNow < at && state.now >= at) || !isLive() || state.mode !== 'studio'" in app
+    assert "openRecap(scope, scope === 'half_time' ? ts + RECAP_PAUSE_MS : null);" in app   # FT stays paused
+    assert "const RECAP_PAUSE_MS = 10000;" in app
+    link = app.split("const rs = RECAP_KEYS[params.get('recap')];")[1].split("requestAnimationFrame(frame);")[0]
+    assert "openRecap(rs, null);" in link   # ?recap: static, no auto-resume
+    assert "if (state.recap) { closeRecap(); e.preventDefault(); }" in app   # Esc closes
+    assert "if (mode === 'player') { closeRecap();" in app   # Players mode: no recap
+    render = app.split("function renderRecap() {")[1].split("function renderRecapPlate()")[0]
+    for field in ("c.score_home", "c.goals", "t.completed", "t.expected", "t.vs_expected", "c.star.pva",
+                  "who.position", "entry.text['text_' + state.lang]"):
+        assert field in render
+    assert "Math." not in render and "reduce(" not in render   # numbers from the card only
 
 
 def test_no_league_names_in_the_page(client):

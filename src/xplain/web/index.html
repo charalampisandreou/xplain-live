@@ -34,8 +34,8 @@
     </div>
   </div>
 
-  <!-- title: its wording lives here only -->
-  <h1 class="title">Pass outliers</h1>
+  <!-- title: its wording lives here only; app.js swaps in data-ht / data-ft while a recap is shown -->
+  <h1 class="title" id="title" data-live="Live pass map" data-ht="HT Recap" data-ft="FT Recap">Live pass map</h1>
 
   <!-- Player mode: the player's name and team in the title's slot (player.js sets them), and the picker button -->
   <h1 class="player-head"><span class="player-name" id="player-name"></span><span class="player-team" id="player-team"></span></h1>
@@ -72,6 +72,29 @@
     </svg>
   </div>
 
+  <!-- recap card: in the pitch's slot while a half-time or full-time recap is shown (app.js fills it from
+       bundle.recaps[scope].card; the text in the narration language) -->
+  <section class="recap" id="recap" aria-labelledby="title" hidden>
+    <div class="rc-score">
+      <span class="rc-code" id="rc-home-code"></span><span class="rc-num" id="rc-score"></span><span class="rc-code" id="rc-away-code"></span>
+      <span class="rc-when" id="rc-when"></span>
+    </div>
+    <div class="rc-names"><span id="rc-home-name"></span><span id="rc-away-name"></span></div>
+    <div class="rc-grid">
+      <div class="rc-goals">
+        <div class="thead"><h2>Goals</h2></div>
+        <div id="rc-goal-rows"></div>
+      </div>
+      <div class="rc-passing">
+        <div class="thead"><h2>Passing</h2></div>
+        <div class="rc-row rc-colhead" aria-hidden="true"><span class="rc-team"></span><span class="rc-n">Completed</span><span class="rc-n">Expected</span><span class="rc-n">vs expected</span></div>
+        <div id="rc-team-rows"></div>
+      </div>
+    </div>
+    <div class="rc-row rc-star" id="rc-star"></div>
+    <p class="rc-text" id="rc-text"></p>
+  </section>
+
   <!-- half selector for the tables -->
   <div class="seg scope" role="group" aria-label="Moments from" id="scope">
     <button type="button" data-scope="all" class="on" aria-pressed="true">All</button>
@@ -103,6 +126,7 @@
     <div class="body">
       <div class="left">
         <div class="line" id="lower-line"></div>
+        <div class="drain" id="lower-drain" aria-hidden="true"></div>
         <div class="rule" aria-hidden="true"></div>
         <!-- meta row: the facts on the left, the narration language switch on the right -->
         <div class="metarow">
@@ -151,19 +175,25 @@
 
   <!-- Player mode: the player's column, in the tables' slot; every number is set by player.js -->
   <section class="player-view" id="player-view" aria-label="Player focus">
+    <!-- one grid: four equal columns, the labels on one baseline, the values on the next -->
     <div class="pv-stats">
-      <div class="pv-stat"><div class="pv-label">Passes</div><div class="pv-value" id="pv-passes">–</div></div>
-      <div class="pv-stat"><div class="pv-label">Completed</div><div class="pv-value" id="pv-completed">–</div></div>
-      <div class="pv-stat"><div class="pv-label">Expected <span class="xp">xP</span></div><div class="pv-value" id="pv-expected">–</div></div>
-      <div class="pv-stat"><div class="pv-label">vs expected</div><div class="pv-value" id="pv-vs">–</div></div>
+      <div class="pv-label">Passes</div>
+      <div class="pv-label">Completed</div>
+      <div class="pv-label">Expected <span class="xp">xP</span></div>
+      <div class="pv-label">vs expected</div>
+      <div class="pv-value" id="pv-passes">–</div>
+      <div class="pv-value"><span id="pv-completed">–</span><span class="pv-sub" id="pv-completed-pct"></span></div>
+      <div class="pv-value" id="pv-expected">–</div>
+      <div class="pv-value" id="pv-vs">–</div>
     </div>
-    <div class="thead"><h2>Completed passes' difficulty</h2><div class="tsub">by difficulty band</div></div>
+    <div class="thead"><h2>Completed passes' difficulty</h2><div class="tsub">as in the narration</div></div>
     <div class="pv-bandbar" id="pv-bandbar" aria-hidden="true"></div>
     <div class="pv-bands">
-      <span><span class="key routine" aria-hidden="true"></span>Routine <b id="pv-band-routine">0</b></span>
-      <span><span class="key moderate" aria-hidden="true"></span>Moderate <b id="pv-band-moderate">0</b></span>
-      <span><span class="key hard" aria-hidden="true"></span>Hard <b id="pv-band-hard">0</b></span>
-      <span><span class="key exceptional" aria-hidden="true"></span>Exceptional <b id="pv-band-exceptional">0</b></span>
+      <span><span class="key t0" aria-hidden="true"></span>Very easy <b id="pv-tier-0">0</b></span>
+      <span><span class="key t1" aria-hidden="true"></span>Easy <b id="pv-tier-1">0</b></span>
+      <span><span class="key t2" aria-hidden="true"></span>Tricky <b id="pv-tier-2">0</b></span>
+      <span><span class="key t3" aria-hidden="true"></span>Difficult <b id="pv-tier-3">0</b></span>
+      <span><span class="key t4" aria-hidden="true"></span>Very difficult <b id="pv-tier-4">0</b></span>
     </div>
     <div class="thead"><h2>Moments</h2><div class="tsub">surprises so far</div></div>
     <div class="rows pv-rows" id="pv-rows" role="list"></div>

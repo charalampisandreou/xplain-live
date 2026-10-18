@@ -11,7 +11,14 @@
     surprise_failure: 'No surprise failures yet.',
     surprise_success: 'No surprise successes yet.',
   };
-  const NOT_STARTED = 'Starts in the 2nd half';
+  const NOT_STARTED = 'Starts in the 2nd half.';
+  // recaps: the bundle's scope names, their ?recap values, and the plate's words in the recap state
+  const RECAP_KEYS = { ht: 'half_time', ft: 'full_time' };
+  const RECAP_TAB = { half_time: 'Half-time recap', full_time: 'Full-time recap' };
+  const RECAP_LINE = { half_time: 'Press Play to continue.', full_time: 'Full time.' };
+  const RECAP_COL = { half_time: 'HT', full_time: 'FT' };
+  const RECAP_WHEN = { half_time: 'Half time', full_time: 'Full time' };
+  const RECAP_PAUSE_MS = 10000;      // the half-time recap holds this long in real time, then play resumes
   const HALF_LABEL = { 1: '1st half', 2: '2nd half' };
   const SCOPES = ['all', '1', '2'];
   const FADED = [0.8, 0.55, 0.35];   // opacity of the 1st, 2nd and 3rd pass before the selected one
@@ -47,10 +54,13 @@
     renderedKey: '',
     plateId: null,
     goal: null,        // while the plate shows a goal: { score index, restartT, minUntil, nextPulse }
+    recap: null,       // while a recap is shown: { scope, resumeAt } (resumeAt null: no auto-resume)
+    pendingRecap: null,   // a recap crossed while the goal plate still holds: shown when it ends
     fit: new Map(),    // "moment_id/lang" -> a smaller font size for a line that needs it (fitLines)
     fades: new Map(),  // element -> { anim, at }: its running cross-fade and when it started
   };
   let idx = null;      // lookups built once per bundle
+  let drain = null;    // the half-time drain animation on the plate (stopDrain cancels it)
 
   // --- loading -------------------------------------------------------------------------------
 
@@ -111,6 +121,12 @@
     idx.narr = idx.live.filter((m) => m.line);
     idx.narrT = idx.narr.map((m) => m.bundle.moment.t);
     idx.narrSeq = idx.narr.map((m) => m.bundle.moment.seq);
+    // where playback opens each recap: the last first-half pass (the bug still reads the first half's
+    // last minute) and the last event; only scopes the bundle has a recap card for
+    const h1 = bundle.marks.filter((m) => m.period === 1);
+    idx.recapT = {};
+    if (bundle.recaps && bundle.recaps.half_time && h1.length) idx.recapT.half_time = h1[h1.length - 1].t;
+    if (bundle.recaps && bundle.recaps.full_time) idx.recapT.full_time = bundle.clock.last_event_t;
     $('home-code').textContent = code(bundle.meta.home.name);
     $('away-code').textContent = code(bundle.meta.away.name);
     $('scorebug').setAttribute('aria-label', bundle.meta.home.name + ' against ' + bundle.meta.away.name);
@@ -137,6 +153,15 @@
       setPlayer: (id) => { state.player = id; setMode('player'); } });
     if (bundle.meta.players.some((p) => p.player_id === params.get('player'))) state.player = params.get('player');
     if (params.get('mode') === 'player') setMode('player');
+    // ?recap=ht|ft opens that recap at its time, paused, with no auto-resume (demo links, screenshots)
+    const rs = RECAP_KEYS[params.get('recap')];
+    if (rs && idx.recapT[rs] !== undefined && state.mode === 'studio') {
+      state.now = idx.recapT[rs];
+      exitReplay();
+      state.follow = true;
+      setPlaying(false);
+      openRecap(rs, null);
+    }
     requestAnimationFrame(frame);
     fitLines();
   }
@@ -157,12 +182,28 @@
     if (state.lastFrame !== null && state.playing) {
       const end = state.bundle.clock.last_event_t;
       const before = lastAtOrBefore(idx.scoreT, state.now);
+      const prevNow = state.now;
       state.now = Math.min(end, state.now + ((ts - state.lastFrame) / 1000) * state.speed);
       if (state.now >= end) setPlaying(false);
       // a goal flashes only when live playback crosses it: never on ?t, replay, step mode or language
       const after = lastAtOrBefore(idx.scoreT, state.now);
       if (after > before && idx.score[after].goal) goalFlash(after, ts);
+      // a recap opens the same way: only when live playback in Studio crosses its time
+      for (const scope of ['half_time', 'full_time']) {
+        const at = idx.recapT[scope];
+        if (at === undefined || !(prevNow < at && state.now >= at) || !isLive() || state.mode !== 'studio') continue;
+        state.now = at;
+        setPlaying(false);
+        state.pendingRecap = scope;
+      }
     }
+    // after a goal crossed just before it, the recap waits until the goal plate has had its GOAL_MIN_MS
+    if (state.pendingRecap && (!state.goal || ts >= state.goal.minUntil)) {
+      const scope = state.pendingRecap;
+      state.pendingRecap = null;
+      openRecap(scope, scope === 'half_time' ? ts + RECAP_PAUSE_MS : null);
+    }
+    if (state.recap && state.recap.resumeAt !== null && ts >= state.recap.resumeAt) setPlaying(true);
     if (state.goal) {   // held until play restarts after the goal, and at least GOAL_MIN_MS
       if (state.now >= state.goal.restartT && ts >= state.goal.minUntil) state.goal = null;
       else if (ts >= state.goal.nextPulse) { pulse(1, 0.45); state.goal.nextPulse += SOFT_PULSE_EVERY; }
@@ -183,6 +224,7 @@
   // --- controls ------------------------------------------------------------------------------
 
   function setPlaying(on) {
+    if (on) { closeRecap(); state.pendingRecap = null; }   // Play leaves a recap (at full time it restarts below)
     if (on && state.now >= state.bundle.clock.last_event_t) {
       state.now = state.bundle.clock.first_event_t;   // play again from kick-off
       state.goal = null;
@@ -227,6 +269,7 @@
   // ?mode and ?player for demo links, the way it drops ?replay on leaving replay.
   function setMode(mode) {
     state.mode = mode;
+    if (mode === 'player') { closeRecap(); state.pendingRecap = null; }   // Players mode has no recap
     if (mode === 'player' && !state.player) state.player = defaultPlayer();
     state.playerNarr = null;
     XplainPlayer.invalidate();   // the pitch and its tab are drawn again by whichever mode is shown
@@ -260,6 +303,7 @@
     const live = liveIndex();
     if (live < 0) return;
     const from = selectedIndex();
+    closeRecap();
     exitReplay();   // stepping from a replayed pass leaves replay and steps on from it
     state.selected = Math.max(0, Math.min(live, from + dir));
     state.follow = false;
@@ -306,6 +350,7 @@
   // --- replay: a table row puts its moment on the pitch, the plate and the tab ---
 
   function enterReplay(id) {
+    closeRecap();
     if (id === state.replay) return;
     state.replay = id;
     state.goal = null;
@@ -358,8 +403,9 @@
       if (control && (e.key === ' ' || e.key === 'Enter')) return;
       // Player mode: space plays or pauses, [ ] page the plate; nothing steps or replays
       if (state.mode === 'player' && ![' ', '[', ']'].includes(e.key)) return;
-      if (e.key === 'Escape') {   // leaves replay and step mode
-        if (state.replay || !state.follow) { leaveReplay(); e.preventDefault(); }
+      if (e.key === 'Escape') {   // closes a recap (play stays paused); else leaves replay and step mode
+        if (state.recap) { closeRecap(); e.preventDefault(); }
+        else if (state.replay || !state.follow) { leaveReplay(); e.preventDefault(); }
       }
       else if (e.key === 'ArrowLeft') { step(-1); e.preventDefault(); }
       else if (e.key === 'ArrowRight') { step(1); e.preventDefault(); }
@@ -386,10 +432,12 @@
     const goal = state.goal && isLive() ? state.goal.score : -1;
     const key = [sel, live, tick, score, half, state.scope, snaps.map((s) => (s ? s.t : '-')).join('|'),
       plate ? plate.bundle.moment.moment_id : '-', state.lang, state.follow, state.replay,
-      narr.reached, narr.pos, goal, state.mode, state.player, state.playerNarr].join('/');
+      narr.reached, narr.pos, goal, state.mode, state.player, state.playerNarr,
+      state.recap ? state.recap.scope + (state.recap.resumeAt !== null) : '-'].join('/');
     if (key === state.renderedKey) return;   // every DOM write below runs in this one animation frame
     state.renderedKey = key;
     if (state.mode === 'player') {   // Player mode: the score bug stays live; player.js draws the rest
+      renderRecap();
       renderScoreBug(tick, score, live >= 0 ? half : null);
       XplainPlayer.render({ bundle: state.bundle, now: state.now, scope: state.scope, playerId: state.player,
         notStarted: state.scope === '2' && half !== 2 });
@@ -410,6 +458,8 @@
     renderPitch(sel);
     const notStarted = state.scope === '2' && half !== 2;
     KINDS.forEach((k, i) => renderTable(k, snaps[i], plate, notStarted));
+    renderRecap();
+    if (state.recap) { $('narrnav').hidden = true; renderRecapPlate(); return; }
     renderNarrNav(narr);
     if (goal >= 0) renderGoalPlate(goal); else renderPlate(plate);
   }
@@ -481,7 +531,8 @@
     state.plateId = id;
     const s = idx.score[i];
     const lower = $('lower');
-    lower.classList.remove('completed', 'failed', 'waiting');
+    stopDrain();
+    lower.classList.remove('completed', 'failed', 'waiting', 'recap-plate');
     lower.classList.add('goal');
     $('lower-name').textContent = goalTabText(s);
     $('lower-when').textContent = '';
@@ -494,6 +545,116 @@
     $('lower-pva').textContent = 'GOAL';   // the PVA column: "GOAL" over the score track's minute_label
     $('lower-pva-label').textContent = s.minute_label + "'";
     fadePlate();
+  }
+
+  // --- recap: the card in the pitch's slot, the plate in its recap state ---
+
+  function openRecap(scope, resumeAt) {
+    state.recap = { scope, resumeAt };
+    state.goal = null;
+  }
+
+  function closeRecap() {
+    if (!state.recap) return;
+    state.recap = null;
+    const url = new URL(location.href);
+    if (url.searchParams.has('recap')) {
+      url.searchParams.delete('recap');
+      history.replaceState(null, '', url);
+    }
+  }
+
+  // "+19", "−19", "0": a whole number from the card with the Studio's minus sign (formatting only)
+  function signed(n) { return n > 0 ? '+' + n : n < 0 ? '−' + -n : '0'; }
+  function signClass(n) { return n > 0 ? ' pos' : n < 0 ? ' neg' : ''; }
+  function span(cls, text) {
+    const s = document.createElement('span');
+    s.className = cls;
+    s.textContent = text;
+    return s;
+  }
+
+  // Every number is the card's (bundle.recaps[scope].card, computed in recap.py); the position comes
+  // from meta.players. The text is the recap's filled text in the narration language.
+  function renderRecap() {
+    const on = Boolean(state.recap) && state.mode === 'studio';
+    $('stage').classList.toggle('recap-on', on);
+    $('recap').hidden = !on;
+    const title = $('title');
+    title.textContent = on ? title.dataset[state.recap.scope === 'half_time' ? 'ht' : 'ft'] : title.dataset.live;
+    if (!on) return;
+    const entry = state.bundle.recaps[state.recap.scope];
+    const c = entry.card;
+    $('rc-home-code').textContent = teamCode(c.home.team_id, c.home.name);
+    $('rc-away-code').textContent = teamCode(c.away.team_id, c.away.name);
+    $('rc-score').textContent = c.score_home + '–' + c.score_away;
+    $('rc-when').textContent = RECAP_WHEN[c.scope];
+    $('rc-home-name').textContent = c.home.name;
+    $('rc-away-name').textContent = c.away.name;
+    const goals = $('rc-goal-rows');
+    goals.replaceChildren();
+    if (c.goals.length === 0) goals.appendChild(div('empty', 'No goals.'));
+    for (const g of c.goals) {
+      const row = div('rc-row');
+      row.append(span('rc-min', g.minute_label + "'"), span('rc-who', g.player_name || g.team_name),
+        span('rc-tag', teamCode(g.team_id, g.team_name)), span('rc-after', g.home + '–' + g.away));
+      goals.appendChild(row);
+    }
+    const teams = $('rc-team-rows');
+    teams.replaceChildren();
+    for (const t of [c.home, c.away]) {
+      const row = div('rc-row');
+      row.append(span('rc-team', teamCode(t.team_id, t.name)), span('rc-n', String(t.completed)), span('rc-n', String(t.expected)),
+        span('rc-n' + signClass(t.vs_expected), signed(t.vs_expected)));
+      teams.appendChild(row);
+    }
+    const star = $('rc-star');
+    star.replaceChildren();
+    if (c.star) {
+      const who = state.bundle.meta.players.find((p) => p.player_id === c.star.player_id);
+      star.append(span('rc-label', 'Star player'), span('rc-who', c.star.name),
+        span('rc-tag', [who && who.position, teamCode(c.star.team_id, c.star.team_name)].filter(Boolean).join(' · ')),
+        span('rc-n' + signClass(c.star.pva), signed(c.star.pva) + ' vs expected'));
+    }
+    const text = $('rc-text');
+    text.textContent = (entry.text && entry.text['text_' + state.lang]) || '';
+    text.setAttribute('lang', state.lang);
+  }
+
+  function renderRecapPlate() {
+    const r = state.recap;
+    const id = 'recap/' + r.scope + '/' + (r.resumeAt !== null);
+    if (id === state.plateId) return;
+    state.plateId = id;
+    const lower = $('lower');
+    lower.classList.remove('completed', 'failed', 'waiting', 'goal');
+    lower.classList.add('recap-plate');
+    $('lower-name').textContent = RECAP_TAB[r.scope];
+    $('lower-when').textContent = '';
+    const line = $('lower-line');
+    line.textContent = RECAP_LINE[r.scope];
+    line.removeAttribute('lang');
+    line.style.fontSize = '';
+    $('lower-meta').textContent = '';
+    $('lower-xp').hidden = true;
+    $('lower-pva').textContent = RECAP_COL[r.scope];
+    $('lower-pva-label').textContent = '';
+    stopDrain();
+    const drainLine = $('lower-drain');
+    // the drain line runs over the pause, from full to empty; with reduced motion it stays hidden
+    if (r.resumeAt !== null && !reducedMotion.matches && drainLine.animate) {
+      lower.classList.add('ticking');
+      drain = drainLine.animate([{ transform: 'scaleX(1)' }, { transform: 'scaleX(0)' }],
+        { duration: RECAP_PAUSE_MS, easing: 'linear', fill: 'forwards' });
+    }
+    fadePlate();
+  }
+
+  // The half-time drain (a Web Animation on #lower-drain); cancelled when the recap closes or any
+  // other plate renders.
+  function stopDrain() {
+    if (drain) { drain.cancel(); drain = null; }
+    $('lower').classList.remove('ticking');
   }
 
   // --- narration nav: "7 / 12" between two chevrons; hidden until a narrated moment is reached ---
@@ -680,12 +841,13 @@
 
   // Text is set in place on the existing nodes; nothing is written when the moment and language are
   // unchanged, so stepping through passes that keep the same moment never re-animates the plate.
-  function renderPlate(entry, emptyText = 'No commentated moment yet') {
+  function renderPlate(entry, emptyText = 'No commentated moment yet.') {
     const id = entry ? entry.bundle.moment.moment_id + '/' + state.lang : '-/' + emptyText;
     if (id === state.plateId) return;
     state.plateId = id;
     const lower = $('lower');
-    lower.classList.remove('completed', 'failed', 'waiting', 'goal');
+    stopDrain();
+    lower.classList.remove('completed', 'failed', 'waiting', 'goal', 'recap-plate');
     const line = $('lower-line');
     fadePlate();
     if (!entry) {   // before the first commentated moment: the body only
