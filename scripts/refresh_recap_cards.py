@@ -1,7 +1,8 @@
 """
 Fill in recap card fields added after a bundle was built, from the bundle's own passes, with no model call
-(bundle.refresh_recap_cards). Every field the card already had is checked unchanged, so the recap texts stay
-right. Writes the bundle in place and prints its SHA-256 (swap the release asset when it is the demo bundle).
+(bundle.refresh_recap_cards). Every field the card already had is checked unchanged; each recap text is filled
+again from the model's raw text (with slots) with the card's two-decimal values and checked again by the recap
+verifier. Writes the bundle in place and prints its SHA-256 (swap the release asset when it is the demo bundle).
 
     python scripts/refresh_recap_cards.py data/bundle_seed3001.json
 """

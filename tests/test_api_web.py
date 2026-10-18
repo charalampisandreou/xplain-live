@@ -351,7 +351,7 @@ def test_recap_star_text_and_view_switch(client):
     switch = html.split('id="recap-view"')[1].split("</div>")[0]
     assert 'data-view="recap" class="on" aria-pressed="true">Recap<' in switch
     assert 'data-view="map" aria-pressed="false">Map<' in switch
-    assert ".seg.recapview { position: absolute; top: 150px; right: 620px;" in css
+    assert ".seg.recapview { position: absolute; top: 110px; right: 620px;" in css   # the title's row, clear of the tabs
     assert "state.recap = { scope, resumeAt, view: 'recap' };" in app
     render = app.split("function renderRecap() {")[1].split("function renderStar(")[0]
     assert "const on = open && state.recap.view === 'recap';" in render
@@ -412,6 +412,21 @@ def test_recap_header_star_link_and_shirt_numbers(client):
     assert 'id="player-num" hidden><span class="num-hash" aria-hidden="true">#</span>' in html
     assert "num.textContent = pl.shirt_number != null ? '#' + pl.shirt_number : '';" in js
     assert "head.appendChild(div('pk-sub', 'Passes'));" in js and "pk-check" not in js + css
+
+
+def test_picker_columns_stay_in_the_panel_and_numbers_line_up(client):
+    css = client.get("/static/app.css").text.replace("\r\n", "\n")
+    rule = lambda sel: css.split("\n" + sel + " {")[1].split("}")[0]   # noqa: E731
+    # a long name is cut, it never widens its column past the panel
+    assert "grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);" in rule(".player-picker")
+    assert "min-width: 0" in rule(".pk-col") and "text-overflow: ellipsis" in rule(".pk-name")
+    assert "flex: 1 1 auto; min-width: 0" in rule(".pk-name")   # the one cell that gives
+    # fixed cells: the shirt numbers and the passes right-aligned, the positions in one column
+    for sel, width in ((".pk-num", "26px"), (".pk-pos", "30px"), (".pk-n", "24px")):
+        assert f"flex: none; width: {width}" in rule(sel), sel
+    assert "text-align: right" in rule(".pk-num") and "text-align: right" in rule(".pk-n")
+    assert "tabular-nums" in rule(".pk-num") and "tabular-nums" in rule(".pk-n")
+    assert "font-stretch: 78%" in rule(".pk-team")   # the full team name fits beside PASSES
 
 
 def test_no_league_names_in_the_page(client):

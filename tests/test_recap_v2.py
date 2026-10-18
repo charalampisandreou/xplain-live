@@ -70,6 +70,27 @@ def test_the_star_on_the_card_and_its_claim(seed42_events, marks):  # noqa: F811
         assert recap_facts(c)["star"]["team"] == c.star.team_name
 
 
+def test_slots_carry_two_decimals_with_each_languages_decimal_mark():
+    from xplain.recap import slot_text
+    from xplain.recap_verifier import CLAUSE_SPLIT, fill, verify_recap
+    from .recap_fixtures import FT as FIXTURE
+    c = FIXTURE.card
+    card2 = c.model_copy(update={
+        "home": c.home.model_copy(update={"expected_xp": 319.55, "vs_expected_xp": 15.45}),
+        "away": c.away.model_copy(update={"expected_xp": 334.89, "vs_expected_xp": -14.89}),
+        "star": c.star.model_copy(update={"expected_xp": 39.52, "vs_expected_xp": 6.48})})
+    assert slot_values(card2) == {"home_vs_expected": "15.45", "away_vs_expected": "14.89",
+                                  "star_name": "Ollie Branck", "star_pva": "6.48"}
+    assert slot_text("15.45", "en") == "15.45" and slot_text("15.45", "es") == slot_text("15.45", "el") == "15,45"
+    assert slot_text("Ollie Branck", "es") == "Ollie Branck"
+    filled = fill(FIXTURE.out, card2)
+    assert "completed 15.45 more passes" in filled.text_en and "completó 15,45 pases más" in filled.text_es
+    assert "ολοκλήρωσε 15,45 περισσότερες" in filled.text_el and "με 6,48 περισσότερες" in filled.text_el
+    # a decimal mark between digits is not a clause break; the text passes every check
+    assert len(CLAUSE_SPLIT.split("completó 15,45 pases; 2.5 más, y")) == 3
+    assert verify_recap(FIXTURE.out, card2, ["Dario Pell", "Joss Marlin", "Tomas Avery", "Ollie Branck"]).ok
+
+
 def test_slots_exist_only_for_above_or_below_teams_and_a_star():
     assert slot_values(FT.card) == {"home_vs_expected": "15", "away_vs_expected": "15", "star_name": "Ollie Branck",
                                     "star_pva": "6"}

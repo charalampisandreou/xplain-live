@@ -170,8 +170,9 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 /* the text follows the star (no push to the card's bottom); fitRecapText steps it down if a long recap
    would run past the card */
 .rc-text { margin: 24px 0 0; font-size: 19px; font-weight: 500; line-height: 1.45; color: #E6EEF7; }
-/* Recap / Map: the tables' half selector's size, on its row, at the slot's right edge */
-.seg.recapview { position: absolute; top: 150px; right: 620px; padding: 3px; }
+/* Recap / Map: the tables' half selector's size, on the title's row (centred on the 54px title) at the slot's
+   right edge, so the pitch's tabs (possession, replay) keep their room in the Map view */
+.seg.recapview { position: absolute; top: 110px; right: 620px; padding: 3px; }
 .seg.recapview[hidden] { display: none; }
 .seg.recapview button { height: 28px; padding: 0 14px; font-size: 13px; }
 
@@ -358,28 +359,34 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .player-change[aria-expanded="true"] svg { transform: rotate(180deg); }
 /* the picker: a floating list over the player's column, the two teams side by side; the current
    player has a check and the cyan bar, a player with no pass yet is muted */
+/* Two equal columns that never grow past the panel (minmax(0, 1fr): a long name is cut, it does not widen
+   its column). Each row is four fixed cells, so every number sits under the one above: the shirt number
+   right-aligned, the name (the one cell that gives), the position, the passes right-aligned under PASSES. */
 .player-picker {
   position: absolute; top: 196px; left: 860px; width: 540px; height: 520px; z-index: 5; align-content: start;
-  display: grid; grid-template-columns: 1fr 1fr; gap: 24px; padding: 16px 18px 18px;
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 18px; padding: 14px 16px 16px;
   background: var(--surface); border: 1px solid var(--switch-border); border-radius: 6px;
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
 }
 .player-picker[hidden] { display: none; }
+.pk-col { min-width: 0; }
 .pk-head {
-  display: flex; justify-content: space-between; align-items: baseline; gap: 12px;
-  border-bottom: 2px solid var(--accent); padding-bottom: 6px; margin-bottom: 2px;
+  display: flex; justify-content: space-between; align-items: baseline; gap: 10px;
+  border-bottom: 2px solid var(--accent); padding: 0 8px 7px; margin-bottom: 2px;
 }
-.pk-team { min-width: 0; font-size: 18px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pk-sub { flex: none; font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.pk-team { min-width: 0; font-size: 17px; font-weight: 800; font-stretch: 78%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pk-sub { flex: none; font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
 .pk-opt {
-  width: 100%; height: 36px; padding: 0 12px; display: flex; align-items: center; gap: 8px;
+  width: 100%; height: 36px; padding: 0 8px; display: flex; align-items: center; gap: 8px;
   border: none; border-bottom: 1px solid var(--hairline); border-radius: 0; background: transparent;
   color: var(--text); font-size: 15px; font-weight: 600; text-align: left;
 }
-.pk-num { width: 34px; flex: none; font-size: 13px; font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; }
-.pk-name { flex: 0 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pk-pos { flex: 1; font-size: 12px; font-weight: 600; letter-spacing: 0.06em; color: var(--muted); }
-.pk-n { flex: none; font-size: 15px; font-weight: 500; color: var(--muted); font-variant-numeric: tabular-nums; }
+.pk-num { flex: none; width: 26px; text-align: right; font-size: 13px; font-weight: 700; color: var(--muted);
+  font-variant-numeric: tabular-nums; }
+.pk-name { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pk-pos { flex: none; width: 30px; font-size: 12px; font-weight: 600; letter-spacing: 0.06em; color: var(--muted); }
+.pk-n { flex: none; width: 24px; text-align: right; font-size: 15px; font-weight: 500; color: var(--muted);
+  font-variant-numeric: tabular-nums; }
 .pk-opt.none .pk-name { color: var(--muted); font-weight: 500; }
 .pk-opt:hover { background: rgba(255, 255, 255, 0.05); }
 .pk-opt[aria-selected="true"] { background: rgba(63, 208, 255, 0.08); box-shadow: inset 3px 0 0 var(--accent); }

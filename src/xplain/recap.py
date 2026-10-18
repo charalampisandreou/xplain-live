@@ -14,10 +14,11 @@ recap_verifier: the size of a team's gap (no sign; the text says "more" or "fewe
 more passes than expected the star completed. A team's slot exists only when its band is above or below; the star
 slots only when the card has a star. Completed, expected and passes stay on the card, under fixed labels.
 
-On screen, Expected and vs expected show two decimals: expected_xp (the sum of xP) and vs_expected_xp (completed
-minus that sum), each rounded by round2, the same rounding as the page's toFixed(2) (player.js fixed2). The whole
-numbers above stay for the text's slots, the bands and the star rule; the text's number is always the on-screen
-value rounded to a whole pass (|vs_expected - vs_expected_xp| <= 0.5).
+Expected and vs expected show two decimals, on screen and in the text: expected_xp (the sum of xP, xp_sum) and
+vs_expected_xp (completed minus that sum), each rounded by round2, the same rounding as the page's toFixed(2)
+(player.js fixed2). The number slots carry vs_expected_xp to two decimals ("19.45"); fill writes them with each
+language's decimal mark (DECIMAL_MARK: "19.45" in EN, "19,45" in ES and EL). The whole numbers stay for the bands
+and the star rule; a card written before the decimals existed fills whole numbers.
 
 Editorial constants (change them here only):
   * LATE_MINUTE: a goal is "late" from this base minute of its half on, added time included (85' in the second
@@ -30,6 +31,7 @@ Editorial constants (change them here only):
 """
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Annotated, Literal
@@ -50,6 +52,8 @@ LATE_MINUTE: dict[int, int] = {1: 40, 2: 85}
 PASSING_BAND: dict[str, int] = {"full_time": 8, "half_time": 5}
 STAR_MIN_PVA = 2
 SLOTS: tuple[str, ...] = ("home_vs_expected", "away_vs_expected", "star_name", "star_pva")
+DECIMAL_MARK: dict[str, str] = {"en": ".", "es": ",", "el": ","}
+_DECIMAL = re.compile(r"\d+\.\d+")
 MINUS = "−"   # the Studio's minus sign ("−94%")
 
 
@@ -290,17 +294,28 @@ def recap_claims(card: RecapCard) -> dict[str, str]:
     return claims
 
 
+def _amount(two_dp: float | None, whole: int) -> str:
+    """A slot's number: the card's two-decimal value without its sign ("19.45"), else the whole number."""
+    return str(abs(whole)) if two_dp is None else f"{abs(two_dp):.2f}"
+
+
 def slot_values(card: RecapCard) -> dict[str, str]:
-    """The slots this card has, with the text code puts in their place (the same in EN, ES and EL: whole numbers
-    and a name). A team's slot only when its band is above or below; the star's only when there is a star."""
+    """The slots this card has, with the text code puts in their place: the numbers to two decimals with "." (as on
+    screen; slot_text gives each language its decimal mark) and the star's name. A team's slot only when its band
+    is above or below; the star's only when there is a star."""
     values: dict[str, str] = {}
     for side, t in (("home", card.home), ("away", card.away)):
         if t.band != "close":
-            values[f"{side}_vs_expected"] = str(abs(t.vs_expected))
+            values[f"{side}_vs_expected"] = _amount(t.vs_expected_xp, t.vs_expected)
     if card.star is not None:
         values["star_name"] = card.star.name
-        values["star_pva"] = str(card.star.pva)
+        values["star_pva"] = _amount(card.star.vs_expected_xp, card.star.pva)
     return values
+
+
+def slot_text(value: str, lang: str) -> str:
+    """A slot value as the text in lang writes it: a decimal number with that language's decimal mark."""
+    return value.replace(".", DECIMAL_MARK[lang]) if _DECIMAL.fullmatch(value) else value
 
 
 def slot_directions(card: RecapCard) -> dict[str, str]:

@@ -48,7 +48,7 @@ from collections.abc import Sequence
 
 from pydantic import BaseModel, ConfigDict
 
-from .recap import SLOTS, RecapCard, RecapOut, recap_claims, slot_directions, slot_team, slot_values
+from .recap import SLOTS, RecapCard, RecapOut, recap_claims, slot_directions, slot_team, slot_text, slot_values
 from .verifier import BANNED, CAUSAL_MARKERS, LANGS, NUMBER_CHARS, NUMBER_WORDS, SENTENCE_BREAK
 
 RECAP_WORD_LIMIT = 60      # on the filled text: a number counts as one word, a name as its words
@@ -164,7 +164,8 @@ SLOT_PHRASES: dict[str, dict[str, str]] = {
               "es": r"\s*(?:\w+\s+)?menos(?:\s+\w+)?\s+de\s+los?\s+esperad\w*",
               "el": r"\s*λιγότερ\w*(?:\s+\w+)?\s+από\s+τ\w*\s+αναμενόμεν\w*"},
 }
-CLAUSE_SPLIT = re.compile(r"[,;:··–—.!?]")
+# a "," or "." between two digits is a decimal mark (code fills two-decimal numbers), not a clause break
+CLAUSE_SPLIT = re.compile(r"[;:··–—!?]|[,.](?!\d)|(?<!\d)[,.]")
 WORD = re.compile(r"\w+")
 
 
@@ -293,13 +294,14 @@ def _slots(out: RecapOut, card: RecapCard) -> list[str]:
 
 
 def fill(out: RecapOut, card: RecapCard) -> RecapOut:
-    """The text with every slot this card has replaced by its value (recap.slot_values); other braces stay."""
+    """The text with every slot this card has replaced by its value (recap.slot_values), a decimal number with the
+    language's decimal mark (recap.slot_text); other braces stay."""
     values = slot_values(card)
 
-    def sub(text: str) -> str:
-        return SLOT_RE.sub(lambda m: values.get(m.group(1), m.group(0)), text)
+    def sub(text: str, lang: str) -> str:
+        return SLOT_RE.sub(lambda m: slot_text(values[m.group(1)], lang) if m.group(1) in values else m.group(0), text)
 
-    return out.model_copy(update={f"text_{lang}": sub(getattr(out, f"text_{lang}")) for lang in LANGS})
+    return out.model_copy(update={f"text_{lang}": sub(getattr(out, f"text_{lang}"), lang) for lang in LANGS})
 
 
 def _format(out: RecapOut) -> list[str]:

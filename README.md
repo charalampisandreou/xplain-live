@@ -23,7 +23,7 @@ overlay cards that a graphics system can render alongside the match.
 > The model files and the demo bundle are published in the open-licence release
 > [data-v1](https://github.com/charalampisandreou/xplain-live/releases/tag/data-v1) (model files MIT,
 > bundle CC BY 4.0). The bundle there was replaced after the narration retune; its SHA-256 is
-> `06ab6d0864c999c70aab7d951137d49f510acac9859daf3c851b8bc27bedd5d9`.
+> `48f18c2bac40ca3cf91a08768c655d6d3f77585602b41910f52c38fae49d5a1b`.
 >
 > Not built yet: the Analyst screen, the agent trace (planned for the Analyst screen), personalization
 > modes (analyst, casual fan, player focus, favourite club or player), and live mode (the deployed app
@@ -202,7 +202,9 @@ final score.
 `python scripts/refresh_recap_cards.py data/bundle_seed3001.json` fills in recap-card fields added
 after a bundle was built (for now the two-decimal `expected_xp` and `vs_expected_xp`), from the
 bundle's own passes and with no model call. Every field the card already had must come out the
-same, so the recap texts stay right; it prints the new SHA-256.
+same. Each recap text is then filled again from the model's raw text (with its placeholders) with the
+card's two-decimal values and checked again by the recap verifier; a change is recorded as a
+`recap_filler` step in the trace. It prints the new SHA-256.
 
 ## Run the web page
 
@@ -259,7 +261,8 @@ Also in the Studio:
 - **Half-time and full-time recaps.** When live playback reaches half time (the last first-half pass) or
   full time, the recap card takes the pitch's place: the result, the goals, each team's passing
   (completed, expected and vs expected, the last two to two decimals), the star player (their row opens
-  them in Players) and the recap text in the narration language. The score bug reads HT or FT. A Recap /
+  them in Players) and the recap text in the narration language, whose numbers are the card's, to two
+  decimals too ("19.45" in English, "19,45" in Spanish and Greek). The score bug reads HT or FT. A Recap /
   Map switch shows the card or the pitch; the plate's chevrons step from the recap into the narrated
   moments and back, and stepping or replaying keeps the recap. Half time resumes by itself after 10
   seconds unless you step away; full time stays. `?recap=ht` or `?recap=ft` opens one, paused.

@@ -647,6 +647,29 @@ def test_refresh_recap_cards_fills_the_added_fields_only(tmp_path, monkeypatch, 
     assert hashlib.sha256(path.read_bytes()).hexdigest() in capsys.readouterr().out
 
 
+def test_refill_recap_text_refills_and_checks_again():
+    from xplain.bundle import RecapEntry, refill_recap_text
+    from xplain.recap_verifier import fill
+    from .recap_fixtures import FT as FIXTURE
+    players = ["Dario Pell", "Joss Marlin", "Tomas Avery", "Ollie Branck"]
+    c = FIXTURE.card
+    old = RecapEntry(card=c, text=fill(FIXTURE.out, c), raw_text=FIXTURE.out, status="accepted", attempts=1,
+                     slots={"home_vs_expected": "15", "away_vs_expected": "15", "star_name": "Ollie Branck",
+                            "star_pva": "6"})
+    assert refill_recap_text(old, players) == (old, None)   # whole numbers still: nothing to refill
+    card2 = c.model_copy(update={
+        "home": c.home.model_copy(update={"vs_expected_xp": 15.45}),
+        "away": c.away.model_copy(update={"vs_expected_xp": -14.89}),
+        "star": c.star.model_copy(update={"vs_expected_xp": 6.48})})
+    new, step = refill_recap_text(old.model_copy(update={"card": card2}), players)
+    assert "15.45 more passes" in new.text.text_en and "15,45 pases" in new.text.text_es
+    assert new.slots["star_pva"] == "6.48" and new.raw_text == old.raw_text
+    assert step.agent == "recap_filler" and step.text["el"] == new.text.text_el and "{star_pva} = 6.48" in step.notes
+    with pytest.raises(ValueError):   # a refilled text that fails the recap verifier is never written
+        refill_recap_text(new.model_copy(update={"raw_text": FIXTURE.out.model_copy(
+            update={"text_en": FIXTURE.out.text_en + " A lucky win."})}), players)
+
+
 def test_recaps_need_the_model(tmp_path, monkeypatch, seed42_events, tiny_scorer):  # noqa: F811
     path = tmp_path / "m.jsonl"
     write_jsonl(path, seed42_events)

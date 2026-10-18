@@ -59,7 +59,8 @@ from .contracts import MomentBundle, PassGeometry, PassMark, PlayerSummary
 from .narration import NarratorOut, difficulty_tier, pass_tier
 from .narrator import NarrationResult, Narrator
 from .pipeline import analyse_match, ensure_match_file, load_events, player_summary, reports
-from .recap import RECAP_SCOPES, RecapCard, RecapOut, star_player, team_passing
+from .recap import RECAP_SCOPES, RecapCard, RecapOut, slot_values, star_player, team_passing
+from .recap_verifier import verify_recap
 from .schema import PITCH_LENGTH, PITCH_WIDTH, MatchMetaEvent, ShotEvent
 from .scoring import XPassScorer, find_default_model
 from .trace import TraceStep, code_step, reused
@@ -577,9 +578,13 @@ ADDED_CARD_FIELDS = {"expected_xp", "vs_expected_xp"}
 def refresh_recap_cards(bundle: MatchBundle) -> MatchBundle:
     """The bundle with each recap card's passing and star recomputed from the bundle's own marks
     (recap.team_passing, recap.star_player), with no model call. Every field the card already had must come out
-    the same, since the recap text's numbers come from them; only ADDED_CARD_FIELDS are filled in."""
+    the same; only ADDED_CARD_FIELDS are filled in. Each text is then filled again from its raw text (the model's,
+    with slots) with the card's values (now two decimals) and checked again by recap_verifier.verify_recap; when
+    the filled text changes, a recap_filler code step in the trace records it."""
     added = {"home": ADDED_CARD_FIELDS, "away": ADDED_CARD_FIELDS, "star": ADDED_CARD_FIELDS}
+    players = [p.name for p in bundle.meta.players]
     recaps: dict[str, RecapEntry] = {}
+    steps = dict(bundle.trace.recaps)
     for scope, entry in bundle.recaps.items():
         card = entry.card
         new = card.model_copy(update={
@@ -588,8 +593,33 @@ def refresh_recap_cards(bundle: MatchBundle) -> MatchBundle:
             "star": star_player(bundle.marks, scope)})
         if new.model_dump(exclude=added) != card.model_dump(exclude=added):
             raise ValueError(f"recap {scope!r}: the recomputed card differs from the stored one beyond the added fields")
-        recaps[scope] = entry.model_copy(update={"card": new})
-    return bundle.model_copy(update={"recaps": recaps})
+        try:
+            recaps[scope], step = refill_recap_text(entry.model_copy(update={"card": new}), players)
+        except ValueError as exc:
+            raise ValueError(f"recap {scope!r}: {exc}") from exc
+        if step is not None:
+            steps[scope] = [*steps.get(scope, []), step]
+    return bundle.model_copy(update={"recaps": recaps, "trace": bundle.trace.model_copy(update={"recaps": steps})})
+
+
+def refill_recap_text(entry: RecapEntry, players: Sequence[str]) -> tuple[RecapEntry, TraceStep | None]:
+    """The entry with its text filled again from its raw text (with slots) and its card's values, checked again
+    by recap_verifier.verify_recap (raises ValueError if it fails), and the recap_filler step that records a
+    change (None when the filled text is the same, or the entry has no text)."""
+    if entry.text is None or entry.raw_text is None:
+        return entry, None
+    verdict = verify_recap(entry.raw_text, entry.card, players)
+    if not verdict.ok:
+        raise ValueError(f"the refilled text fails recap_verifier: {verdict.reasons}")
+    if verdict.filled == entry.text:
+        return entry, None
+    values = slot_values(entry.card)
+    slots = {name: values[name] for name in verdict.slots_used}
+    text = {lang: getattr(verdict.filled, f"text_{lang}") for lang in ("en", "es", "el")}
+    notes = ["filled again by refresh_recap_cards with the card's two-decimal values"]
+    step = code_step("recap_filler", attempt=entry.attempts, text=text,
+                     notes=notes + [f"{{{k}}} = {v}" for k, v in slots.items()])
+    return entry.model_copy(update={"text": verdict.filled, "slots": slots}), step
 
 
 def summary_line(bundle: MatchBundle, size_bytes: int) -> str:
