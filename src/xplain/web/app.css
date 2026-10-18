@@ -281,12 +281,12 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
    the moments (Studio's rows); the key and the footnote sit on the pitch's bottom line */
 .player-view { position: absolute; top: 196px; left: 860px; width: 540px; height: 520px; flex-direction: column; }
 .pv-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
-.pv-label { font-size: 13px; font-weight: 700; letter-spacing: 1.4px; text-transform: uppercase; color: var(--muted); }
-.pv-value { margin-top: 6px; font-size: 36px; font-weight: 800; font-stretch: 85%; line-height: 1; white-space: nowrap; }
+.pv-label { font-size: 13px; font-weight: 700; letter-spacing: 1.3px; text-transform: uppercase; color: var(--muted); }
+.pv-value { margin-top: 8px; font-size: 36px; font-weight: 800; font-stretch: 85%; line-height: 1; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .pv-value.pos { color: var(--completed); }
 .pv-value.neg { color: var(--failed-text); }
 .pv-stats { margin-bottom: 26px; }
-.player-view .thead + * { margin-top: 10px; }
+.player-view .thead + .pv-bandbar { margin-top: 14px; }
 /* the four bands, brighter is harder: cyan at 0.50 / 0.66 / 0.82 / 1 on --bg is 3.4 / 4.9 / 6.9 / 9.7 : 1 */
 :root { --band-routine: rgba(63, 208, 255, 0.50); --band-moderate: rgba(63, 208, 255, 0.66);
   --band-hard: rgba(63, 208, 255, 0.82); --band-exceptional: rgba(63, 208, 255, 1); }
@@ -296,35 +296,25 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .band.moderate, .key.moderate { background: var(--band-moderate); }
 .band.hard, .key.hard { background: var(--band-hard); }
 .band.exceptional, .key.exceptional { background: var(--band-exceptional); }
-.pv-bands { display: flex; justify-content: space-between; margin: 8px 0 22px; font-size: 14px; font-weight: 500; color: var(--muted); }
+.pv-bands { display: flex; justify-content: space-between; margin: 10px 0 26px; font-size: 15px; font-weight: 500; color: var(--muted); }
 .pv-bands b { margin-left: 4px; font-weight: 800; color: var(--text); }
 .pv-bands .key { display: inline-block; width: 10px; height: 10px; margin-right: 6px; border-radius: 2px; }
 /* the moments: Studio's rows, the minute in the rank's place; three rows show, more scroll inside */
 .pv-rows { max-height: 166px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--hairline) transparent; }
-.pv-rows .row .when { width: 54px; flex: none; font-weight: 800; font-size: 18px; }
+.pv-rows .row .when { width: 56px; flex: none; font-weight: 800; font-size: 20px; }
 .pv-rows .row .meta { text-transform: none; letter-spacing: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pv-rows .row .track { width: 110px; }
 /* rows are not buttons here: hover or focus lights the moment's pass on the map */
 .pv-rows .row:hover, .pv-rows .row:focus-visible { background: var(--surface); box-shadow: inset 3px 0 0 var(--accent); outline: none; }
-.pv-foot { margin-top: auto; display: flex; flex-direction: column; gap: 8px; }
-.pv-legend { display: flex; gap: 20px; font-size: 14px; font-weight: 500; color: var(--text-soft); }
+.pv-foot { margin-top: auto; display: flex; flex-direction: column; gap: 10px; }
+.pv-legend { display: flex; justify-content: space-between; font-size: 15px; font-weight: 500; color: var(--text-soft); }
 .pv-legend > span { display: flex; align-items: center; gap: 8px; }
-.player-view .footnote { font-size: 14px; }
 /* the pass map: while a moment row is lit, the other passes step back */
 /* a ring on a pass that starts on the touchline is drawn whole, past the pitch's edge */
 #stage.mode-player #pitch-svg { overflow: visible; }
 #passes.spot g:not(.hot) { opacity: 0.25; }
 #passes g { transition: opacity 120ms ease-out; }
-/* Player mode leaves the plate empty (a muted "Player recap" label keeps its slot), and drops what
-   steps or replays: the narration nav, the replay badge, Back to live and the step buttons */
-.recap-slot { display: none; }
-#stage.mode-player .lower .nametab { visibility: hidden; }
-#stage.mode-player .lower .body { border-radius: 4px; }
-#stage.mode-player .lower .body > .left, #stage.mode-player .lower .body > .right { display: none; }
-#stage.mode-player .recap-slot {
-  display: flex; align-items: center; padding: 0 18px; flex: 1;
-  font-size: 13px; font-weight: 700; letter-spacing: 1.3px; text-transform: uppercase; color: var(--muted);
-}
-#stage.mode-player .narrnav, #stage.mode-player .replaybar,
-#stage.mode-player .controls .live, #stage.mode-player .controls .steps { display: none; }
+/* Player mode drops what steps or replays: the replay badge, Back to live and the step buttons. The
+   plate is Studio's, with the player's own narrated moments. */
+#stage.mode-player .replaybar, #stage.mode-player .controls .live, #stage.mode-player .controls .steps { display: none; }
 @media (prefers-reduced-motion: reduce) { #passes g { transition: none; } }
