@@ -19,7 +19,9 @@ Checks (every failing check adds a reason, prefixed with its name):
         late_equaliser claim or a used scorer claim of a late goal; "expected" words a passing claim
       - the result words fit the result: no win or loss words for a draw or at half time, no draw words for a
         win, no lead words when level at half time and no level words for a lead; a clause with a win (lead)
-        word does not name only the loser (the team behind), and a clause with a loss word not only the winner
+        word does not name only the loser (the team behind), and a clause with a loss word not only the winner.
+        Spanish "empate" is a draw word, except inside an explicit equaliser phrase (EQUALISER_PHRASES,
+        "el empate de <scorer>"), which neither contradicts a win nor expresses a draw
       - a passing phrase (above / below / close to expected) names, in its own clause, only teams of that band
       - no player is named unless they scored in the scope and their scorer claim is used
 
@@ -77,15 +79,23 @@ LOSS_WORDS: dict[str, tuple[str, ...]] = {
 DRAW_WORDS: dict[str, tuple[str, ...]] = {
     "en": (r"\bdraw\b", r"\bdrawn\b", r"\bdrew\b(?! level)", r"\bstalemate\b", r"\bshared the points\b",
            r"\ball square\b"),
-    # "empate" alone can be the equalising goal ("el empate de ..."), so only explicit draw phrases count here
+    # strict: any "empate" is a draw word, except inside an explicit equaliser phrase (EQUALISER_PHRASES)
     "es": (r"\b(termin[oó]|acab[oó]|finaliz[oó]) en empate\b", r"\bempate final\b", r"\bempat(an|aron|ados|adas)\b",
-           r"\btablas\b", r"\breparto de puntos\b", r"\bigualad[oa]s\b"),
+           r"\btablas\b", r"\breparto de puntos\b", r"\bigualad[oa]s\b", r"\bempate\b"),
     "el": (r"ισοπαλ\w*", r"ισόπαλ\w*", r"\bμοιράστηκαν\b"),
 }
 LEVEL_WORDS: dict[str, tuple[str, ...]] = {
     "en": DRAW_WORDS["en"] + (r"\blevel\b", r"\bgoalless\b", r"\bscoreless\b"),
-    "es": DRAW_WORDS["es"] + (r"\bsin goles\b", r"\bempate\b"),
+    "es": DRAW_WORDS["es"] + (r"\bsin goles\b",),
     "el": DRAW_WORDS["el"] + (r"\bχωρίς γκολ\b", r"\bλευκ(ή|ό)\b"),
+}
+# Explicit equaliser phrases: an "empate" inside one is the equalising goal, not a draw. They are taken out of the
+# text before the result words are checked (equaliser_free), so they neither contradict a win nor express a draw.
+# "el empate de <scorer>" is built per card from the scorers' names (full name or surname).
+EQUALISER_PHRASES: dict[str, tuple[str, ...]] = {
+    "en": (), "el": (),
+    "es": (r"\bgol del empate\b",
+           r"\b(logr(ó|a|ara|aba)|consigui(ó|era|eron)|consigue|pus(o|iera)|pone) el empate\b"),
 }
 LEAD_WORDS: dict[str, tuple[str, ...]] = {
     "en": (r"\blead(s|ing)?\b", r"\bled\b", r"\bahead\b", r"\bin front\b"),
@@ -140,6 +150,7 @@ _BANNED = _rx({lang: BANNED[lang] + RECAP_BANNED[lang] for lang in LANGS})
 _CAUSE = _rx(CAUSAL_MARKERS)
 _WIN, _LOSS, _DRAW = _rx(WIN_WORDS), _rx(LOSS_WORDS), _rx(DRAW_WORDS)
 _LEVEL, _LEAD = _rx(LEVEL_WORDS), _rx(LEAD_WORDS)
+_EQUALISER = _rx(EQUALISER_PHRASES)
 _COMEBACK, _LATE, _PASSING = _rx(COMEBACK_WORDS), _rx(LATE_WORDS), _rx(PASSING_WORDS)
 _BAND = {band: _rx(table) for band, table in BAND_WORDS.items()}
 
@@ -166,6 +177,17 @@ def _named(name: str, text: str) -> bool:
 def _player_named(name: str, text: str) -> bool:
     """The full name, or the surname alone."""
     return _named(name, text) or (" " in name and _named(name.rsplit(" ", 1)[1], text))
+
+
+def equaliser_free(text: str, lang: str, scorers: Sequence[str]) -> str:
+    """The text without its explicit equaliser phrases (EQUALISER_PHRASES, and "el empate de <scorer>" in Spanish)."""
+    patterns = list(_EQUALISER[lang])
+    if lang == "es":
+        names = {n for s in scorers for n in (s, s.rsplit(" ", 1)[-1])}
+        patterns += [re.compile(rf"\bel empate de {re.escape(n)}(?!\w)", re.IGNORECASE) for n in names]
+    for p in patterns:
+        text = p.sub(" ", text)
+    return text
 
 
 def clauses(text: str) -> list[str]:
@@ -241,16 +263,17 @@ def _claims(out: RecapOut, card: RecapCard, players: Sequence[str]) -> tuple[lis
         if (hit := _find(_PASSING[lang], text)) and "passing" not in kinds:
             say(f"has {hit!r} but no passing claim is used")
 
-        # the result words fit the result
+        # the result words fit the result (draw and level words outside explicit equaliser phrases)
+        result_text = equaliser_free(text, lang, sorted(scorers))
         win, loss = _find(_WIN[lang], text), _find(_LOSS[lang], text)
         if card.result in ("draw", "level", "home_lead", "away_lead") and (win or loss):
             say(f"has {(win or loss)!r} but " + ("the match was drawn" if card.result == "draw"
                                                  else "nothing is won or lost at half time"))
-        if card.result in ("home_win", "away_win") and (hit := _find(_DRAW[lang], text)):
+        if card.result in ("home_win", "away_win") and (hit := _find(_DRAW[lang], result_text)):
             say(f"has {hit!r} but the match was won")
         if card.result == "level" and (hit := _find(_LEAD[lang], text)):
             say(f"has {hit!r} but the teams are level")
-        if card.result in ("home_lead", "away_lead") and (hit := _find(_LEVEL[lang], text)):
+        if card.result in ("home_lead", "away_lead") and (hit := _find(_LEVEL[lang], result_text)):
             say(f"has {hit!r} but a team leads")
         if winner:
             ahead_words = _WIN[lang] if full_time else _LEAD[lang]
@@ -287,7 +310,7 @@ def _claims(out: RecapOut, card: RecapCard, players: Sequence[str]) -> tuple[lis
             if kind == "result":
                 table = {"home_win": _WIN, "away_win": _WIN, "draw": _LEVEL, "home_lead": _LEAD, "away_lead": _LEAD,
                          "level": _LEVEL}[card.result]
-                if not _find(table[lang], text) and not (winner and _find(_LOSS[lang], text)):
+                if not _find(table[lang], result_text) and not (winner and _find(_LOSS[lang], text)):
                     say("does not express the result claim")
             elif kind == "comeback" and not (_find(_COMEBACK[lang], text) and _named(arg, text)):
                 say(f"does not express {c!r} (a comeback word and the team)")

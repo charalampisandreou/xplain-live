@@ -124,13 +124,70 @@ def test_the_narrator_verifier_tables_are_read_not_changed():
     assert verifier.WORD_LIMIT == 24 and "\\bsuccess\\w*" in verifier.BANNED["en"]
 
 
-def test_spanish_empate_as_the_equaliser_is_not_a_draw():
-    ok = check(FT, **sub(FT, "es", "igualara el tanto inicial de Dario Pell",
-                         "marcara el empate tras el tanto inicial de Dario Pell"))
-    assert ok.ok, ok.reasons
-    v = check(FT, **sub(FT, "es", "Harbourne Athletic remontó y venció a Kellsworth Rovers",
-                        "Harbourne Athletic remontó y el partido terminó en empate con Kellsworth Rovers"))
-    assert any("was won" in r for r in failed(v, "recap_claims"))
+WON_ES = "Harbourne Athletic remontó y venció a Kellsworth Rovers"
+EQUALISER_ES = "después de que Joss Marlin igualara el tanto inicial de Dario Pell"
+
+
+@pytest.mark.parametrize("draw", ["acabó en empate", "el partido terminó con un empate", "hubo empate"])
+def test_spanish_empate_in_a_won_match_is_a_draw_word(draw):
+    v = check(FT, **sub(FT, "es", WON_ES, f"{WON_ES}, aunque {draw}"))
+    assert any("text_es has" in r and "but the match was won" in r for r in failed(v, "recap_claims")), v.reasons
+
+
+@pytest.mark.parametrize("equaliser", [
+    "después de que Joss Marlin lograra el empate tras el tanto inicial de Dario Pell",
+    "tras el tanto inicial de Dario Pell y el gol del empate de Joss Marlin",
+    "tras el tanto inicial de Dario Pell y el empate de Joss Marlin",
+    "tras el tanto inicial de Dario Pell y el empate de Marlin",
+    "después de que Joss Marlin consiguiera el empate tras el tanto inicial de Dario Pell",
+    "después de que Joss Marlin pusiera el empate tras el tanto inicial de Dario Pell",
+])
+def test_spanish_equaliser_phrases_are_allowed_in_a_won_match(equaliser):
+    v = check(FT, **sub(FT, "es", EQUALISER_ES, equaliser))
+    assert v.ok, v.reasons
+
+
+def test_logro_el_empate_is_not_a_draw_but_logro_stays_a_banned_credit_verb():
+    text = FT.out.text_es.replace(EQUALISER_ES, "y antes Joss Marlin logró el empate tras el tanto inicial de Dario Pell")
+    v = check(FT, text_es=text)
+    assert failed(v, "recap_claims") == []                   # the draw check allows the equaliser phrase
+    assert v.reasons == ["banned: text_es has 'logró'"]      # the credit-verb ban (verifier.BANNED) still applies
+
+
+def test_empate_of_someone_who_is_not_a_scorer_is_still_a_draw_word():
+    v = check(FT, **sub(FT, "es", EQUALISER_ES, "tras el tanto inicial de Dario Pell y el empate de ambos equipos"))
+    assert any("but the match was won" in r for r in failed(v, "recap_claims"))
+
+
+DRAW_CARD = FT.card.model_copy(update={
+    "score_home": 1, "score_away": 1, "result": "draw", "comeback_team_id": None, "late_winner_team_id": None,
+    "goals": [FT.card.goals[1].model_copy(update={"period": 1, "home": 1, "away": 0}),
+              FT.card.goals[0].model_copy(update={"period": 2, "home": 1, "away": 1})],
+    "home": FT.card.home.model_copy(update={"band": "close"}), "away": FT.card.away.model_copy(update={"band": "close"}),
+})
+DRAW_OUT = FT.out.model_copy(update={
+    "text_en": "Harbourne Athletic and Kellsworth Rovers drew, with goals from Joss Marlin and Dario Pell. "
+               "Harbourne Athletic passed about as expected, Kellsworth Rovers passed about as expected.",
+    "text_es": "Harbourne Athletic y Kellsworth Rovers empataron, con goles de Joss Marlin y Dario Pell. "
+               "Harbourne Athletic estuvo en línea con lo esperado, Kellsworth Rovers estuvo en línea con lo esperado.",
+    "text_el": "Η Harbourne Athletic και η Kellsworth Rovers έμειναν στην ισοπαλία, με γκολ των Joss Marlin και "
+               "Dario Pell. Η Harbourne Athletic κινήθηκε κοντά στα αναμενόμενα, η Kellsworth Rovers κινήθηκε "
+               "κοντά στα αναμενόμενα.",
+    "claims_used": ["result", "scorer:Joss Marlin", "scorer:Dario Pell", "passing:Harbourne Athletic",
+                    "passing:Kellsworth Rovers"],
+})
+
+
+def test_a_real_draw_still_needs_a_draw_word():
+    good = verify_recap(DRAW_OUT, DRAW_CARD, PLAYERS)
+    assert good.ok, good.reasons
+    only_equaliser = DRAW_OUT.text_es.replace(
+        "Harbourne Athletic y Kellsworth Rovers empataron, con goles de Joss Marlin y Dario Pell",
+        "Joss Marlin marcó para Harbourne Athletic y Dario Pell anotó el gol del empate para Kellsworth Rovers")
+    v = verify_recap(DRAW_OUT.model_copy(update={"text_es": only_equaliser}), DRAW_CARD, PLAYERS)
+    assert "recap_claims: text_es does not express the result claim" in v.reasons
+    bare = DRAW_OUT.text_es.replace("empataron", "terminaron con empate")
+    assert verify_recap(DRAW_OUT.model_copy(update={"text_es": bare}), DRAW_CARD, PLAYERS).ok
 
 
 def test_the_brief_lists_the_late_words_and_the_greek_after():
