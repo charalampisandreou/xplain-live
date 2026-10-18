@@ -7,8 +7,8 @@ Model comparison for the Narrator (measurement only: nothing here changes the sh
 For each deployment the same commentated moments are narrated exactly as the bundle builder does it
 (bundle.narrate_match -> workflow.run_match -> Narrator, hints mode, narrator.MAX_ATTEMPTS, the current prompt,
 frames, phrase table and Verifier), and a scratch bundle is written per model under reports/model_compare/.
-The only per-model difference is the request parameters: ModelAgent wraps the Foundry agent and rewrites the
-options the Narrator sends (MODEL_PARAMS), and times every call and records its token usage.
+The only per-model difference is the request parameters (xplain.models.MODEL_PARAMS, which the Narrator itself
+uses too): ModelAgent wraps the Foundry agent, applies them, and times every call and records its token usage.
 
 Report (reports/model_compare/report.md): first try / retried / rejected with the Verifier's reasons, the
 repetition metrics of scripts/line_variety.py, latency p50/p95 per call and per line, tokens per line, a rough
@@ -30,7 +30,8 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import line_variety as lv  # noqa: E402
 
-from xplain.narrator import MAX_ATTEMPTS, NARRATOR_TIMEOUT_S, TEMPERATURE, Narrator, NarratorAgent  # noqa: E402
+from xplain.models import MODEL_PARAMS, ModelParams, adapt_options  # noqa: E402, F401  (re-exported)
+from xplain.narrator import MAX_ATTEMPTS, TEMPERATURE, Narrator, NarratorAgent  # noqa: E402
 from xplain.verifier import LANGS  # noqa: E402
 
 MODE = "hints"
@@ -38,39 +39,12 @@ OUT_DIR = Path("reports/model_compare")
 DEFAULT_MATCH = Path("data/match_seed3001.jsonl")
 
 
-@dataclass(frozen=True)
-class ModelParams:
-    """The request parameters of one deployment. None: the parameter is not sent."""
-    temperature: float | None
-    max_completion_tokens: int | None = None
-    reasoning_effort: str | None = None
-    timeout_s: float = NARRATOR_TIMEOUT_S
-
-
-MODEL_PARAMS: dict[str, ModelParams] = {
-    "gpt-4.1-mini": ModelParams(temperature=TEMPERATURE),   # the baseline, as the Narrator runs today
-    "gpt-4.1": ModelParams(temperature=TEMPERATURE),
-    # rejects temperature != 1 (so none is sent: the default 1); a reasoning model, hence the larger budget
-    "gpt-6.1-sol": ModelParams(temperature=None, max_completion_tokens=2000, reasoning_effort="low", timeout_s=60.0),
-}
 # USD per 1M tokens (input, output), Global Standard list prices; None: not known here, fill in to get a cost.
 PRICES: dict[str, tuple[float, float] | None] = {
     "gpt-4.1-mini": (0.40, 1.60),
     "gpt-4.1": (2.00, 8.00),
     "gpt-6.1-sol": None,
 }
-
-
-def adapt_options(options: dict[str, Any], params: ModelParams) -> dict[str, Any]:
-    """The Narrator's options rewritten for one deployment: its temperature (or none), and the extra parameters."""
-    out = {k: v for k, v in options.items() if k != "temperature"}
-    if params.temperature is not None:
-        out["temperature"] = params.temperature
-    if params.max_completion_tokens is not None:
-        out["max_tokens"] = params.max_completion_tokens   # the chat client sends it as max_completion_tokens
-    if params.reasoning_effort is not None:
-        out["reasoning_effort"] = params.reasoning_effort
-    return out
 
 
 @dataclass
@@ -118,7 +92,7 @@ async def run_model(name: str, events, scorer, credential) -> tuple[Any, list[Ca
 
     params = MODEL_PARAMS[name]
     agent = ModelAgent(build_agent(credential, FoundryConfig(deployment=name), mode=MODE), params)
-    narrator = Narrator(agent, timeout_s=params.timeout_s, mode=MODE)
+    narrator = Narrator(agent, mode=MODE, model=name)
     start = time.perf_counter()
     outcomes = await narrate_match(events, scorer, narrator)
     wall = time.perf_counter() - start

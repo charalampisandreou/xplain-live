@@ -376,3 +376,44 @@ def test_an_accepted_result_has_no_candidates():
 def test_a_retry_keeps_the_rejected_first_candidate():
     result = narrate(FakeAgent(BAD, make_out()))
     assert result.line == make_out() and result.rejected == [BAD]
+
+
+# --- trace --------------------------------------------------------------------------------------
+
+def steps(result: NarrationResult) -> list[tuple]:
+    return [(s.agent, s.kind, s.attempt, s.ok) for s in result.trace]
+
+
+def test_trace_of_a_retry_has_a_model_call_and_a_verifier_check_per_attempt():
+    result = narrate(FakeAgent(BAD, make_out()), mode="hints", model="gpt-4.1-mini")
+    assert steps(result) == [("narrator", "llm", 1, True), ("verifier", "code", 1, False),
+                             ("narrator", "llm", 2, True), ("verifier", "code", 2, True)]
+    assert result.trace[1].reasons == [BAD_REASON] and result.trace[3].reasons == []
+    llm = [s for s in result.trace if s.kind == "llm"]
+    assert all(s.model == "gpt-4.1-mini" and s.latency_s is not None and s.latency_s >= 0 for s in llm)
+    assert all(s.model is None and s.latency_s is None for s in result.trace if s.kind == "code")
+
+
+def test_trace_records_the_verifier_notes_of_the_accepted_line():
+    result = narrate(FakeAgent(make_out()))
+    assert result.trace[-1].agent == "verifier" and result.trace[-1].notes == result.notes
+
+
+def test_trace_of_a_timeout_an_error_and_an_invalid_answer():
+    timeout = narrate(FakeAgent("slow"), timeout_s=0.05)
+    assert steps(timeout) == [("narrator", "llm", 1, False)]
+    assert timeout.trace[0].reasons == ["timeout after 0.05 s"]
+    error = narrate(FakeAgent(BAD, ConnectionError("gone")))
+    assert steps(error) == [("narrator", "llm", 1, True), ("verifier", "code", 1, False),
+                            ("narrator", "llm", 2, False)]
+    assert error.trace[-1].reasons == ["error ConnectionError: gone"]
+    invalid = narrate(FakeAgent("invalid", make_out()))
+    assert steps(invalid) == [("narrator", "llm", 1, False), ("narrator", "llm", 2, True),
+                              ("verifier", "code", 2, True)]
+    assert invalid.trace[0].reasons == ["format: the answer is not a valid NarratorOut (ValidationError)"]
+
+
+def test_trace_survives_json():
+    result = narrate(FakeAgent(BAD, make_out()))
+    again = NarrationResult.model_validate_json(result.model_dump_json())
+    assert again.trace == result.trace

@@ -10,9 +10,12 @@ Each executor is a thin wrapper around code that already exists; none adds rules
                        slot (its index among the commentated moments, for the Narrator's frame rotation)
   * ExplainerExecutor: one moment in; its SHAP drivers (explainer.ShapExplainer), as a MomentBundle, with the slot
   * NarratorExecutor:  one bundle in; Narrator.narrate (facts -> model -> Verifier, up to two retries with the
-                       Verifier's reasons, a 15 s timeout per call; it never raises)
+                       Verifier's reasons, the model's timeout per call from models.MODEL_PARAMS; it never raises)
   * VerifierExecutor:  the final gate: verifier.verify on the accepted line once more before anything
                        is shown; yields one MomentOutcome per commentated moment
+
+Every outcome carries its trace (trace.TraceStep, one per agent per attempt): the Analyst's gate decision, the
+Explainer, each model call and Verifier check of the Narrator, and the final check.
 
 A moment that fails anywhere (no line after the retries, a timeout, an exception in a step) yields a
 MomentOutcome with no line and its reasons, and is logged; it never stops the run or the other moments.
@@ -40,6 +43,7 @@ from .narrator import NarrationResult, Narrator
 from .pipeline import ensure_match_file, gate_match, load_events
 from .schema import PassEvent
 from .scoring import XPassScorer
+from .trace import TraceStep, code_step
 from .verifier import VerifierResult, verify
 
 log = logging.getLogger(__name__)
@@ -64,13 +68,18 @@ class GatedMoment:
     qualified_by: tuple[QualifiedBy, ...]
     slot: int | None = None   # index among the match's commentated moments (narrator.frame_for)
 
+    @property
+    def trace(self) -> tuple[TraceStep, ...]:
+        return (code_step("analyst", notes=list(self.qualified_by)),)
+
 
 @dataclass(frozen=True)
 class Explained:
-    """Explainer -> Narrator: the bundle and the moment's slot."""
+    """Explainer -> Narrator: the bundle, the moment's slot and its trace so far."""
 
     bundle: MomentBundle
     slot: int | None = None
+    trace: tuple[TraceStep, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -79,6 +88,7 @@ class Narrated:
 
     bundle: MomentBundle
     narration: NarrationResult
+    trace: tuple[TraceStep, ...] = ()   # the steps before the Narrator's
 
 
 @dataclass(frozen=True)
@@ -96,6 +106,7 @@ class MomentOutcome:
     attempts: int = 0                # model calls made (1 or 2); 0 when the moment never reached the model
     reasons: list[str] = field(default_factory=list)
     latency_s: float = 0.0           # narration wall time
+    trace: list[TraceStep] = field(default_factory=list)   # one step per agent per attempt, in order
 
     @property
     def status(self) -> str:
@@ -105,10 +116,21 @@ class MomentOutcome:
         return "accepted" if self.attempts <= 1 else "retried"
 
 
-def _failed(moment: Moment, step: str, exc: Exception, bundle: MomentBundle | None = None) -> MomentOutcome:
+def _failed(moment: Moment, step: str, exc: Exception, bundle: MomentBundle | None = None,
+            trace: Sequence[TraceStep] = ()) -> MomentOutcome:
+    """An outcome with no line; the failing code step is added to the trace."""
     reason = f"error in {step}: {type(exc).__name__}: {str(exc)[:200]}"
     log.warning("%s %s: %s", moment.moment_id, moment.minute_label, reason)
-    return MomentOutcome(moment=moment, bundle=bundle, line=None, verdict=None, reasons=[reason])
+    steps = [*trace]
+    if step in ("explainer", "verifier"):
+        steps.append(code_step(step, ok=False, reasons=[reason], final=step == "verifier"))
+    return MomentOutcome(moment=moment, bundle=bundle, line=None, verdict=None, reasons=[reason], trace=steps)
+
+
+def final_step(verdict: VerifierResult, attempt: int) -> TraceStep:
+    """The trace step of the final Verifier check of an accepted line."""
+    return code_step("verifier", ok=verdict.ok, attempt=max(attempt, 1), reasons=list(verdict.reasons),
+                     notes=list(verdict.notes), final=True)
 
 
 # --- executors ---------------------------------------------------------------------------------
@@ -142,9 +164,9 @@ class ExplainerExecutor(Executor):
             bundle = MomentBundle(moment=gated.moment, explanation=explanation,
                                   qualifies_live=bool(gated.qualified_by), qualified_by=gated.qualified_by)
         except Exception as exc:  # noqa: BLE001  (one moment must not stop the others)
-            await ctx.yield_output(_failed(gated.moment, "explainer", exc))
+            await ctx.yield_output(_failed(gated.moment, "explainer", exc, trace=gated.trace))
             return
-        await ctx.send_message(Explained(bundle, gated.slot))
+        await ctx.send_message(Explained(bundle, gated.slot, (*gated.trace, code_step("explainer"))))
 
 
 class NarratorExecutor(Executor):
@@ -160,9 +182,9 @@ class NarratorExecutor(Executor):
         try:
             narration = await self.narrator.narrate(bundle, item.slot)
         except Exception as exc:  # noqa: BLE001  (narrate catches its own errors; this is a last guard)
-            await ctx.yield_output(_failed(bundle.moment, "narrator", exc, bundle))
+            await ctx.yield_output(_failed(bundle.moment, "narrator", exc, bundle, item.trace))
             return
-        await ctx.send_message(Narrated(bundle, narration))
+        await ctx.send_message(Narrated(bundle, narration, item.trace))
 
 
 class VerifierExecutor(Executor):
@@ -176,17 +198,19 @@ class VerifierExecutor(Executor):
     async def check(self, item: Narrated, ctx: WorkflowContext[Never, MomentOutcome]) -> None:
         bundle, n = item.bundle, item.narration
         line, verdict, reasons = n.line, None, list(n.reasons)
+        trace = [*item.trace, *n.trace]
         try:
             if line is not None:
                 verdict = verify(line, bundle, self.mode)
+                trace.append(final_step(verdict, n.attempts))
                 if not verdict.ok:
                     line = None
                     reasons.extend(f"final check: {r}" for r in verdict.reasons)
         except Exception as exc:  # noqa: BLE001
-            await ctx.yield_output(_failed(bundle.moment, "verifier", exc, bundle))
+            await ctx.yield_output(_failed(bundle.moment, "verifier", exc, bundle, trace))
             return
         outcome = MomentOutcome(moment=bundle.moment, bundle=bundle, line=line, verdict=verdict,
-                                attempts=n.attempts, reasons=reasons, latency_s=n.latency_s)
+                                attempts=n.attempts, reasons=reasons, latency_s=n.latency_s, trace=trace)
         if line is None:
             log.warning("%s %s: no line after %d attempt(s): %s", bundle.moment.moment_id,
                         bundle.moment.minute_label, n.attempts, "; ".join(reasons) or "-")

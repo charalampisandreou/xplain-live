@@ -53,7 +53,7 @@ def test_bundle_holds_every_pass_and_outlier(seed42_events, tiny_scorer, offline
     bundles, marks = analyse_match(seed42_events, tiny_scorer, WIDE)
     assert [PassMark(**m.model_dump(exclude={"display"})) for m in offline.marks] == marks
     assert [m.bundle for m in offline.moments] == bundles
-    assert offline.meta.schema_version == "4" and offline.meta.model_version == tiny_scorer.model_version
+    assert offline.meta.schema_version == "5" and offline.meta.model_version == tiny_scorer.model_version
     meta = next(e for e in seed42_events if isinstance(e, MatchMetaEvent))
     assert offline.meta.generator_version == meta.generator_version and len(offline.meta.players) == 22
 
@@ -333,11 +333,16 @@ def test_bad_snapshots_are_rejected(offline):
         MatchBundle.model_validate(data)
 
 
+def untraced(stored: dict) -> dict:
+    """Stored lines as an old-schema file gives them: no trace."""
+    return {k: v.model_copy(update={"trace": []}) for k, v in stored.items()}
+
+
 def as_schema_1(b: MatchBundle) -> str:
     """The bundle as the schema "1" file it would have been: no rankings, no tier."""
     data = b.model_dump(mode="json")
     data["meta"]["schema_version"] = "1"
-    del data["rankings"]
+    del data["rankings"], data["trace"]
     for m in data["moments"]:
         del m["tier"]
     return json.dumps(data)
@@ -348,7 +353,7 @@ def test_line_reuse_reads_a_schema_1_file(online, tmp_path):
     new.write_text(to_json(online), encoding="utf-8")
     old.write_text(as_schema_1(online), encoding="utf-8")
     from_v2 = stored_lines(new, online.meta.match_id, online.meta.model_version)
-    assert from_v2 and stored_lines(old, online.meta.match_id, online.meta.model_version) == from_v2
+    assert from_v2 and stored_lines(old, online.meta.match_id, online.meta.model_version) == untraced(from_v2)
     assert stored_lines(old, "other-match", online.meta.model_version) == {}
     assert stored_lines(old, online.meta.match_id, "other-model") == {}
     data = json.loads(as_schema_1(online))
@@ -361,7 +366,7 @@ def as_schema_2(b: MatchBundle) -> str:
     """The bundle as the schema "2" file it would have been: no display geometry, no attacks_right."""
     data = b.model_dump(mode="json")
     data["meta"]["schema_version"] = "2"
-    del data["meta"]["attacks_right"]
+    del data["meta"]["attacks_right"], data["trace"]
     for m in data["marks"]:
         del m["display"]
     return json.dumps(data)
@@ -372,7 +377,7 @@ def test_line_reuse_reads_a_schema_2_file(online, tmp_path):
     new.write_text(to_json(online), encoding="utf-8")
     old.write_text(as_schema_2(online), encoding="utf-8")
     from_v3 = stored_lines(new, online.meta.match_id, online.meta.model_version)
-    assert from_v3 and stored_lines(old, online.meta.match_id, online.meta.model_version) == from_v3
+    assert from_v3 and stored_lines(old, online.meta.match_id, online.meta.model_version) == untraced(from_v3)
 
 
 # --- PVA and the display frame (schema 3) --------------------------------------------------------
@@ -453,9 +458,56 @@ def test_line_reuse_reads_a_schema_3_file(online, tmp_path):
     new.write_text(to_json(online), encoding="utf-8")
     data = online.model_dump(mode="json")
     data["meta"]["schema_version"] = "3"
+    del data["trace"]
     for snap in data["rankings"]:
         snap["period"] = 1
         del snap["scope"]
     old.write_text(json.dumps(data), encoding="utf-8")
     from_v4 = stored_lines(new, online.meta.match_id, online.meta.model_version)
-    assert from_v4 and stored_lines(old, online.meta.match_id, online.meta.model_version) == from_v4
+    assert from_v4 and stored_lines(old, online.meta.match_id, online.meta.model_version) == untraced(from_v4)
+
+
+# --- trace (schema 5) ----------------------------------------------------------------------------
+
+def test_trace_holds_every_commentated_moment(online):
+    live = {e.bundle.moment.moment_id for e in online.moments if e.bundle.qualifies_live}
+    assert online.meta.schema_version == "5" and set(online.trace.moments) == live
+    assert online.trace.recaps == {}
+    for steps in online.trace.moments.values():
+        assert [s.agent for s in steps[:2]] == ["analyst", "explainer"] and steps[-1].final
+
+
+def test_trace_round_trips_and_names_only_commentated_moments(online, offline):
+    assert MatchBundle.model_validate_json(to_json(online)).trace == online.trace
+    assert offline.trace.moments == {}   # --no-llm without stored lines: nothing ran
+    data = online.model_dump(mode="json")
+    quiet = next(m["bundle"]["moment"]["moment_id"] for m in data["moments"] if not m["bundle"]["qualifies_live"])
+    data["trace"]["moments"][quiet] = []
+    with pytest.raises(ValidationError):
+        MatchBundle.model_validate(data)
+
+
+def test_a_schema_4_bundle_still_loads(online):
+    data = online.model_dump(mode="json")
+    data["meta"]["schema_version"] = "4"
+    del data["trace"]
+    old = MatchBundle.model_validate_json(json.dumps(data))
+    assert old.meta.schema_version == "4" and old.trace.moments == {} and old.moments == online.moments
+    data["trace"] = online.model_dump(mode="json")["trace"]
+    with pytest.raises(ValidationError):   # a trace is schema 5 only
+        MatchBundle.model_validate(data)
+
+
+def test_reused_lines_keep_their_narrator_steps(online, seed42_events, tiny_scorer, tmp_path):  # noqa: F811
+    path = tmp_path / "b.json"
+    path.write_text(to_json(online), encoding="utf-8")
+    stored = stored_lines(path, online.meta.match_id, online.meta.model_version)
+    moment_id, result = next(iter(stored.items()))
+    assert result.trace == [s for s in online.trace.moments[moment_id]
+                            if s.agent in ("narrator", "verifier") and not s.final]
+    outcomes, agent = narrated(seed42_events, tiny_scorer, lambda i, f: GOOD(f), stored)
+    again = build_bundle(seed42_events, tiny_scorer, outcomes, "hints", WIDE)
+    assert again.trace.moments[moment_id] == online.trace.moments[moment_id]
+    offline_again = build_bundle(seed42_events, tiny_scorer,
+                                 offline_outcomes(seed42_events, tiny_scorer, stored, "hints", WIDE), "hints", WIDE)
+    assert offline_again.trace.moments[moment_id] == online.trace.moments[moment_id]

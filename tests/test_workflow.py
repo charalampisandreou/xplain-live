@@ -187,3 +187,41 @@ def test_outcome_lines_and_summary(seed42_events, tiny_scorer):  # noqa: F811
 def test_cli_rejects_negative_max_moments():
     with pytest.raises(SystemExit):
         main(["--file", "unused.jsonl", "--max-moments", "-1"])
+
+
+# --- trace --------------------------------------------------------------------------------------
+
+def test_every_outcome_carries_its_trace(seed42_events, tiny_scorer, live):  # noqa: F811
+    outcomes, _ = run(seed42_events, tiny_scorer, lambda i, f: BAD(f) if i == 1 else GOOD(f))
+    first = outcomes[0]
+    assert [(s.agent, s.kind, s.attempt, s.ok, s.final) for s in first.trace] == [
+        ("analyst", "code", 1, True, False), ("explainer", "code", 1, True, False),
+        ("narrator", "llm", 1, True, False), ("verifier", "code", 1, False, False),
+        ("narrator", "llm", 2, True, False), ("verifier", "code", 2, True, False),
+        ("verifier", "code", 2, True, True)]
+    assert first.trace[0].notes == list(first.bundle.qualified_by)
+    assert first.trace[3].reasons and first.trace[3].reasons[0].startswith("no_numbers")
+    for o in outcomes[1:]:
+        assert [s.agent for s in o.trace] == ["analyst", "explainer", "narrator", "verifier", "verifier"]
+        assert o.trace[-1].final and o.trace[-1].ok
+
+
+def test_a_rejected_moment_has_no_final_check_in_its_trace(seed42_events, tiny_scorer, live):  # noqa: F811
+    outcomes, _ = run(seed42_events, tiny_scorer, lambda i, f: BAD(f), max_moments=1)
+    trace = outcomes[0].trace
+    assert outcomes[0].line is None and not any(s.final for s in trace)
+    assert [s.attempt for s in trace if s.agent == "verifier"] == [1, 2, 3]
+    assert not any(s.ok for s in trace if s.agent == "verifier")
+
+
+def test_an_explainer_failure_is_in_the_trace(seed42_events, tiny_scorer, monkeypatch):  # noqa: F811
+    from xplain.explainer import ShapExplainer
+
+    def boom(self, event, moment):
+        raise RuntimeError("no shap")
+
+    monkeypatch.setattr(ShapExplainer, "explain", boom)
+    outcomes, agent = run(seed42_events, tiny_scorer, lambda i, f: GOOD(f), max_moments=1)
+    assert agent.calls == []
+    assert [(s.agent, s.ok) for s in outcomes[0].trace] == [("analyst", True), ("explainer", False)]
+    assert "no shap" in outcomes[0].trace[-1].reasons[0]

@@ -30,14 +30,16 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from .config import FoundryConfig, phrase_mode
 from .contracts import Driver, MomentBundle
+from .models import DEFAULT_TEMPERATURE, DEFAULT_TIMEOUT_S, adapt_options, params_for
 from .narration import NarratorOut, difficulty_tier
 from .phrases import driver_phrases, narrated, suggestions
 from .prompts import narrator_instructions
+from .trace import TraceStep, code_step, llm_step
 from .verifier import verify
 
-NARRATOR_TIMEOUT_S = 15.0   # per model call
+NARRATOR_TIMEOUT_S = DEFAULT_TIMEOUT_S   # per model call, for a deployment not in models.MODEL_PARAMS
 MAX_ATTEMPTS = 3            # the first call and up to two retries, each with the Verifier's reasons
-TEMPERATURE = 0.2
+TEMPERATURE = DEFAULT_TEMPERATURE
 
 
 class NarratorAgent(Protocol):
@@ -54,6 +56,7 @@ class NarrationResult(BaseModel):
     reasons: list[str]         # every rejection, prefixed "attempt N: "; empty when accepted first time
     notes: list[str] = []      # the Verifier's notes on the accepted line (e.g. no difficulty word)
     latency_s: float           # wall time of all attempts
+    trace: list[TraceStep] = []   # a narrator step per model call and a verifier step per answer (trace.py)
     # the NarratorOut of each attempt the Verifier rejected; in memory only, never serialised or shown in the UI
     rejected: list[NarratorOut] = Field(default_factory=list, exclude=True)
 
@@ -193,11 +196,16 @@ def _message(facts: dict[str, Any], rejected: list[str]) -> str:
 
 
 class Narrator:
-    def __init__(self, agent: NarratorAgent, *, timeout_s: float = NARRATOR_TIMEOUT_S, mode: str | None = None):
+    def __init__(self, agent: NarratorAgent, *, timeout_s: float | None = None, mode: str | None = None,
+                 model: str | None = None):
         """mode: the phrase mode for the facts and the Verifier (default config.phrase_mode()); give the
-        agent the same mode's brief (build_agent(..., mode=...))."""
+        agent the same mode's brief (build_agent(..., mode=...)). model: the agent's deployment (default
+        FoundryConfig.from_env().deployment); its request parameters and timeout come from models.MODEL_PARAMS.
+        timeout_s overrides the model's timeout."""
         self.agent = agent
-        self.timeout_s = timeout_s
+        self.model = model or FoundryConfig.from_env().deployment
+        self.params = params_for(self.model)
+        self.timeout_s = timeout_s if timeout_s is not None else self.params.timeout_s
         self.mode = mode or phrase_mode()
         self._results: dict[str, NarrationResult] = {}
         self._locks: dict[str, asyncio.Lock] = {}
@@ -226,32 +234,45 @@ class Narrator:
         start = time.perf_counter()
         reasons: list[str] = []
         candidates: list[NarratorOut] = []   # answers the Verifier rejected, for diagnostics only
+        trace: list[TraceStep] = []
         attempts = 0
+        options = adapt_options({"response_format": NarratorOut, "temperature": TEMPERATURE}, self.params)
 
         def result(line: NarratorOut | None, notes: list[str] | None = None) -> NarrationResult:
             return NarrationResult(line=line, attempts=attempts, reasons=reasons, notes=notes or [],
-                                   latency_s=time.perf_counter() - start, rejected=candidates)
+                                   latency_s=time.perf_counter() - start, trace=trace, rejected=candidates)
 
         try:
             facts = build_facts(bundle, self.mode, slot)
             rejected: list[str] = []
             while attempts < MAX_ATTEMPTS:
                 attempts += 1
-                response = await asyncio.wait_for(
-                    self.agent.run(_message(facts, rejected),
-                                   options={"response_format": NarratorOut, "temperature": TEMPERATURE}),
-                    timeout=self.timeout_s,
-                )
+                call_start = time.perf_counter()
+                try:
+                    response = await asyncio.wait_for(self.agent.run(_message(facts, rejected), options=options),
+                                                      timeout=self.timeout_s)
+                except Exception as exc:   # recorded here, handled below
+                    why = (f"timeout after {self.timeout_s:g} s" if isinstance(exc, TimeoutError)
+                           else f"error {type(exc).__name__}: {str(exc)[:200]}")
+                    trace.append(llm_step("narrator", self.model, attempts, False,
+                                          time.perf_counter() - call_start, [why]))
+                    raise
+                call_s = time.perf_counter() - call_start
                 try:
                     out = response.value
                 except ValueError as exc:   # pydantic ValidationError is a ValueError
                     out, rejected = None, [f"format: the answer is not a valid NarratorOut ({type(exc).__name__})"]
+                    trace.append(llm_step("narrator", self.model, attempts, False, call_s, rejected))
                 else:
                     if not isinstance(out, NarratorOut):
                         rejected = ["format: no NarratorOut in the answer"]
+                        trace.append(llm_step("narrator", self.model, attempts, False, call_s, rejected))
                     else:
+                        trace.append(llm_step("narrator", self.model, attempts, True, call_s))
                         checked = verify(out, bundle, self.mode)
                         rejected = checked.reasons
+                        trace.append(code_step("verifier", ok=not rejected, attempt=attempts, reasons=rejected,
+                                               notes=checked.notes))
                         if not rejected:
                             return result(out, checked.notes)
                         candidates.append(out)

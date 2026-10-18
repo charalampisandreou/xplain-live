@@ -22,12 +22,17 @@ minutes and calls no model:
              the gate's sort), each entry with its rank in the previous snapshot of the same scope
              and kind (None: new); the page shows the latest snapshot with t <= now
   * tier:    each moment's difficulty tier words (narration.difficulty_tier), for the plate
+  * trace:   (schema "5") per commentated moment, its agent steps (trace.TraceStep: one per agent per
+             attempt, Verifier reasons, model, latency of model calls); recaps keyed by scope (empty until the
+             RecapEditor exists). For a later Analyst screen only; Studio does not show it.
+             A schema "4" file (no trace) still loads as a MatchBundle.
 
 Narration: by default the Agent Framework workflow (workflow.run_match, needs az login). --no-llm
 calls no model: commentated moments without a stored line are "not_run". A line is written once per
 moment_id: when --out already holds a bundle of the same match_id and model_version (schema "1" or
 "2"), its accepted lines are put into the Narrator's cache and the model is not called for them again; the final
-Verifier check still runs on every reused line. --fresh ignores the old file.
+Verifier check still runs on every reused line (a reused line keeps its stored Narrator steps in the
+trace). --fresh ignores the old file.
 """
 from __future__ import annotations
 
@@ -52,10 +57,12 @@ from .narrator import NarrationResult, Narrator
 from .pipeline import analyse_match, ensure_match_file, load_events, player_summary, reports
 from .schema import PITCH_LENGTH, PITCH_WIDTH, MatchMetaEvent, ShotEvent
 from .scoring import XPassScorer, find_default_model
+from .trace import TraceStep, code_step
 from .verifier import verify
-from .workflow import MomentOutcome, run_match
+from .workflow import MomentOutcome, final_step, run_match
 
-SCHEMA_VERSION = "4"
+SCHEMA_VERSION = "5"
+LOADABLE_SCHEMA_VERSIONS: tuple[str, ...] = ("4", "5")  # validate as a MatchBundle ("4": no trace)
 OLD_SCHEMA_VERSIONS: tuple[str, ...] = ("1", "2", "3")  # still read for line reuse
 RankingScope = Literal["all", "1", "2"]   # the whole match so far, or one half
 MINUTE_S = 60.0
@@ -79,7 +86,7 @@ class PlayerRef(_Strict):
 
 
 class BundleMeta(_Strict):
-    schema_version: Literal["4"] = SCHEMA_VERSION
+    schema_version: Literal["4", "5"] = SCHEMA_VERSION
     match_id: str
     home: TeamRef
     away: TeamRef
@@ -224,6 +231,13 @@ def display_mark(mark: PassMark, home_team_id: str) -> BundleMark:
                                                              home_team_id))
 
 
+class Trace(_Strict):
+    """The agent steps (trace.TraceStep) per commentated moment by moment_id, and per recap by scope."""
+
+    moments: dict[str, list[TraceStep]] = {}
+    recaps: dict[str, list[TraceStep]] = {}
+
+
 class MatchBundle(_Strict):
     meta: BundleMeta
     clock: ClockTrack
@@ -233,10 +247,17 @@ class MatchBundle(_Strict):
     players: dict[str, PlayerSummary | None]
     score: Annotated[list[ScoreEntry], Field(min_length=1)]
     rankings: list[RankingSnapshot]
+    trace: Trace = Trace()
 
     @model_validator(mode="after")
     def _check_links(self) -> MatchBundle:
         ids = {m.bundle.moment.moment_id for m in self.moments}
+        live_ids = {m.bundle.moment.moment_id for m in self.moments if m.bundle.qualifies_live}
+        unknown = [i for i in self.trace.moments if i not in live_ids]
+        if unknown:
+            raise ValueError(f"trace names moments that are not commentated: {unknown}")
+        if self.meta.schema_version == "4" and (self.trace.moments or self.trace.recaps):
+            raise ValueError('a schema "4" bundle has no trace')
         for r in self.reports:
             missing = [i for ids_ in r.highlights.values() for i in ids_ if i not in ids]
             if missing:
@@ -388,6 +409,8 @@ def build_bundle(events: Sequence, scorer: XPassScorer, outcomes: Sequence[Momen
         players={p.player_id: player_summary(marks, p.player_id) for p in meta.players},
         score=score_track(events, meta, names),
         rankings=ranking_snapshots(bundles, cfg.highlights_per_kind),
+        trace=Trace(moments={b.moment.moment_id: list(o.trace) for b in bundles
+                             if b.qualifies_live and (o := by_id.get(b.moment.moment_id)) is not None and o.trace}),
     )
 
 
@@ -410,8 +433,15 @@ def stored_lines(path: Path, match_id: str, model_version: str) -> dict[str, Nar
     return {m.bundle.moment.moment_id: NarrationResult(line=m.line, attempts=m.narration.attempts,
                                                         reasons=list(m.narration.reasons),
                                                         notes=list(m.narration.verdict_notes),
-                                                        latency_s=m.narration.latency_s)
+                                                        latency_s=m.narration.latency_s,
+                                                        trace=narrator_steps(old.trace, m.bundle.moment.moment_id))
             for m in old.moments if m.line is not None}
+
+
+def narrator_steps(trace: Trace, moment_id: str) -> list[TraceStep]:
+    """The Narrator's own steps of a moment (its model calls and Verifier checks, not the final check): what a
+    reused line carries; the workflow adds the other steps again."""
+    return [s for s in trace.moments.get(moment_id, []) if s.agent in ("narrator", "verifier") and not s.final]
 
 
 def _old_schema_lines(text: str, match_id: str, model_version: str) -> dict[str, NarrationResult]:
@@ -458,9 +488,11 @@ def offline_outcomes(events: Sequence, scorer: XPassScorer, stored: dict[str, Na
             continue
         verdict = verify(result.line, b, mode)
         reasons = list(result.reasons) + [f"final check: {r}" for r in verdict.reasons]
+        trace = [code_step("analyst", notes=list(b.qualified_by)), code_step("explainer"), *result.trace,
+                 final_step(verdict, result.attempts)]
         out.append(MomentOutcome(moment=b.moment, bundle=b, line=result.line if verdict.ok else None,
                                  verdict=verdict, attempts=result.attempts, reasons=reasons,
-                                 latency_s=result.latency_s))
+                                 latency_s=result.latency_s, trace=trace))
     return out
 
 

@@ -76,7 +76,7 @@
       return;
     }
     const bundle = await res.json();
-    if (!bundle.meta || bundle.meta.schema_version !== '4') {
+    if (!bundle.meta || (bundle.meta.schema_version !== '4' && bundle.meta.schema_version !== '5')) {
       showStatus('The match bundle "' + name + '" has an old schema; rebuild it with python -m xplain.bundle.');
       return;
     }
