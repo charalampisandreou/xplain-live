@@ -14,12 +14,14 @@ import pytest
 
 from xplain.bundle import build_bundle
 from xplain.pipeline import player_summary
+from xplain.recap import half_up
 
 from .test_bundle import narrated
 from .test_pipeline import WIDE, seed42_events, tiny_model, tiny_scorer  # noqa: F401  (fixtures)
 from .test_workflow import GOOD
 
 PLAYER_JS = Path(__file__).resolve().parents[1] / "src" / "xplain" / "web" / "player.js"
+BUNDLE_3001 = Path(__file__).resolve().parents[1] / "data" / "bundle_seed3001.json"
 NODE = shutil.which("node")
 pytestmark = pytest.mark.skipif(NODE is None, reason="node is not on PATH: the player.js parity test needs it")
 
@@ -114,6 +116,10 @@ def test_player_numbers_equal_python(match, tmp_path):
             for k_js, k_py in (("completionRate", "completion_rate"), ("meanXp", "mean_xp"),
                                ("pvaTotal", "pva_total"), ("pvaPerPass", "pva_per_pass")):
                 assert s[k_js] == pytest.approx(getattr(ref, k_py), abs=1e-12), (case, k_js)
+            # the recap card's counting: the sum of xP in seq order, rounded half-up; completed minus that
+            expected = half_up(sum(m.xp for m in own))
+            assert (s["expected"], s["vsExpected"]) == (expected, ref.completed - expected), case
+            assert s["expectedRate"] == expected / ref.passes, case
         assert js["hardest"] == hardest_completed(own), case
         assert js["narrated"] == narrated_ids(b, pid, now, period), case
         assert js["tiers"] == tier_counts(own), case
@@ -136,6 +142,39 @@ def test_unknown_player_and_kick_off_give_nothing(match, tmp_path):
         assert js == {"event_ids": [], "stats": None, "hardest": None, "narrated": [], "moments": [],
                       "tiers": {"very easy": 0, "easy": 0, "tricky": 0, "difficult": 0, "very difficult": 0},
                       "completedTiers": {"very easy": 0, "easy": 0, "tricky": 0, "difficult": 0, "very difficult": 0}}
+
+
+def synthetic(xps):
+    """Completed passes of one player with these xP values (exact in binary), in seq order."""
+    return [{"event_id": f"e{i}", "player_id": "p", "t": float(i), "period": 1, "seq": i, "completed": True,
+             "xp": x, "delta": 1.0 - x} for i, x in enumerate(xps)]
+
+
+@pytest.mark.parametrize("xps, expected", [([0.75, 0.75, 0.5, 0.5], 3), ([0.25, 0.25], 1)])
+def test_expected_rounds_a_sum_ending_in_half_up(tmp_path, xps, expected):
+    total = sum(xps)
+    assert total % 1 == 0.5 and half_up(total) == expected
+    assert round(total) != expected   # Python's round() goes to even here: the case tells the two apart
+    got = run_node(tmp_path, synthetic(xps), [], [{"player": "p", "now": None, "period": None}])
+    s = got[0]["stats"]
+    assert (s["expected"], s["vsExpected"], s["expectedRate"]) == (expected, len(xps) - expected, expected / len(xps))
+
+
+@pytest.mark.skipif(not BUNDLE_3001.exists(), reason="data/ is git-ignored: the demo bundle is local only")
+@pytest.mark.parametrize("scope", ["half_time", "full_time"])
+def test_star_numbers_in_players_equal_the_recap_card(tmp_path, scope):
+    """The star's Players numbers where Studio opens the recap equal the card's star (data/bundle_seed3001.json)."""
+    b = json.loads(BUNDLE_3001.read_text(encoding="utf-8"))
+    star = b["recaps"][scope]["card"]["star"]
+    assert star is not None
+    if scope == "full_time":
+        now, period = b["clock"]["last_event_t"], None
+    else:   # the last first-half pass, scope 1st (app.js idx.recapT.half_time)
+        now, period = [m for m in b["marks"] if m["period"] == 1][-1]["t"], 1
+    got = run_node(tmp_path, b["marks"], b["moments"], [{"player": star["player_id"], "now": now, "period": period}])
+    s = got[0]["stats"]
+    card = (star["passes"], star["completed"], star["expected"], star["pva"])
+    assert (s["passes"], s["completed"], s["expected"], s["vsExpected"]) == card
 
 
 def mean(values):

@@ -191,7 +191,7 @@ def test_players_mode_is_on_the_page(client):
     for node in ('id="pv-passes"', 'id="pv-completed"', 'id="pv-expected"', 'id="pv-vs"', 'id="pv-bandbar"',
                  'id="pv-rows"', 'aria-label="Pass map key"'):
         assert node in view
-    assert '>Expected <span class="xp">xP</span><' in view
+    assert '<div class="pv-label">Expected</div>' in view   # the recap's word: a count, not mean xP
     assert "recap" not in view.lower()   # Players mode has no recap
 
 
@@ -258,6 +258,11 @@ def test_players_stats_show_count_and_percent_on_one_grid(client):
     js = client.get("/static/player.js").text
     assert '<span id="pv-completed">–</span><span class="pv-sub" id="pv-completed-pct"></span>' in html
     assert "setText('pv-completed', s ? String(s.completed) : '–');" in js
+    # Expected as the recap counts it, with its rate over the passes; vs expected a signed whole number
+    assert '<span id="pv-expected">–</span><span class="pv-sub" id="pv-expected-pct"></span>' in html
+    assert "setText('pv-expected', s ? String(s.expected) : '–');" in js
+    assert "setText('pv-expected-pct', s ? api.percent(s.expectedRate) + '%' : '');" in js
+    assert "api.signed(s.vsExpected)" in js and "signed1" not in js
     grid = css.split("\n.pv-stats {")[1].split("}")[0]
     assert "repeat(4, 1fr)" in grid and "align-items: baseline" in grid
     assert "tabular-nums" in css.split("\n.pv-value {")[1].split("}")[0]

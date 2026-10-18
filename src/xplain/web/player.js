@@ -4,7 +4,9 @@
 // fields already in the bundle's marks, at the current clock (bundle.players is full time only,
 // so it would give the result away). Each function that yields a number mirrors a Python
 // reference and is checked against it in tests/test_player_js.py:
-//   playerPasses + playerStats  ->  pipeline.player_pass_map / player_summary(marks, id, as_of_t)
+//   playerPasses + playerStats  ->  pipeline.player_pass_map / player_summary(marks, id, as_of_t);
+//                                  expected, vsExpected, expectedRate -> the recap card's counting:
+//                                  recap.half_up(sum of xP), completed - expected, expected / passes
 //   hardestCompleted            ->  the completed pass with the lowest xp, ties to the earlier seq
 //   narratedFor                 ->  the player's moments with a line, t <= now, in seq order
 //   tierCounts                  ->  how many of the passes have each difficulty tier (mark.tier.en)
@@ -33,6 +35,8 @@
 
   // Counts, completion rate, mean xP and PVA of the passes: pipeline.player_summary. Sums run in
   // seq order from 0, as Python's sum does, so the floats match. null when there are no passes.
+  // expected and vsExpected count as the recap card does (recap.star_player): the sum of xP rounded
+  // half-up to a whole number, and completed minus that (not rounded again).
   function playerStats(passes) {
     const n = passes.length;
     if (n === 0) return null;
@@ -42,6 +46,8 @@
       xp += m.xp;
       pva += m.delta;
     }
+    // Math.round equals ROUND_HALF_UP (recap.half_up) here only because a sum of xP is never negative
+    const expected = Math.round(xp);
     return {
       passes: n,
       completed: done,
@@ -49,6 +55,9 @@
       meanXp: xp / n,
       pvaTotal: pva,
       pvaPerPass: pva / n,
+      expected,
+      vsExpected: done - expected,
+      expectedRate: expected / n,
     };
   }
 
@@ -294,12 +303,6 @@
     return node;
   }
 
-  // "vs expected": completed passes minus the completions xP expected (pvaTotal), to one decimal
-  function signed1(x) {
-    const r = Math.round(Math.abs(x) * 10) / 10;
-    return r === 0 ? '0.0' : (x < 0 ? '−' : '+') + r.toFixed(1);
-  }
-
   // Player mode at the clock and in the scope: the name, the pass map, the numbers, the bands and
   // the moments. Redrawn only when the player, the scope or the player's passes change.
   // ctx: bundle, now, scope, playerId, notStarted.
@@ -384,8 +387,10 @@
     setText('pv-passes', s ? String(s.passes) : '–');
     setText('pv-completed', s ? String(s.completed) : '–');
     setText('pv-completed-pct', s ? api.percent(s.completionRate) + '%' : '');
-    setText('pv-expected', s ? api.percent(s.meanXp) + '%' : '–');
-    const text = s ? signed1(s.pvaTotal) : '–';
+    // Completed and Expected: a count with its rate over the passes (75%, 68%); vs expected as the recap
+    setText('pv-expected', s ? String(s.expected) : '–');
+    setText('pv-expected-pct', s ? api.percent(s.expectedRate) + '%' : '');
+    const text = s ? api.signed(s.vsExpected) : '–';
     setText('pv-vs', text);
     $('pv-vs').classList.toggle('pos', text[0] === '+');
     $('pv-vs').classList.toggle('neg', text[0] === '−');

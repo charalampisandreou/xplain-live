@@ -14,18 +14,20 @@ overlay cards that a graphics system can render alongside the match.
 > a code Verifier (five rotating sentence frames, see "Narration contract"), an Agent Framework
 > workflow that runs them end to end (Analyst -> Explainer -> Narrator -> Verifier), a per-match JSON
 > bundle, the Studio web page that plays the bundle on the match clock (goal flash, stepping through
-> narrated moments, an in-plate narration language switch), a script that compares Narrator models
+> narrated moments, an in-plate narration language switch, half-time and full-time recap cards), the
+> Recap Editor (the recap texts, with every number filled in by code), Players mode (one player's pass
+> map, numbers and moments up to the match clock), a script that compares Narrator models
 > (`scripts/compare_models.py`, see "Model comparison"), and the Azure deployment (Container Apps from
 > an ARM template, see "Deploy to Azure"). The deployed page serves a precomputed bundle: its lines were
-> generated with Foundry (gpt-4.1-mini) and checked by the Verifier when the bundle was built.
+> generated with Foundry (gpt-6.1-sol) and checked by the Verifier when the bundle was built.
 > The model files and the demo bundle are published in the open-licence release
 > [data-v1](https://github.com/charalampisandreou/xplain-live/releases/tag/data-v1) (model files MIT,
 > bundle CC BY 4.0). The bundle there was replaced after the narration retune; its SHA-256 is
-> `1674038d40202b7ac1a16bd4343407af2e41eaedee2fa45620dd57f48e56d864`.
+> `be6614f5edc14e0194a54e81b9abd157e58af55acb34e8cf3ca7e9cde1b41a73`.
 >
-> Not built yet: the Recap Editor, the agent trace (planned for the Analyst screen), the Analyst and
-> Player screens, personalization modes (analyst, casual fan, player focus, favourite club or player),
-> and live mode (the deployed app calling Foundry itself).
+> Not built yet: the Analyst screen, the agent trace (planned for the Analyst screen), personalization
+> modes (analyst, casual fan, player focus, favourite club or player), and live mode (the deployed app
+> calling Foundry itself).
 > Results and demo sections are filled in as they are measured.
 
 ## What it does
@@ -258,8 +260,9 @@ language as the Studio:
   `pass_geometry`, so the player always attacks right in both halves): green arrows completed, red
   dashed lines ending in a cross not completed, a cyan ring at the start of each surprise moment and a
   white dot at the start of the latest pass. All / 1st / 2nd filter it; it grows as the player passes.
-- **Numbers so far.** Passes, completion, expected completion (mean xP), vs expected (completed passes
-  minus the completions xP expected), a bar of the completed passes per difficulty band, and the player's
+- **Numbers so far.** Passes, completed (with its rate), expected (the sum of xP rounded half-up, as the
+  recap card counts it, with its rate over the passes), vs expected (completed minus expected), a bar of
+  the completed passes per difficulty tier (the narration's five words), and the player's
   surprise moments with their PVA (hover or focus a row to bring its pass forward on the map).
 - **Narration plate** with only this player's narrated moments (the latest; chevrons or `[` `]` page
   back), or "No commentated moment for NAME yet."
@@ -267,8 +270,9 @@ language as the Studio:
   Esc).
 
 These numbers are the one place the page computes anything (the browser computation exception): sums,
-counts and means over the bundle's marks at the clock, in `src/xplain/web/player.js`, each checked
-against its Python twin (`pipeline.player_summary` and others) in `tests/test_player_js.py`, which runs
+counts, means and rates over the bundle's marks at the clock, and the xP sum rounded half-up, in
+`src/xplain/web/player.js`, each checked against its Python twin (`pipeline.player_summary`,
+`recap.half_up` and others) in `tests/test_player_js.py`, which runs
 `player.js` under Node (skipped when `node` is not installed).
 
 ## Docker

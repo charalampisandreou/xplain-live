@@ -149,7 +149,7 @@
       enterReplay(r.bundle.moment.moment_id);
     }
     // ?mode=player opens Player mode, with ?player=<player_id> when it names one of the 22
-    XplainPlayer.mount({ teamName: (id) => idx.teams[id] || '', teamCode: (id) => teamCode(id, ''), percent, pva,
+    XplainPlayer.mount({ teamName: (id) => idx.teams[id] || '', teamCode: (id) => teamCode(id, ''), percent, pva, signed,
       bundle, current: () => ({ bundle, now: state.now, player: state.player }),
       setPlayer: (id) => { state.player = id; setMode('player'); } });
     if (bundle.meta.players.some((p) => p.player_id === params.get('player'))) state.player = params.get('player');
