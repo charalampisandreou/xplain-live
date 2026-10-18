@@ -131,7 +131,7 @@
       enterReplay(r.bundle.moment.moment_id);
     }
     // ?mode=player opens Player mode, with ?player=<player_id> when it names one of the 22
-    XplainPlayer.mount({ teamName: (id) => idx.teams[id] || '', percent, pva });
+    XplainPlayer.mount({ teamName: (id) => idx.teams[id] || '', percent, pva, enterReplay });
     if (bundle.meta.players.some((p) => p.player_id === params.get('player'))) state.player = params.get('player');
     if (params.get('mode') === 'player') setMode('player');
     requestAnimationFrame(frame);
@@ -380,7 +380,8 @@
     renderNarrNav(narr);
     if (goal >= 0) renderGoalPlate(goal); else renderPlate(plate);
     if (state.mode === 'player') {
-      XplainPlayer.render({ bundle: state.bundle, now: state.now, scope: state.scope, playerId: state.player });
+      XplainPlayer.render({ bundle: state.bundle, now: state.now, scope: state.scope, playerId: state.player,
+        selected: plate ? plate.bundle.moment.moment_id : null, replay: state.replay, notStarted });
     }
   }
 

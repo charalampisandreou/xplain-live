@@ -36,6 +36,8 @@ const out = d.cases.map((c) => {
     stats: P.playerStats(passes),
     hardest: hardest ? hardest.event_id : null,
     narrated: P.narratedFor(d.moments, c.player, c.now, c.period).map((e) => e.bundle.moment.moment_id),
+    bands: P.bandCounts(passes),
+    moments: P.momentsFor(d.moments, c.player, c.now, c.period).map((e) => e.bundle.moment.moment_id),
   };
 });
 process.stdout.write(JSON.stringify(out));
@@ -76,6 +78,16 @@ def narrated_ids(b, player_id, now, period):
     return [m.moment_id for m in sorted(found, key=lambda m: m.seq)]
 
 
+def band_counts(marks):
+    return {band: sum(m.band == band for m in marks) for band in ("routine", "moderate", "hard", "exceptional")}
+
+
+def commentated_ids(b, player_id, now, period):
+    found = [e.bundle.moment for e in b.moments if e.bundle.qualifies_live and e.bundle.moment.player_id == player_id
+             and e.bundle.moment.t <= now and (period is None or e.bundle.moment.period == period)]
+    return [m.moment_id for m in sorted(found, key=lambda m: -m.seq)]
+
+
 def test_player_numbers_equal_python(match, tmp_path):
     b = match
     cases = [{"player": p.player_id, "now": now, "period": period}
@@ -100,6 +112,8 @@ def test_player_numbers_equal_python(match, tmp_path):
                 assert s[k_js] == pytest.approx(getattr(ref, k_py), abs=1e-12), (case, k_js)
         assert js["hardest"] == hardest_completed(own), case
         assert js["narrated"] == narrated_ids(b, pid, now, period), case
+        assert js["bands"] == band_counts(own), case
+        assert js["moments"] == commentated_ids(b, pid, now, period), case
         narrated_seen += bool(js["narrated"])
         hardest_seen += js["hardest"] is not None
     assert narrated_seen > 0 and hardest_seen > 0   # the cases reach both, so the comparison means something
@@ -114,7 +128,8 @@ def test_unknown_player_and_kick_off_give_nothing(match, tmp_path):
         {"player": first, "now": -1.0, "period": None},
     ])
     for js in got:
-        assert js == {"event_ids": [], "stats": None, "hardest": None, "narrated": []}
+        assert js == {"event_ids": [], "stats": None, "hardest": None, "narrated": [], "moments": [],
+                      "bands": {"routine": 0, "moderate": 0, "hard": 0, "exceptional": 0}}
 
 
 def test_player_js_names_its_python_references():
