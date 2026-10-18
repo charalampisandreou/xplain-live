@@ -39,6 +39,8 @@
     lang: 'en',
     scope: 'all',      // which ranking the tables show: whole match so far, or one half
     replay: null,      // moment_id being replayed: pitch, plate and tab show it; clock and tables run on
+    mode: 'studio',    // 'studio' or 'player' (player.js: one player's match); both share the state above
+    player: null,      // Player mode's player_id
     tableSig: {},      // per table, what it last drew (rows are rebuilt only when this changes)
     lastFrame: null,
     renderedKey: '',
@@ -128,6 +130,10 @@
       state.now = Math.max(state.now, r.bundle.moment.t);
       enterReplay(r.bundle.moment.moment_id);
     }
+    // ?mode=player opens Player mode, with ?player=<player_id> when it names one of the 22
+    XplainPlayer.mount({ teamName: (id) => idx.teams[id] || '', percent, pva });
+    if (bundle.meta.players.some((p) => p.player_id === params.get('player'))) state.player = params.get('player');
+    if (params.get('mode') === 'player') setMode('player');
     requestAnimationFrame(frame);
     fitLines();
   }
@@ -214,6 +220,37 @@
     }
   }
 
+  // Studio or Player. Entering Player mode without a player picks one (defaultPlayer). The URL keeps
+  // ?mode and ?player for demo links, the way it drops ?replay on leaving replay.
+  function setMode(mode) {
+    state.mode = mode;
+    if (mode === 'player' && !state.player) state.player = defaultPlayer();
+    $('stage').classList.toggle('mode-player', mode === 'player');
+    for (const b of $('mode').querySelectorAll('button[data-mode]')) {
+      const on = b.dataset.mode === mode;
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-pressed', String(on));
+    }
+    const url = new URL(location.href);
+    if (mode === 'player') {
+      url.searchParams.set('mode', 'player');
+      if (state.player) url.searchParams.set('player', state.player);
+    } else {
+      url.searchParams.delete('mode');
+      url.searchParams.delete('player');
+    }
+    history.replaceState(null, '', url);
+  }
+
+  // the player of the replayed moment, else of the plate's moment, else of the live pass, else the first listed
+  function defaultPlayer() {
+    const sel = selectedIndex();
+    const plate = plateMoment(sel);
+    const from = state.replay ? idx.moments.get(state.replay).bundle.moment
+      : plate ? plate.bundle.moment : sel >= 0 ? idx.marks[sel] : null;
+    return (from && from.player_id) || state.bundle.meta.players[0].player_id;
+  }
+
   function step(dir) {
     const live = liveIndex();
     if (live < 0) return;
@@ -277,6 +314,9 @@
     for (const b of $('scope').querySelectorAll('button')) {
       b.addEventListener('click', () => setScope(b.dataset.scope));
     }
+    for (const b of $('mode').querySelectorAll('button[data-mode]')) {
+      b.addEventListener('click', () => setMode(b.dataset.mode));
+    }
     $('prev').addEventListener('click', () => step(-1));
     $('next').addEventListener('click', () => step(1));
     $('live').addEventListener('click', backToLive);
@@ -324,7 +364,7 @@
     const goal = state.goal && isLive() ? state.goal.score : -1;
     const key = [sel, live, tick, score, half, state.scope, snaps.map((s) => (s ? s.t : '-')).join('|'),
       plate ? plate.bundle.moment.moment_id : '-', state.lang, state.follow, state.replay,
-      narr.reached, narr.pos, goal].join('/');
+      narr.reached, narr.pos, goal, state.mode, state.player].join('/');
     if (key === state.renderedKey) return;   // every DOM write below runs in this one animation frame
     state.renderedKey = key;
 
@@ -339,6 +379,9 @@
     KINDS.forEach((k, i) => renderTable(k, snaps[i], plate, notStarted));
     renderNarrNav(narr);
     if (goal >= 0) renderGoalPlate(goal); else renderPlate(plate);
+    if (state.mode === 'player') {
+      XplainPlayer.render({ bundle: state.bundle, now: state.now, scope: state.scope, playerId: state.player });
+    }
   }
 
   // --- transitions ---------------------------------------------------------------------------

@@ -27,15 +27,18 @@
   <!-- product mark + modes -->
   <div class="topright">
     <div class="mark">xPlain <span>Live</span></div>
-    <div class="seg" role="group" aria-label="Mode">
-      <button type="button" class="on" aria-pressed="true">Studio</button>
+    <div class="seg" role="group" aria-label="Mode" id="mode">
+      <button type="button" data-mode="studio" class="on" aria-pressed="true">Studio</button>
       <button type="button" disabled aria-disabled="true" title="Coming soon">Analyst</button>
-      <button type="button" disabled aria-disabled="true" title="Coming soon">Player</button>
+      <button type="button" data-mode="player" aria-pressed="false">Player</button>
     </div>
   </div>
 
   <!-- title: its wording lives here only -->
   <h1 class="title">Pass outliers</h1>
+
+  <!-- Player mode: the picker trigger in the title's slot (player.js sets the name) -->
+  <button type="button" class="player-pick" id="player-pick" aria-label="Player"><span id="player-pick-name"></span><span class="caret" aria-hidden="true">▾</span></button>
 
   <!-- pitch, with the possession tab on its top edge -->
   <div class="pitch">
@@ -145,9 +148,21 @@
     </div>
   </div>
 
+  <!-- Player mode: the player's column, in the tables' slot -->
+  <section class="player-view" id="player-view" aria-label="Player focus">
+    <div class="pv-head"><span class="pv-kicker">Player focus</span><span class="pv-team" id="pv-team"></span></div>
+    <div class="pv-stats">
+      <div class="pv-stat"><div class="pv-label">Passes</div><div class="pv-value" id="pv-passes">–</div></div>
+      <div class="pv-stat"><div class="pv-label">Completed</div><div class="pv-value" id="pv-completed">–</div></div>
+      <div class="pv-stat"><div class="pv-label">Expected <span class="xp">xP</span></div><div class="pv-value" id="pv-expected">–</div></div>
+      <div class="pv-stat"><div class="pv-label">PVA</div><div class="pv-value" id="pv-pva">–</div></div>
+    </div>
+  </section>
+
   <div class="status" id="status" role="status" hidden></div>
 </main>
 </div>
+<script src="/static/player.js"></script>
 <script src="/static/app.js"></script>
 </body>
 </html>
