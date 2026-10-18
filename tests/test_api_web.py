@@ -93,7 +93,7 @@ def test_xp_keeps_its_casing(client):
         assert "XP " not in text and "XP<" not in text and "'XP" not in text
     assert ".xp { text-transform: none; }" in css
     assert '<span class="xp">xP</span>' in html.split('id="lower-xp"')[1]   # the upper-case plate meta
-    plate = js.split("function renderPlate(entry)")[1].split("async function fitLines")[0]
+    plate = js.split("function renderPlate(")[1].split("async function fitLines")[0]
     assert "' · xP" not in plate and "'xP" not in plate   # the meta no longer writes xP as text
 
 
@@ -113,7 +113,7 @@ def test_plate_transitions_are_light(client):
     js = client.get("/static/app.js").text
     css = client.get("/static/app.css").text
     assert "offsetWidth" not in js   # no forced layout to restart a fade
-    plate = js.split("function renderPlate(entry)")[1].split("// --- stage scaling")[0]
+    plate = js.split("function renderPlate(")[1].split("// --- stage scaling")[0]
     assert "innerHTML" not in plate and "textContent" in plate
     assert "prefers-reduced-motion: reduce" in js and "reducedMotion.matches" in js
     assert "tabular-nums" in css and "min-width: 7ch" in css
@@ -163,7 +163,7 @@ def test_pva_column_shows_a_dash_or_the_goal(client):
     goal = js.split("function renderGoalPlate(i)")[1].split("function renderNarrNav")[0]
     assert "$('lower-pva').textContent = 'GOAL'" in goal
     assert "$('lower-pva-label').textContent = s.minute_label + \"'\"" in goal   # never computed here
-    plate = js.split("function renderPlate(entry)")[1].split("async function fitLines")[0]
+    plate = js.split("function renderPlate(")[1].split("async function fitLines")[0]
     assert "$('lower-pva').textContent = '–'" in plate and plate.count("'lower-pva-label').textContent = 'PVA'") == 2
     # the column is visible in every state (it used to be hidden while waiting and on a goal)
     assert ".body > .right { visibility: hidden" not in css and ".right { visibility: hidden" not in css
