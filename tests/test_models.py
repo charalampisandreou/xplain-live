@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from types import SimpleNamespace
 
 import pytest
@@ -22,7 +23,7 @@ class RecordingAgent:
 def test_default_model_is_the_baseline():
     assert params_for("gpt-4.1-mini") == DEFAULT_PARAMS
     assert DEFAULT_PARAMS.temperature == TEMPERATURE == 0.2 and DEFAULT_PARAMS.timeout_s == DEFAULT_TIMEOUT_S == 15.0
-    assert params_for("not-a-deployment") == DEFAULT_PARAMS and params_for(None) == DEFAULT_PARAMS
+    assert params_for("not-a-deployment") == DEFAULT_PARAMS and params_for(None) == DEFAULT_PARAMS   # with a warning
 
 
 def test_reasoning_model_params():
@@ -52,3 +53,16 @@ def test_model_comes_from_config_and_timeout_can_be_overridden(monkeypatch):
     narrator = Narrator(RecordingAgent(), mode="hints")
     assert narrator.model == "gpt-6.1-sol" and narrator.timeout_s == 60.0
     assert Narrator(RecordingAgent(), mode="hints", timeout_s=3.0).timeout_s == 3.0
+
+
+def test_unknown_model_logs_a_warning_with_the_settings_used(caplog):
+    with caplog.at_level(logging.WARNING, logger="xplain.models"):
+        assert params_for("gpt-9-turbo") == DEFAULT_PARAMS
+    text = caplog.text
+    assert "'gpt-9-turbo'" in text and "default settings" in text
+    assert "temperature=0.2" in text and "timeout_s=15.0" in text
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger="xplain.models"):
+        params_for("gpt-4.1-mini")
+        params_for("gpt-6.1-sol")
+    assert caplog.text == ""   # known models: no warning

@@ -7,12 +7,15 @@ to call it. The values come from scripts/compare_models.py, where each was measu
   * gpt-4.1:      same parameters (tried and dropped: near-identical lines, about 5x the cost)
   * gpt-6.1-sol:  a reasoning model that rejects any temperature but the default 1, so none is sent; it takes
                   reasoning_effort and max_completion_tokens, and gets 60 s per call
-A deployment not in the table gets DEFAULT_PARAMS.
+A deployment not in the table gets DEFAULT_PARAMS, with a logged warning that names it and the settings used.
 """
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Any
+
+log = logging.getLogger(__name__)
 
 DEFAULT_TEMPERATURE = 0.2
 DEFAULT_TIMEOUT_S = 15.0    # per model call
@@ -38,8 +41,13 @@ MODEL_PARAMS: dict[str, ModelParams] = {
 
 
 def params_for(model: str | None) -> ModelParams:
-    """The parameters of a deployment; DEFAULT_PARAMS for one not in MODEL_PARAMS (or None)."""
-    return MODEL_PARAMS.get(model or "", DEFAULT_PARAMS)
+    """The parameters of a deployment; DEFAULT_PARAMS for one not in MODEL_PARAMS (or None), with a warning."""
+    params = MODEL_PARAMS.get(model or "")
+    if params is None:
+        log.warning("model %r is not in models.MODEL_PARAMS (known: %s); using the default settings: %s",
+                    model, ", ".join(MODEL_PARAMS), DEFAULT_PARAMS)
+        return DEFAULT_PARAMS
+    return params
 
 
 def adapt_options(options: dict[str, Any], params: ModelParams) -> dict[str, Any]:

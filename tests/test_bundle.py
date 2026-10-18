@@ -17,7 +17,9 @@ from xplain.bundle import (
     stored_lines,
     to_json,
 )
+from xplain.bundle import narrator_steps
 from xplain.narration import difficulty_tier
+from xplain.trace import reused
 from xplain.narrator import Narrator
 from xplain.pipeline import analyse_match, reports, timeline, write_jsonl
 from xplain.contracts import PassMark
@@ -157,11 +159,15 @@ def test_line_reuse_skips_the_model(seed42_events, tiny_scorer, online, tmp_path
     outcomes, agent = narrated(seed42_events, tiny_scorer, lambda i, f: BAD(f), stored)
     assert agent.calls == []
     again = build_bundle(seed42_events, tiny_scorer, outcomes, "hints", WIDE)
-    assert to_json(again) == to_json(online)
+    assert untraced_json(again) == untraced_json(online)   # the trace marks the reused steps (tested below)
     # partial store: only the missing moments reach the model
     first = live[0].bundle.moment.moment_id
     _, agent = narrated(seed42_events, tiny_scorer, lambda i, f: GOOD(f), {first: stored[first]})
     assert len(agent.calls) == len(live) - 1
+
+
+def untraced_json(b: MatchBundle) -> str:
+    return to_json(b.model_copy(update={"trace": bundle_mod.Trace()}))
 
 
 def test_reuse_needs_same_match_and_model(online, tmp_path):
@@ -180,7 +186,7 @@ def test_offline_reuse_runs_the_final_check(seed42_events, tiny_scorer, online, 
     stored = stored_lines(out, online.meta.match_id, online.meta.model_version)
     b = build_bundle(seed42_events, tiny_scorer, offline_outcomes(seed42_events, tiny_scorer, stored, "hints", WIDE),
                      "hints", WIDE)
-    assert to_json(b) == to_json(online)
+    assert untraced_json(b) == untraced_json(online)
     # a stored line that fails the final check is dropped
     first = next(iter(stored))
     broken = stored[first].model_copy(update={"line": stored[first].line.model_copy(update={"line_en": "A 95% pass."})})
@@ -334,8 +340,8 @@ def test_bad_snapshots_are_rejected(offline):
 
 
 def untraced(stored: dict) -> dict:
-    """Stored lines as an old-schema file gives them: no trace."""
-    return {k: v.model_copy(update={"trace": []}) for k, v in stored.items()}
+    """Stored lines as an old-schema file gives them: no stored steps (only the reused placeholder step)."""
+    return {k: v.model_copy(update={"trace": narrator_steps(None, k, v.attempts)}) for k, v in stored.items()}
 
 
 def as_schema_1(b: MatchBundle) -> str:
@@ -503,11 +509,44 @@ def test_reused_lines_keep_their_narrator_steps(online, seed42_events, tiny_scor
     path.write_text(to_json(online), encoding="utf-8")
     stored = stored_lines(path, online.meta.match_id, online.meta.model_version)
     moment_id, result = next(iter(stored.items()))
-    assert result.trace == [s for s in online.trace.moments[moment_id]
-                            if s.agent in ("narrator", "verifier") and not s.final]
+    original = online.trace.moments[moment_id]
+    assert result.trace == reused([s for s in original if s.agent in ("narrator", "verifier") and not s.final])
     outcomes, agent = narrated(seed42_events, tiny_scorer, lambda i, f: GOOD(f), stored)
     again = build_bundle(seed42_events, tiny_scorer, outcomes, "hints", WIDE)
-    assert again.trace.moments[moment_id] == online.trace.moments[moment_id]
+    assert [s.model_copy(update={"reused": False, "latency_s": None}) for s in again.trace.moments[moment_id]] ==         [s.model_copy(update={"latency_s": None}) for s in original]   # same steps, the reused ones marked
+
+
+def test_reused_steps_never_look_like_a_model_call_in_this_build(online, seed42_events, tiny_scorer, tmp_path):  # noqa: F811
+    path = tmp_path / "b.json"
+    path.write_text(to_json(online), encoding="utf-8")
+    stored = stored_lines(path, online.meta.match_id, online.meta.model_version)
+    outcomes, agent = narrated(seed42_events, tiny_scorer, lambda i, f: GOOD(f), stored)
+    assert agent.calls == []   # every line reused: no model call
+    again = build_bundle(seed42_events, tiny_scorer, outcomes, "hints", WIDE)
+    for steps in again.trace.moments.values():
+        narrator = [s for s in steps if s.agent in ("narrator", "verifier") and not s.final]
+        assert narrator and all(s.reused and s.latency_s is None for s in narrator)
+        live = [s for s in steps if not s.reused]
+        assert [s.agent for s in live] == ["analyst", "explainer", "verifier"] and live[-1].final
+        assert all(s.kind == "code" for s in live)   # nothing in this build called a model
+    # the same for --no-llm
     offline_again = build_bundle(seed42_events, tiny_scorer,
                                  offline_outcomes(seed42_events, tiny_scorer, stored, "hints", WIDE), "hints", WIDE)
-    assert offline_again.trace.moments[moment_id] == online.trace.moments[moment_id]
+    assert offline_again.trace.moments == again.trace.moments
+
+
+def test_a_line_reused_from_an_old_schema_says_its_steps_were_not_stored(online, tmp_path):
+    path = tmp_path / "v1.json"
+    path.write_text(as_schema_1(online), encoding="utf-8")
+    for result in stored_lines(path, online.meta.match_id, online.meta.model_version).values():
+        [step] = result.trace
+        assert (step.agent, step.reused, step.latency_s, step.model) == ("narrator", True, None, None)
+        assert "not stored" in step.notes[0]
+
+
+def test_a_reused_step_with_a_latency_is_rejected():
+    from xplain.trace import TraceStep
+    with pytest.raises(ValidationError):
+        TraceStep(agent="narrator", kind="llm", ok=True, reused=True, latency_s=1.0)
+    with pytest.raises(ValidationError):
+        TraceStep(agent="verifier", kind="code", ok=True, latency_s=0.1)

@@ -57,7 +57,7 @@ from .narrator import NarrationResult, Narrator
 from .pipeline import analyse_match, ensure_match_file, load_events, player_summary, reports
 from .schema import PITCH_LENGTH, PITCH_WIDTH, MatchMetaEvent, ShotEvent
 from .scoring import XPassScorer, find_default_model
-from .trace import TraceStep, code_step
+from .trace import TraceStep, code_step, reused
 from .verifier import verify
 from .workflow import MomentOutcome, final_step, run_match
 
@@ -434,14 +434,21 @@ def stored_lines(path: Path, match_id: str, model_version: str) -> dict[str, Nar
                                                         reasons=list(m.narration.reasons),
                                                         notes=list(m.narration.verdict_notes),
                                                         latency_s=m.narration.latency_s,
-                                                        trace=narrator_steps(old.trace, m.bundle.moment.moment_id))
+                                                        trace=narrator_steps(old.trace, m.bundle.moment.moment_id,
+                                                                             m.narration.attempts))
             for m in old.moments if m.line is not None}
 
 
-def narrator_steps(trace: Trace, moment_id: str) -> list[TraceStep]:
-    """The Narrator's own steps of a moment (its model calls and Verifier checks, not the final check): what a
-    reused line carries; the workflow adds the other steps again."""
-    return [s for s in trace.moments.get(moment_id, []) if s.agent in ("narrator", "verifier") and not s.final]
+def narrator_steps(trace: Trace | None, moment_id: str, attempts: int) -> list[TraceStep]:
+    """The Narrator's own steps of a moment (its model calls and Verifier checks, not the final check), marked
+    reused: what a reused line carries; the workflow adds the other steps again. With none stored (an older
+    schema), one reused narrator step that says so."""
+    steps = [s for s in (trace.moments.get(moment_id, []) if trace else [])
+             if s.agent in ("narrator", "verifier") and not s.final]
+    if not steps:
+        steps = [TraceStep(agent="narrator", kind="llm", attempt=max(attempts, 1), ok=True,
+                           notes=["line reused from an earlier bundle; its steps were not stored"])]
+    return reused(steps)
 
 
 def _old_schema_lines(text: str, match_id: str, model_version: str) -> dict[str, NarrationResult]:
@@ -461,7 +468,8 @@ def _old_schema_lines(text: str, match_id: str, model_version: str) -> dict[str,
                 continue
             out[m["bundle"]["moment"]["moment_id"]] = NarrationResult(
                 line=NarratorOut.model_validate(m["line"]), attempts=narration.attempts,
-                reasons=list(narration.reasons), notes=list(narration.verdict_notes), latency_s=narration.latency_s)
+                reasons=list(narration.reasons), notes=list(narration.verdict_notes), latency_s=narration.latency_s,
+                trace=narrator_steps(None, m["bundle"]["moment"]["moment_id"], narration.attempts))
         return out
     except (ValueError, KeyError, TypeError, AttributeError):
         return {}
