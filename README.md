@@ -235,14 +235,16 @@ bottom-right Back to live, L or Esc return to the live pass. `?replay=MOMENT_ID`
 `?replay=moment:m42-00817`) opens in replay; if the moment is later than the start time, the
 clock starts at it.
 
-The page only formats: every number, minute and ranking comes from the bundle. The tables and the
+The page only formats: every number, minute and ranking comes from the bundle (Players mode's numbers so
+far are the one exception, see below). The title reads "Live pass map" ("HT Recap" or "FT Recap" while a
+recap is shown). The tables and the
 plate show PVA (pass value added, the bundle's `delta` = outcome - xP: 1 - xP when completed, -xP
 when not) in points of completion chance, e.g. "+85%" or "−94%" (sign, round(100 * |PVA|)); the
 bar length is |PVA| on a 0..1 scale. xP is shown small in the plate as a percent with the same
 rule as the code, round(100 * xP). The pitch draws the display coordinates. A tab on the pitch's
 top edge shows the team of the selected pass on the side it attacks from, with cyan chevrons
 toward the goal it attacks (from `meta.attacks_right`; still under reduced motion). The score bug
-shows the minute and the half; the possession tab stays at the pitch's top-left, with the code
+shows the minute and the half, and HT or FT at half time and full time; the possession tab stays at the pitch's top-left, with the code
 then right-pointing chevrons when attacking right and left-pointing chevrons then the code when
 attacking left. The lower third is a cyan name tab (shirt number, player, team code and minute) on a dark body
 with the commentator's line in the chosen language, the tier and xP, and PVA on the right. The Analyst mode is not built yet.
