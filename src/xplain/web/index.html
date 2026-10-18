@@ -27,15 +27,19 @@
   <!-- product mark + modes -->
   <div class="topright">
     <div class="mark">xPlain <span>Live</span></div>
-    <div class="seg" role="group" aria-label="Mode">
-      <button type="button" class="on" aria-pressed="true">Studio</button>
+    <div class="seg" role="group" aria-label="Mode" id="mode">
+      <button type="button" data-mode="studio" class="on" aria-pressed="true">Studio</button>
       <button type="button" disabled aria-disabled="true" title="Coming soon">Analyst</button>
-      <button type="button" disabled aria-disabled="true" title="Coming soon">Player</button>
+      <button type="button" data-mode="player" aria-pressed="false">Players</button>
     </div>
   </div>
 
   <!-- title: its wording lives here only -->
   <h1 class="title">Pass outliers</h1>
+
+  <!-- Player mode: the player's name and team in the title's slot (player.js sets them), and the picker button -->
+  <h1 class="player-head"><span class="player-name" id="player-name"></span><span class="player-team" id="player-team"></span></h1>
+  <button type="button" class="player-change" id="player-pick" aria-haspopup="listbox" aria-expanded="false" aria-controls="player-picker">Change player<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg></button>
 
   <!-- pitch, with the possession tab on its top edge -->
   <div class="pitch">
@@ -145,9 +149,42 @@
     </div>
   </div>
 
+  <!-- Player mode: the player's column, in the tables' slot; every number is set by player.js -->
+  <section class="player-view" id="player-view" aria-label="Player focus">
+    <div class="pv-stats">
+      <div class="pv-stat"><div class="pv-label">Passes</div><div class="pv-value" id="pv-passes">–</div></div>
+      <div class="pv-stat"><div class="pv-label">Completed</div><div class="pv-value" id="pv-completed">–</div></div>
+      <div class="pv-stat"><div class="pv-label">Expected <span class="xp">xP</span></div><div class="pv-value" id="pv-expected">–</div></div>
+      <div class="pv-stat"><div class="pv-label">vs expected</div><div class="pv-value" id="pv-vs">–</div></div>
+    </div>
+    <div class="thead"><h2>Completed passes' difficulty</h2><div class="tsub">by difficulty band</div></div>
+    <div class="pv-bandbar" id="pv-bandbar" aria-hidden="true"></div>
+    <div class="pv-bands">
+      <span><span class="key routine" aria-hidden="true"></span>Routine <b id="pv-band-routine">0</b></span>
+      <span><span class="key moderate" aria-hidden="true"></span>Moderate <b id="pv-band-moderate">0</b></span>
+      <span><span class="key hard" aria-hidden="true"></span>Hard <b id="pv-band-hard">0</b></span>
+      <span><span class="key exceptional" aria-hidden="true"></span>Exceptional <b id="pv-band-exceptional">0</b></span>
+    </div>
+    <div class="thead"><h2>Moments</h2><div class="tsub">surprises so far</div></div>
+    <div class="rows pv-rows" id="pv-rows" role="list"></div>
+    <div class="pv-foot">
+      <div class="pv-legend" aria-label="Pass map key">
+        <span><svg width="22" height="10" viewBox="0 0 22 10" aria-hidden="true"><line x1="1" y1="5" x2="15" y2="5" stroke="#3BD16F" stroke-width="2"></line><path d="M14 1 L21 5 L14 9 z" fill="#3BD16F"></path></svg>Completed</span>
+        <span><svg width="22" height="10" viewBox="0 0 22 10" aria-hidden="true"><line x1="1" y1="5" x2="15" y2="5" stroke="#FF4B47" stroke-width="2" stroke-dasharray="3 2"></line><path d="M16 1.5 L21 8.5 M21 1.5 L16 8.5" stroke="#FF4B47" stroke-width="2" stroke-linecap="round"></path></svg>Not completed</span>
+        <span><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="4.5" fill="none" stroke="#3FD0FF" stroke-width="1.8"></circle></svg>Surprise</span>
+        <span><svg width="22" height="10" viewBox="0 0 22 10" aria-hidden="true"><line x1="5" y1="5" x2="21" y2="5" stroke="#D6E2F0" stroke-opacity="0.45" stroke-width="2"></line><circle cx="5" cy="5" r="3.5" fill="#FFFFFF"></circle></svg>Latest pass</span>
+      </div>
+      <div class="footnote">vs expected: completed passes minus the completions <span class="xp">xP</span> expected. PVA: the result minus the chance the pass had, in points.</div>
+    </div>
+  </section>
+
+  <!-- Player mode: the picker, over the player's column (player.js builds the two team lists) -->
+  <div class="player-picker" id="player-picker" role="listbox" aria-label="Players" hidden></div>
+
   <div class="status" id="status" role="status" hidden></div>
 </main>
 </div>
+<script src="/static/player.js"></script>
 <script src="/static/app.js"></script>
 </body>
 </html>

@@ -39,6 +39,9 @@
     lang: 'en',
     scope: 'all',      // which ranking the tables show: whole match so far, or one half
     replay: null,      // moment_id being replayed: pitch, plate and tab show it; clock and tables run on
+    mode: 'studio',    // 'studio' or 'player' (player.js: one player's match); both share the state above
+    player: null,      // Player mode's player_id
+    playerNarr: null,  // Player mode: the moment_id the plate's chevrons picked, null for the player's latest
     tableSig: {},      // per table, what it last drew (rows are rebuilt only when this changes)
     lastFrame: null,
     renderedKey: '',
@@ -128,6 +131,12 @@
       state.now = Math.max(state.now, r.bundle.moment.t);
       enterReplay(r.bundle.moment.moment_id);
     }
+    // ?mode=player opens Player mode, with ?player=<player_id> when it names one of the 22
+    XplainPlayer.mount({ teamName: (id) => idx.teams[id] || '', teamCode: (id) => teamCode(id, ''), percent, pva,
+      bundle, current: () => ({ bundle, now: state.now, player: state.player }),
+      setPlayer: (id) => { state.player = id; setMode('player'); } });
+    if (bundle.meta.players.some((p) => p.player_id === params.get('player'))) state.player = params.get('player');
+    if (params.get('mode') === 'player') setMode('player');
     requestAnimationFrame(frame);
     fitLines();
   }
@@ -214,6 +223,39 @@
     }
   }
 
+  // Studio or Player. Entering Player mode without a player picks one (defaultPlayer). The URL keeps
+  // ?mode and ?player for demo links, the way it drops ?replay on leaving replay.
+  function setMode(mode) {
+    state.mode = mode;
+    if (mode === 'player' && !state.player) state.player = defaultPlayer();
+    state.playerNarr = null;
+    XplainPlayer.invalidate();   // the pitch and its tab are drawn again by whichever mode is shown
+    $('stage').classList.toggle('mode-player', mode === 'player');
+    for (const b of $('mode').querySelectorAll('button[data-mode]')) {
+      const on = b.dataset.mode === mode;
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-pressed', String(on));
+    }
+    const url = new URL(location.href);
+    if (mode === 'player') {
+      url.searchParams.set('mode', 'player');
+      if (state.player) url.searchParams.set('player', state.player);
+    } else {
+      url.searchParams.delete('mode');
+      url.searchParams.delete('player');
+    }
+    history.replaceState(null, '', url);
+  }
+
+  // the player of the replayed moment, else of the plate's moment, else of the live pass, else the first listed
+  function defaultPlayer() {
+    const sel = selectedIndex();
+    const plate = plateMoment(sel);
+    const from = state.replay ? idx.moments.get(state.replay).bundle.moment
+      : plate ? plate.bundle.moment : sel >= 0 ? idx.marks[sel] : null;
+    return (from && from.player_id) || state.bundle.meta.players[0].player_id;
+  }
+
   function step(dir) {
     const live = liveIndex();
     if (live < 0) return;
@@ -239,9 +281,24 @@
 
   // chevrons and [ ]: replay the previous / next narrated moment (the match keeps running)
   function narrStep(dir) {
+    if (state.mode === 'player') {   // Player mode: the plate pages through the player's lines; the newest follows live
+      const n = playerNarration();
+      const target = dir < 0 ? n.prev : n.next;
+      if (target) state.playerNarr = target === n.list[n.list.length - 1] ? null : target.bundle.moment.moment_id;
+      return;
+    }
     const n = narration(selectedIndex());
     const target = dir < 0 ? n.prev : n.next;
     if (target) enterReplay(target.bundle.moment.moment_id);
+  }
+
+  // Player mode's plate: the player's narrated moments with t <= now (no spoilers), the latest unless
+  // the chevrons picked an earlier one; the same shape as narration() for renderNarrNav.
+  function playerNarration() {
+    const list = XplainPlayer.narratedFor(state.bundle.moments, state.player, state.now, null);
+    const picked = state.playerNarr ? list.findIndex((m) => m.bundle.moment.moment_id === state.playerNarr) : -1;
+    const pos = picked >= 0 ? picked + 1 : list.length;
+    return { list, reached: list.length, pos, prev: pos >= 2 ? list[pos - 2] : null, next: pos < list.length ? list[pos] : null };
   }
 
   function backToLive() { exitReplay(); state.follow = true; }
@@ -277,6 +334,9 @@
     for (const b of $('scope').querySelectorAll('button')) {
       b.addEventListener('click', () => setScope(b.dataset.scope));
     }
+    for (const b of $('mode').querySelectorAll('button[data-mode]')) {
+      b.addEventListener('click', () => setMode(b.dataset.mode));
+    }
     $('prev').addEventListener('click', () => step(-1));
     $('next').addEventListener('click', () => step(1));
     $('live').addEventListener('click', backToLive);
@@ -296,6 +356,8 @@
     document.addEventListener('keydown', (e) => {
       const control = e.target.closest && e.target.closest('button, [role="button"]');
       if (control && (e.key === ' ' || e.key === 'Enter')) return;
+      // Player mode: space plays or pauses, [ ] page the plate; nothing steps or replays
+      if (state.mode === 'player' && ![' ', '[', ']'].includes(e.key)) return;
       if (e.key === 'Escape') {   // leaves replay and step mode
         if (state.replay || !state.follow) { leaveReplay(); e.preventDefault(); }
       }
@@ -324,9 +386,20 @@
     const goal = state.goal && isLive() ? state.goal.score : -1;
     const key = [sel, live, tick, score, half, state.scope, snaps.map((s) => (s ? s.t : '-')).join('|'),
       plate ? plate.bundle.moment.moment_id : '-', state.lang, state.follow, state.replay,
-      narr.reached, narr.pos, goal].join('/');
+      narr.reached, narr.pos, goal, state.mode, state.player, state.playerNarr].join('/');
     if (key === state.renderedKey) return;   // every DOM write below runs in this one animation frame
     state.renderedKey = key;
+    if (state.mode === 'player') {   // Player mode: the score bug stays live; player.js draws the rest
+      renderScoreBug(tick, score, live >= 0 ? half : null);
+      XplainPlayer.render({ bundle: state.bundle, now: state.now, scope: state.scope, playerId: state.player,
+        notStarted: state.scope === '2' && half !== 2 });
+      const pn = playerNarration();
+      const who = state.bundle.meta.players.find((p) => p.player_id === state.player);
+      renderNarrNav(pn);
+      renderPlate(pn.pos > 0 ? pn.list[pn.pos - 1] : null,
+        'No commentated moment for ' + (who ? who.name : 'this player') + ' yet.');
+      return;
+    }
 
     $('live').classList.toggle('is-live', isLive());
     $('prev').disabled = sel <= 0;
@@ -607,8 +680,8 @@
 
   // Text is set in place on the existing nodes; nothing is written when the moment and language are
   // unchanged, so stepping through passes that keep the same moment never re-animates the plate.
-  function renderPlate(entry) {
-    const id = entry ? entry.bundle.moment.moment_id + '/' + state.lang : '-';
+  function renderPlate(entry, emptyText = 'No commentated moment yet') {
+    const id = entry ? entry.bundle.moment.moment_id + '/' + state.lang : '-/' + emptyText;
     if (id === state.plateId) return;
     state.plateId = id;
     const lower = $('lower');
@@ -617,7 +690,7 @@
     fadePlate();
     if (!entry) {   // before the first commentated moment: the body only
       lower.classList.add('waiting');
-      line.textContent = 'No commentated moment yet';
+      line.textContent = emptyText;
       line.removeAttribute('lang');
       line.style.fontSize = '';
       $('lower-meta').textContent = '';

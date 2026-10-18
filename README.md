@@ -236,7 +236,7 @@ toward the goal it attacks (from `meta.attacks_right`; still under reduced motio
 shows the minute and the half; the possession tab stays at the pitch's top-left, with the code
 then right-pointing chevrons when attacking right and left-pointing chevrons then the code when
 attacking left. The lower third is a cyan name tab (player, team code and minute) on a dark body
-with the commentator's line in the chosen language, the tier and xP, and PVA on the right. Analyst and Player modes are not built yet.
+with the commentator's line in the chosen language, the tier and xP, and PVA on the right. The Analyst mode is not built yet.
 
 Also in the Studio:
 
@@ -249,6 +249,27 @@ Also in the Studio:
   the plate** (the header no longer has a language switch).
 - **PVA column in every state** (a dash while waiting for a pass, "GOAL" over the minute on a goal) and
   "xP" written with that casing throughout.
+
+**Players mode** (the Players button in the header, or `?mode=player&player=PLAYER_ID`, e.g.
+`?mode=player&player=dsk-p10`) follows one player's match on the same clock, score and narration
+language as the Studio:
+
+- **Pass map.** Every pass the player has made so far, drawn in the passer's own frame (the bundle's
+  `pass_geometry`, so the player always attacks right in both halves): green arrows completed, red
+  dashed lines ending in a cross not completed, a cyan ring at the start of each surprise moment and a
+  white dot at the start of the latest pass. All / 1st / 2nd filter it; it grows as the player passes.
+- **Numbers so far.** Passes, completion, expected completion (mean xP), vs expected (completed passes
+  minus the completions xP expected), a bar of the completed passes per difficulty band, and the player's
+  surprise moments with their PVA (hover or focus a row to bring its pass forward on the map).
+- **Narration plate** with only this player's narrated moments (the latest; chevrons or `[` `]` page
+  back), or "No commentated moment for NAME yet."
+- **Change player** opens both teams side by side with each player's passes so far (arrows, Enter,
+  Esc).
+
+These numbers are the one place the page computes anything (the browser computation exception): sums,
+counts and means over the bundle's marks at the clock, in `src/xplain/web/player.js`, each checked
+against its Python twin (`pipeline.player_summary` and others) in `tests/test_player_js.py`, which runs
+`player.js` under Node (skipped when `node` is not installed).
 
 ## Docker
 
