@@ -172,3 +172,62 @@ def test_pva_column_shows_a_dash_or_the_goal(client):
 def test_health_and_score_routes_are_kept(client):
     assert client.get("/health").json()["status"] == "ok"
     assert any(getattr(r, "path", None) == "/score" for r in client.app.routes)
+
+
+# --- Players mode (src/xplain/web/player.js) ---
+
+def test_players_mode_is_on_the_page(client):
+    html = client.get("/").text.replace("\r\n", "\n")
+    js = client.get("/static/player.js")
+    assert js.status_code == 200 and "javascript" in js.headers["content-type"]
+    assert html.index("/static/player.js") < html.index("/static/app.js")   # app.js mounts it
+    modes = html.split('id="mode"')[1].split("</div>")[0]
+    assert '<button type="button" data-mode="studio" class="on" aria-pressed="true">Studio</button>' in modes
+    assert '<button type="button" data-mode="player" aria-pressed="false">Players</button>' in modes
+    assert 'disabled aria-disabled="true" title="Coming soon">Analyst</button>' in modes   # still to come
+    assert 'id="player-pick" aria-haspopup="listbox" aria-expanded="false" aria-controls="player-picker"' in html
+    assert 'id="player-picker" role="listbox" aria-label="Players" hidden' in html
+    view = html.split('id="player-view"')[1].split("</section>")[0]
+    for node in ('id="pv-passes"', 'id="pv-completed"', 'id="pv-expected"', 'id="pv-vs"', 'id="pv-bandbar"',
+                 'id="pv-rows"', 'aria-label="Pass map key"'):
+        assert node in view
+    assert '>Expected <span class="xp">xP</span><' in view
+    assert "recap" not in html.lower()   # the plate is Studio's narration plate in both modes
+
+
+def test_players_mode_draws_the_passers_frame_and_keeps_studio_rules(client):
+    js = client.get("/static/player.js").text
+    app = client.get("/static/app.js").text
+    draw = js.split("function drawPass(")[1].split("function renderMap(")[0]
+    assert "mark.pass_geometry" in draw and ".display" not in draw   # the passer's own frame, no mirroring
+    assert "class: 'newest'" in draw and "p.start_x, cy: p.start_y, r: 0.8" in draw   # the latest pass: a dot at its start
+    assert "fetch(" not in js and "XMLHttpRequest" not in js
+    for text in (js, app):
+        assert "XP " not in text and "'XP" not in text
+    # the plate shows the player's own narrated moments, or says there are none yet
+    assert "'No commentated moment for ' + (who ? who.name : 'this player') + ' yet.'" in app
+    assert "XplainPlayer.narratedFor(state.bundle.moments, state.player, state.now, null)" in app
+    # Players mode keeps only space and the plate's [ ] as keys: nothing steps or replays
+    assert "state.mode === 'player' && ![' ', '[', ']'].includes(e.key)" in app
+
+
+def test_players_mode_layout_and_contrast(client):
+    css = client.get("/static/app.css").text
+    assert "#stage.mode-player .title, #stage.mode-player .tables { display: none; }" in css
+    assert ("#stage.mode-player .replaybar, #stage.mode-player .controls .live, "
+            "#stage.mode-player .controls .steps { display: none; }") in css
+    css = css.replace("\r\n", "\n")
+    view = css.split("\n.player-view { position")[1].split("}")[0]
+    assert "top: 196px" in view and "height: 520px" in view   # the pitch's top and bottom lines
+    picker = css.split("\n.player-picker {")[1].split("}")[0]
+    assert "top: 196px" in picker and "height: 520px" in picker
+    # the band steps stay at 3:1 or more on --bg: cyan alpha 0.50 is the faintest
+    alphas = [float(css.split(f"--band-{b}: rgba(63, 208, 255, ")[1].split(")")[0])
+              for b in ("routine", "moderate", "hard", "exceptional")]
+    assert alphas == sorted(alphas) and alphas[0] >= 0.5
+
+
+def test_no_league_names_in_the_page(client):
+    for path in ("/", "/static/app.js", "/static/player.js", "/static/app.css"):
+        text = client.get(path).text
+        assert "Premier League" not in text and "Premier" not in text
