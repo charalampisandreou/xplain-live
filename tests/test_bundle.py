@@ -550,3 +550,37 @@ def test_a_reused_step_with_a_latency_is_rejected():
         TraceStep(agent="narrator", kind="llm", ok=True, reused=True, latency_s=1.0)
     with pytest.raises(ValidationError):
         TraceStep(agent="verifier", kind="code", ok=True, latency_s=0.1)
+
+
+# --- recaps (schema 5) -----------------------------------------------------------------------------
+
+def test_recaps_go_into_the_bundle_and_its_trace(seed42_events, tiny_scorer, online):  # noqa: F811
+    from .test_workflow import RecapLLM, goalless_recap, run_full
+    run_, _ = run_full(seed42_events, tiny_scorer, lambda i, f: GOOD(f), RecapLLM(goalless_recap),
+                       scopes=("full_time", "half_time"))
+    b = build_bundle(seed42_events, tiny_scorer, run_.outcomes, "hints", WIDE, recaps=run_.recaps)
+    assert set(b.recaps) == {"full_time", "half_time"} == set(b.trace.recaps)
+    ft = b.recaps["full_time"]
+    assert ft.status == "accepted" and ft.text is not None
+    assert ft.card.home.label.startswith("vs expected") and ft.card.match_id == b.meta.match_id
+    assert MatchBundle.model_validate_json(to_json(b)) == b
+    # the recaps change nothing in the moments (wall times aside)
+    assert [(m.bundle, m.line, m.narration.status) for m in b.moments] == \
+        [(m.bundle, m.line, m.narration.status) for m in online.moments]
+    data = b.model_dump(mode="json")
+    data["recaps"]["half_time"] = data["recaps"]["full_time"]
+    with pytest.raises(ValidationError):   # a card of the wrong scope
+        MatchBundle.model_validate(data)
+    data = b.model_dump(mode="json")
+    data["meta"]["schema_version"] = "4"
+    data["trace"] = {"moments": {}, "recaps": {}}
+    with pytest.raises(ValidationError):   # schema 4 has no recaps
+        MatchBundle.model_validate(data)
+
+
+def test_recaps_need_the_model(tmp_path, monkeypatch, seed42_events, tiny_scorer):  # noqa: F811
+    path = tmp_path / "m.jsonl"
+    write_jsonl(path, seed42_events)
+    monkeypatch.setattr(bundle_mod, "_load_scorer", lambda: tiny_scorer)
+    with pytest.raises(SystemExit):
+        main(["--file", str(path), "--out", str(tmp_path / "b.json"), "--no-llm", "--recaps", "full_time"])

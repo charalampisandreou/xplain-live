@@ -17,6 +17,12 @@ Each executor is a thin wrapper around code that already exists; none adds rules
 Every outcome carries its trace (trace.TraceStep, one per agent per attempt): the Analyst's gate decision, the
 Explainer, each model call and Verifier check of the Narrator, and the final check.
 
+RecapEditor branch (only when build_workflow gets a RecapEditor; run_match_full): the Analyst also sends one
+RecapRequest per scope (full time first, then half time if asked) to RecapEditorExecutor, which builds the card in
+code (recap.recap_card), has the RecapEditor write and verify the text, and yields a RecapOutcome with its trace.
+It runs beside the moments and shares nothing with them: a recap that fails (no text, an error, even a card that
+cannot be built) yields a RecapOutcome with its reasons and never stops or changes a moment.
+
 A moment that fails anywhere (no line after the retries, a timeout, an exception in a step) yields a
 MomentOutcome with no line and its reasons, and is logged; it never stops the run or the other moments.
 Messages to one executor are delivered in order, one at a time, so model calls are sequential.
@@ -40,7 +46,9 @@ from .contracts import Moment, MomentBundle, QualifiedBy
 from .explainer import ShapExplainer
 from .narration import NarratorOut
 from .narrator import NarrationResult, Narrator
-from .pipeline import ensure_match_file, gate_match, load_events
+from .pipeline import ensure_match_file, gate_match, load_events, pass_marks
+from .recap import RecapCard, RecapOut, recap_card, roster
+from .recap_editor import RecapEditor
 from .schema import PassEvent
 from .scoring import XPassScorer
 from .trace import TraceStep, code_step
@@ -57,6 +65,44 @@ class MatchRequest:
 
     events: Sequence[Any]
     max_moments: int | None = None
+    recap_scopes: tuple[str, ...] = ()   # recaps to write; only with a RecapEditor in the workflow
+
+
+@dataclass(frozen=True)
+class RecapRequest:
+    """Analyst -> RecapEditor: the match's events and the scope of the recap ("full_time" or "half_time")."""
+
+    events: Sequence[Any]
+    scope: str
+
+
+@dataclass(frozen=True)
+class RecapOutcome:
+    """A workflow output, one per recap scope: the card (None only when it could not be built), the verified text
+    or None, and why (reasons), with the RecapEditor's trace."""
+
+    scope: str
+    card: RecapCard | None
+    text: RecapOut | None
+    attempts: int = 0
+    reasons: list[str] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)
+    latency_s: float = 0.0
+    trace: list[TraceStep] = field(default_factory=list)
+
+    @property
+    def status(self) -> str:
+        if self.text is None:
+            return "rejected"
+        return "accepted" if self.attempts <= 1 else "retried"
+
+
+@dataclass(frozen=True)
+class MatchRun:
+    """run_match_full: the moments (one MomentOutcome per commentated moment, in seq order) and the recaps."""
+
+    outcomes: list["MomentOutcome"]
+    recaps: list[RecapOutcome]
 
 
 @dataclass(frozen=True)
@@ -143,7 +189,9 @@ class AnalystExecutor(Executor):
         self.scorer, self.cfg = scorer, cfg
 
     @handler
-    async def analyse(self, request: MatchRequest, ctx: WorkflowContext[GatedMoment]) -> None:
+    async def analyse(self, request: MatchRequest, ctx: WorkflowContext[GatedMoment | RecapRequest]) -> None:
+        for scope in request.recap_scopes:
+            await ctx.send_message(RecapRequest(request.events, scope))
         gated = [(e, m, why) for e, m, why in gate_match(request.events, self.scorer, self.cfg) if why]
         live = [GatedMoment(e, m, why, slot) for slot, (e, m, why) in enumerate(gated)]
         for gated in live[:request.max_moments]:
@@ -217,27 +265,76 @@ class VerifierExecutor(Executor):
         await ctx.yield_output(outcome)
 
 
+class RecapEditorExecutor(Executor):
+    """One recap per RecapRequest: the card in code, then RecapEditor.write. Yields a RecapOutcome; never raises."""
+
+    def __init__(self, scorer: XPassScorer, editor: RecapEditor, cfg: AnalyticsConfig = analytics.DEFAULT,
+                 id: str = "recap_editor"):
+        super().__init__(id=id)
+        self.scorer, self.editor, self.cfg = scorer, editor, cfg
+
+    @handler
+    async def write(self, request: RecapRequest, ctx: WorkflowContext[Never, RecapOutcome]) -> None:
+        try:
+            card = recap_card(request.events, pass_marks(request.events, self.scorer, self.cfg), request.scope)
+            players = roster(request.events)
+        except Exception as exc:  # noqa: BLE001  (a recap never stops the moments)
+            reason = f"error building the {request.scope} card: {type(exc).__name__}: {str(exc)[:200]}"
+            log.warning(reason)
+            await ctx.yield_output(RecapOutcome(scope=request.scope, card=None, text=None, reasons=[reason],
+                                                trace=[code_step("recap_editor", ok=False, reasons=[reason])]))
+            return
+        try:
+            r = await self.editor.write(card, players)
+        except Exception as exc:  # noqa: BLE001  (write catches its own errors; this is a last guard)
+            reason = f"error in recap_editor: {type(exc).__name__}: {str(exc)[:200]}"
+            await ctx.yield_output(RecapOutcome(scope=request.scope, card=card, text=None, reasons=[reason]))
+            return
+        if r.text is None:
+            log.warning("%s recap: no text after %d attempt(s): %s", request.scope, r.attempts,
+                        "; ".join(r.reasons) or "-")
+        await ctx.yield_output(RecapOutcome(scope=request.scope, card=card, text=r.text, attempts=r.attempts,
+                                            reasons=list(r.reasons), notes=list(r.notes), latency_s=r.latency_s,
+                                            trace=list(r.trace)))
+
+
 # --- building and running ----------------------------------------------------------------------
 
-def build_workflow(scorer: XPassScorer, narrator: Narrator, cfg: AnalyticsConfig = analytics.DEFAULT) -> Workflow:
-    """Analyst -> Explainer -> Narrator -> Verifier. Build one per run: a Workflow keeps state between runs.
-    The Verifier uses the Narrator's phrase mode."""
+def build_workflow(scorer: XPassScorer, narrator: Narrator, cfg: AnalyticsConfig = analytics.DEFAULT,
+                   recap_editor: RecapEditor | None = None) -> Workflow:
+    """Analyst -> Explainer -> Narrator -> Verifier, and Analyst -> RecapEditor when a RecapEditor is given.
+    Build one per run: a Workflow keeps state between runs. The Verifier uses the Narrator's phrase mode."""
     analyst = AnalystExecutor(scorer, cfg)
     explainer = ExplainerExecutor(scorer)
     narrate = NarratorExecutor(narrator)
     verifier = VerifierExecutor(narrator.mode)
-    return (WorkflowBuilder(start_executor=analyst, name="xplain-moments")
-            .add_edge(analyst, explainer)
-            .add_edge(explainer, narrate)
-            .add_edge(narrate, verifier)
-            .build())
+    builder = (WorkflowBuilder(start_executor=analyst, name="xplain-moments")
+               .add_edge(analyst, explainer)
+               .add_edge(explainer, narrate)
+               .add_edge(narrate, verifier))
+    if recap_editor is not None:
+        builder = builder.add_edge(analyst, RecapEditorExecutor(scorer, recap_editor, cfg))
+    return builder.build()
 
 
 async def run_match(events: Sequence[Any], scorer: XPassScorer, narrator: Narrator,
                     max_moments: int | None = None, cfg: AnalyticsConfig = analytics.DEFAULT) -> list[MomentOutcome]:
     """One MomentOutcome per commentated moment (the first max_moments of them), in seq order."""
-    result = await build_workflow(scorer, narrator, cfg).run(MatchRequest(events, max_moments))
-    return sorted((o for o in result.get_outputs() if isinstance(o, MomentOutcome)), key=lambda o: o.moment.seq)
+    return (await run_match_full(events, scorer, narrator, max_moments, cfg)).outcomes
+
+
+async def run_match_full(events: Sequence[Any], scorer: XPassScorer, narrator: Narrator,
+                         max_moments: int | None = None, cfg: AnalyticsConfig = analytics.DEFAULT,
+                         recap_editor: RecapEditor | None = None,
+                         recap_scopes: Sequence[str] = ("full_time",)) -> MatchRun:
+    """The moments, as run_match, and with a RecapEditor one RecapOutcome per scope in recap_scopes (in that
+    order; full time first by default)."""
+    scopes = tuple(recap_scopes) if recap_editor is not None else ()
+    result = await build_workflow(scorer, narrator, cfg, recap_editor).run(MatchRequest(events, max_moments, scopes))
+    outputs = result.get_outputs()
+    outcomes = sorted((o for o in outputs if isinstance(o, MomentOutcome)), key=lambda o: o.moment.seq)
+    recaps = sorted((o for o in outputs if isinstance(o, RecapOutcome)), key=lambda o: scopes.index(o.scope))
+    return MatchRun(outcomes, recaps)
 
 
 # --- CLI ---------------------------------------------------------------------------------------

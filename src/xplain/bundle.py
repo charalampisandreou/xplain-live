@@ -22,10 +22,12 @@ minutes and calls no model:
              the gate's sort), each entry with its rank in the previous snapshot of the same scope
              and kind (None: new); the page shows the latest snapshot with t <= now
   * tier:    each moment's difficulty tier words (narration.difficulty_tier), for the plate
+  * recaps:  (schema "5", --recaps) per scope ("full_time", "half_time"): the recap card (recap.RecapCard, every
+             number computed in code), the RecapEditor's verified text (or None) and how it came about
   * trace:   (schema "5") per commentated moment, its agent steps (trace.TraceStep: one per agent per
-             attempt, Verifier reasons, model, latency of model calls); recaps keyed by scope (empty until the
-             RecapEditor exists). For a later Analyst screen only; Studio does not show it.
-             A schema "4" file (no trace) still loads as a MatchBundle.
+             attempt, Verifier reasons, model, latency of model calls); per recap scope, the RecapEditor's steps.
+             For a later Analyst screen only; Studio does not show it.
+             A schema "4" file (no trace, no recaps) still loads as a MatchBundle.
 
 Narration: by default the Agent Framework workflow (workflow.run_match, needs az login). --no-llm
 calls no model: commentated moments without a stored line are "not_run". A line is written once per
@@ -55,11 +57,12 @@ from .contracts import MomentBundle, PassGeometry, PassMark, PlayerSummary
 from .narration import NarratorOut, difficulty_tier
 from .narrator import NarrationResult, Narrator
 from .pipeline import analyse_match, ensure_match_file, load_events, player_summary, reports
+from .recap import RECAP_SCOPES, RecapCard, RecapOut
 from .schema import PITCH_LENGTH, PITCH_WIDTH, MatchMetaEvent, ShotEvent
 from .scoring import XPassScorer, find_default_model
 from .trace import TraceStep, code_step, reused
 from .verifier import verify
-from .workflow import MomentOutcome, final_step, run_match
+from .workflow import MomentOutcome, RecapOutcome, final_step, run_match, run_match_full
 
 SCHEMA_VERSION = "5"
 LOADABLE_SCHEMA_VERSIONS: tuple[str, ...] = ("4", "5")  # validate as a MatchBundle ("4": no trace)
@@ -231,6 +234,24 @@ def display_mark(mark: PassMark, home_team_id: str) -> BundleMark:
                                                              home_team_id))
 
 
+class RecapEntry(_Strict):
+    """One recap: its card (numbers from code), its verified text or None, and how the text came about."""
+
+    card: RecapCard
+    text: RecapOut | None = None
+    status: Literal["accepted", "retried", "rejected"]
+    attempts: Annotated[int, Field(ge=0)] = 0
+    reasons: list[str] = []
+    notes: list[str] = []
+    latency_s: float = 0.0
+
+    @model_validator(mode="after")
+    def _check_status(self) -> RecapEntry:
+        if (self.text is not None) != (self.status in LINE_STATUSES):
+            raise ValueError(f"a recap text goes with status accepted or retried only (status {self.status})")
+        return self
+
+
 class Trace(_Strict):
     """The agent steps (trace.TraceStep) per commentated moment by moment_id, and per recap by scope."""
 
@@ -247,6 +268,7 @@ class MatchBundle(_Strict):
     players: dict[str, PlayerSummary | None]
     score: Annotated[list[ScoreEntry], Field(min_length=1)]
     rankings: list[RankingSnapshot]
+    recaps: dict[str, RecapEntry] = {}
     trace: Trace = Trace()
 
     @model_validator(mode="after")
@@ -256,8 +278,14 @@ class MatchBundle(_Strict):
         unknown = [i for i in self.trace.moments if i not in live_ids]
         if unknown:
             raise ValueError(f"trace names moments that are not commentated: {unknown}")
-        if self.meta.schema_version == "4" and (self.trace.moments or self.trace.recaps):
-            raise ValueError('a schema "4" bundle has no trace')
+        if self.meta.schema_version == "4" and (self.trace.moments or self.trace.recaps or self.recaps):
+            raise ValueError('a schema "4" bundle has no trace and no recaps')
+        for scope, entry in self.recaps.items():
+            if scope not in RECAP_SCOPES or entry.card.scope != scope or entry.card.match_id != self.meta.match_id:
+                raise ValueError(f"recap {scope!r} does not fit its card ({entry.card.scope}, {entry.card.match_id})")
+        unknown = [s for s in self.trace.recaps if s not in RECAP_SCOPES]
+        if unknown:
+            raise ValueError(f"trace names unknown recap scopes {unknown}")
         for r in self.reports:
             missing = [i for ids_ in r.highlights.values() for i in ids_ if i not in ids]
             if missing:
@@ -377,9 +405,18 @@ def _narration(bundle: MomentBundle, outcome: MomentOutcome | None) -> tuple[Nar
                                    verdict_notes=list(outcome.verdict.notes) if outcome.verdict else [])
 
 
+def recap_entries(recaps: Sequence[RecapOutcome]) -> dict[str, RecapEntry]:
+    """The recaps with a card, by scope (a recap whose card could not be built is in the trace only)."""
+    return {r.scope: RecapEntry(card=r.card, text=r.text, status=r.status, attempts=r.attempts,
+                                reasons=list(r.reasons), notes=list(r.notes), latency_s=r.latency_s)
+            for r in recaps if r.card is not None}
+
+
 def build_bundle(events: Sequence, scorer: XPassScorer, outcomes: Sequence[MomentOutcome] | None = None,
-                 mode: str | None = None, cfg: AnalyticsConfig = analytics.DEFAULT) -> MatchBundle:
-    """The whole match as one MatchBundle; workflow outcomes are merged into the moments by moment_id."""
+                 mode: str | None = None, cfg: AnalyticsConfig = analytics.DEFAULT,
+                 recaps: Sequence[RecapOutcome] = ()) -> MatchBundle:
+    """The whole match as one MatchBundle; workflow outcomes are merged into the moments by moment_id, and the
+    recaps (workflow.RecapOutcome) go into recaps and trace.recaps by scope."""
     meta = _meta(events)
     bundles, marks = analyse_match(events, scorer, cfg)
     by_id = {o.moment.moment_id: o for o in outcomes or ()}
@@ -409,8 +446,10 @@ def build_bundle(events: Sequence, scorer: XPassScorer, outcomes: Sequence[Momen
         players={p.player_id: player_summary(marks, p.player_id) for p in meta.players},
         score=score_track(events, meta, names),
         rankings=ranking_snapshots(bundles, cfg.highlights_per_kind),
+        recaps=recap_entries(recaps),
         trace=Trace(moments={b.moment.moment_id: list(o.trace) for b in bundles
-                             if b.qualifies_live and (o := by_id.get(b.moment.moment_id)) is not None and o.trace}),
+                             if b.qualifies_live and (o := by_id.get(b.moment.moment_id)) is not None and o.trace},
+                    recaps={r.scope: list(r.trace) for r in recaps if r.trace}),
     )
 
 
@@ -526,15 +565,22 @@ def _load_scorer() -> XPassScorer:
     return XPassScorer(*find_default_model())
 
 
-async def _narrate_online(events: Sequence, scorer: XPassScorer, mode: str,
-                          stored: dict[str, NarrationResult]) -> list[MomentOutcome]:
+async def _narrate_online(events: Sequence, scorer: XPassScorer, mode: str, stored: dict[str, NarrationResult],
+                          recap_scopes: Sequence[str] = ()) -> tuple[list[MomentOutcome], list[RecapOutcome]]:
     from azure.identity.aio import AzureCliCredential
 
     from .narrator import build_agent
+    from .recap_editor import RecapEditor, build_recap_agent
 
     async with AzureCliCredential() as credential:
         narrator = Narrator(build_agent(credential, mode=mode), mode=mode)
-        return await narrate_match(events, scorer, narrator, stored)
+        if not recap_scopes:
+            return await narrate_match(events, scorer, narrator, stored), []
+        for moment_id, result in stored.items():
+            narrator.remember(moment_id, result)
+        run = await run_match_full(events, scorer, narrator, recap_editor=RecapEditor(build_recap_agent(credential)),
+                                   recap_scopes=recap_scopes)
+        return run.outcomes, run.recaps
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -546,6 +592,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--no-llm", action="store_true", help="no model calls: commentated moments without a "
                                                                "stored line are not_run")
     parser.add_argument("--fresh", action="store_true", help="ignore the lines stored in --out")
+    parser.add_argument("--recaps", nargs="+", choices=RECAP_SCOPES, default=[],
+                        help="also write these recaps with the RecapEditor (needs the model; not with --no-llm)")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(name)s: %(message)s")
     ensure_match_file(args.file, args.seed)
@@ -555,11 +603,14 @@ def main(argv: list[str] | None = None) -> int:
     stored = {} if args.fresh else stored_lines(args.out, _meta(events).match_id, scorer.model_version)
     if stored:
         print(f"reusing {len(stored)} stored line(s) from {args.out}", file=sys.stderr)
+    if args.no_llm and args.recaps:
+        parser.error("--recaps needs the model; drop --no-llm")
+    recaps: list[RecapOutcome] = []
     if args.no_llm:
         outcomes = offline_outcomes(events, scorer, stored, mode)
     else:
-        outcomes = asyncio.run(_narrate_online(events, scorer, mode, stored))
-    bundle = build_bundle(events, scorer, outcomes, mode)
+        outcomes, recaps = asyncio.run(_narrate_online(events, scorer, mode, stored, args.recaps))
+    bundle = build_bundle(events, scorer, outcomes, mode, recaps=recaps)
     text = to_json(bundle)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(text, encoding="utf-8")

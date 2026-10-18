@@ -225,3 +225,97 @@ def test_an_explainer_failure_is_in_the_trace(seed42_events, tiny_scorer, monkey
     assert agent.calls == []
     assert [(s.agent, s.ok) for s in outcomes[0].trace] == [("analyst", True), ("explainer", False)]
     assert "no shap" in outcomes[0].trace[-1].reasons[0]
+
+
+# --- RecapEditor branch ---------------------------------------------------------------------------
+
+def run_full(events, scorer, answer, recap_llm, scopes=("full_time",), max_moments=None):
+    from xplain.recap_editor import RecapEditor
+    from xplain.workflow import run_match_full
+
+    agent = FakeAgent(answer)
+    narrator = Narrator(agent, mode="hints")
+    editor = RecapEditor(recap_llm, model="gpt-4.1-mini")
+    return asyncio.run(run_match_full(events, scorer, narrator, max_moments, cfg=WIDE, recap_editor=editor,
+                                      recap_scopes=scopes)), agent
+
+
+class RecapLLM:
+    """A fake RecapEditor model: answer(facts) gives a RecapOut or an exception."""
+
+    def __init__(self, answer):
+        self.answer, self.calls = answer, []
+
+    async def run(self, messages: str, *, options: dict):
+        self.calls.append(json.loads(messages))
+        out = self.answer(self.calls[-1])
+        if isinstance(out, Exception):
+            raise out
+        return type("Response", (), {"value": out})()
+
+
+def moments_of(outcomes):
+    """What a run gives each moment, without wall times (they differ from run to run)."""
+    return [(o.moment.moment_id, o.line, o.status, o.reasons,
+             [st.model_copy(update={"latency_s": None}) for st in o.trace]) for o in outcomes]
+
+
+def goalless_recap(facts):
+    from xplain.recap import RecapOut
+    h, a = facts["home"], facts["away"]
+    phrase = {"above": ("completed more passes than expected", "completó más pases de lo esperado",
+                        "ολοκλήρωσε περισσότερες πάσες από τις αναμενόμενες"),
+              "below": ("completed fewer passes than expected", "completó menos pases de lo esperado",
+                        "ολοκλήρωσε λιγότερες πάσες από τις αναμενόμενες"),
+              "close": ("passed about as expected", "estuvo en línea con lo esperado", "κινήθηκε κοντά στα αναμενόμενα")}
+    ph, pa = phrase[facts["passing"][h]], phrase[facts["passing"][a]]
+    level = {"full_time": ("drew without a goal", "empataron sin goles", "έμειναν στην ισοπαλία χωρίς γκολ"),
+             "half_time": ("are level and goalless at the break", "llegan al descanso igualados y sin goles",
+                           "πάνε στα αποδυτήρια ισόπαλες και χωρίς γκολ")}[facts["scope"]]
+    return RecapOut(text_en=f"{h} and {a} {level[0]}. {h} {ph[0]}; {a} {pa[0]}.",
+                    text_es=f"{h} y {a} {level[1]}. {h} {ph[1]}; {a} {pa[1]}.",
+                    text_el=f"Η {h} και η {a} {level[2]}. Η {h} {ph[2]}· η {a} {pa[2]}.",
+                    claims_used=["result", f"passing:{h}", f"passing:{a}"])
+
+
+def test_the_recap_branch_runs_beside_the_moments(seed42_events, tiny_scorer, live):  # noqa: F811
+    llm = RecapLLM(goalless_recap)
+    both, agent = run_full(seed42_events, tiny_scorer, lambda i, f: GOOD(f), llm, scopes=("full_time", "half_time"))
+    alone, _ = run(seed42_events, tiny_scorer, lambda i, f: GOOD(f))
+    assert moments_of(both.outcomes) == moments_of(alone)
+    assert [r.scope for r in both.recaps] == ["full_time", "half_time"]
+    for r in both.recaps:
+        assert r.card is not None and r.card.scope == r.scope and r.text is not None and r.status == "accepted", r.reasons
+        assert [s.agent for s in r.trace] == ["recap_editor", "recap_verifier"]
+    assert [c["scope"] for c in llm.calls] == ["full_time", "half_time"]
+
+
+def test_a_failing_recap_never_changes_the_moments(seed42_events, tiny_scorer, live):  # noqa: F811
+    alone, _ = run(seed42_events, tiny_scorer, lambda i, f: GOOD(f))
+    for answer in (lambda f: RuntimeError("recap model down"), lambda f: None):
+        run_, _ = run_full(seed42_events, tiny_scorer, lambda i, f: GOOD(f), RecapLLM(answer))
+        assert moments_of(run_.outcomes) == moments_of(alone)
+        [r] = run_.recaps
+        assert r.text is None and r.status == "rejected" and r.reasons and r.card is not None
+
+
+def test_a_recap_card_that_cannot_be_built_is_reported(seed42_events, tiny_scorer, live, monkeypatch):  # noqa: F811
+    import xplain.workflow as wf
+
+    def boom(*a, **k):
+        raise RuntimeError("no card")
+
+    monkeypatch.setattr(wf, "recap_card", boom)
+    llm = RecapLLM(goalless_recap)
+    run_, _ = run_full(seed42_events, tiny_scorer, lambda i, f: GOOD(f), llm, max_moments=2)
+    assert len(run_.outcomes) == 2 and all(o.line is not None for o in run_.outcomes)
+    [r] = run_.recaps
+    assert r.card is None and "no card" in r.reasons[0] and llm.calls == []
+    assert [(s.agent, s.kind, s.ok) for s in r.trace] == [("recap_editor", "code", False)]
+
+
+def test_without_a_recap_editor_there_is_no_recap(seed42_events, tiny_scorer, live):  # noqa: F811
+    from xplain.workflow import run_match_full
+    narrator = Narrator(FakeAgent(lambda i, f: GOOD(f)), mode="hints")
+    result = asyncio.run(run_match_full(seed42_events, tiny_scorer, narrator, 1, cfg=WIDE))
+    assert len(result.outcomes) == 1 and result.recaps == []

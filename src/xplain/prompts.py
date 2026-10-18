@@ -25,6 +25,8 @@ from .config import PHRASE_MODES, phrase_mode
 from .explainer import BODY_PART_LABELS, PLAY_PATTERN_LABELS, PRESSURE_LABELS
 from .narration import DIFFICULTY_TIERS, DifficultyTier
 from .phrases import LABEL_PHRASES
+from .recap import RecapCard, RecapGoal, RecapOut, TeamPassing, recap_facts, vs_expected_label
+from .recap_verifier import RECAP_MAX_SENTENCES, RECAP_WORD_LIMIT, RECAP_WORD_TARGET
 from .schema import BodyPart, PlayPattern
 from .verifier import WORD_LIMIT, WORD_TARGET
 
@@ -322,3 +324,118 @@ INSTRUCTIONS: dict[str, str] = {
 def narrator_instructions(mode: str | None = None) -> str:
     """The Narrator's brief for a phrase mode (default: config.phrase_mode())."""
     return INSTRUCTIONS[mode or phrase_mode()]
+
+
+# --- RecapEditor ---------------------------------------------------------------------------------------------------
+# Worked recap examples (invented teams and players). The Greek texts are drafts for the owner to skim; the Spanish
+# texts are not reviewed by a native speaker. A test runs each through recap_verifier against its card.
+
+def _team(team_id: str, name: str, band: str) -> TeamPassing:
+    # the numbers of an example card never reach the model (recap_facts has none); they only fit the band
+    gap = {"above": 15, "below": -15, "close": 1}[band]
+    return TeamPassing(team_id=team_id, name=name, passes=400, completed=320 + gap, expected=320.0,
+                       vs_expected=gap, label=vs_expected_label(gap), band=band)
+
+
+@dataclass(frozen=True)
+class RecapExample:
+    name: str
+    card: RecapCard
+    out: RecapOut
+
+
+RECAP_EXAMPLES: tuple[RecapExample, ...] = (
+    RecapExample(
+        name="FT1 (comeback, late winner)",
+        card=RecapCard(
+            scope="full_time", match_id="example", home=_team("hba", "Harbourne Athletic", "above"),
+            away=_team("kwr", "Kellsworth Rovers", "below"), score_home=2, score_away=1,
+            goals=[RecapGoal(team_id="kwr", team_name="Kellsworth Rovers", player_name="Dario Pell", minute_label="31",
+                             period=1, late=False, home=0, away=1),
+                   RecapGoal(team_id="hba", team_name="Harbourne Athletic", player_name="Joss Marlin",
+                             minute_label="62", period=2, late=False, home=1, away=1),
+                   RecapGoal(team_id="hba", team_name="Harbourne Athletic", player_name="Tomas Avery",
+                             minute_label="90+2", period=2, late=True, home=2, away=1)],
+            result="home_win", comeback_team_id="hba", late_winner_team_id="hba"),
+        out=RecapOut(
+            text_en="Harbourne Athletic came from behind to beat Kellsworth Rovers, with Tomas Avery's late winner "
+                    "after Joss Marlin had cancelled out Dario Pell's opener. Harbourne Athletic completed more "
+                    "passes than expected; Kellsworth Rovers completed fewer than expected.",
+            text_es="Harbourne Athletic remontó y venció a Kellsworth Rovers con un gol tardío de Tomas Avery, después "
+                    "de que Joss Marlin igualara el tanto inicial de Dario Pell. Harbourne Athletic completó más pases "
+                    "de lo esperado; Kellsworth Rovers completó menos de lo esperado.",
+            text_el="Η Harbourne Athletic έκανε την ανατροπή απέναντι στην Kellsworth Rovers και νίκησε με γκολ του "
+                    "Tomas Avery στο φινάλε, μετά την ισοφάριση του Joss Marlin στο γκολ του Dario Pell. Η Harbourne "
+                    "Athletic ολοκλήρωσε περισσότερες πάσες από τις αναμενόμενες· η Kellsworth Rovers λιγότερες από "
+                    "τις αναμενόμενες.",
+            claims_used=["result", "comeback:Harbourne Athletic", "late_winner:Harbourne Athletic",
+                         "scorer:Dario Pell", "scorer:Joss Marlin", "scorer:Tomas Avery",
+                         "passing:Harbourne Athletic", "passing:Kellsworth Rovers"]),
+    ),
+    RecapExample(
+        name="HT1 (level, goalless)",
+        card=RecapCard(
+            scope="half_time", match_id="example", home=_team("hba", "Harbourne Athletic", "close"),
+            away=_team("kwr", "Kellsworth Rovers", "above"), score_home=0, score_away=0, goals=[], result="level"),
+        out=RecapOut(
+            text_en="Harbourne Athletic and Kellsworth Rovers are level and goalless at the break. Kellsworth Rovers "
+                    "completed more passes than expected, while Harbourne Athletic passed about as expected.",
+            text_es="Harbourne Athletic y Kellsworth Rovers llegan al descanso igualados y sin goles. Kellsworth "
+                    "Rovers completó más pases de lo esperado, mientras que Harbourne Athletic estuvo en línea con lo "
+                    "esperado.",
+            text_el="Η Harbourne Athletic και η Kellsworth Rovers πάνε στα αποδυτήρια ισόπαλες και χωρίς γκολ. Η "
+                    "Kellsworth Rovers ολοκλήρωσε περισσότερες πάσες από τις αναμενόμενες, ενώ η Harbourne Athletic "
+                    "κινήθηκε κοντά στα αναμενόμενα.",
+            claims_used=["result", "passing:Kellsworth Rovers", "passing:Harbourne Athletic"]),
+    ),
+)
+
+
+def render_recap_examples(examples: tuple[RecapExample, ...] = RECAP_EXAMPLES) -> str:
+    return "\n\n".join(f"Example {ex.name}\nFacts: {json.dumps(recap_facts(ex.card), ensure_ascii=False)}\n"
+                       f"Answer: {ex.out.model_dump_json()}" for ex in examples)
+
+
+RECAP_TEMPLATE = """\
+You are the RecapEditor of a football broadcast. You write a short recap of the match (scope "full_time") or of
+the first half (scope "half_time") in English (text_en), Spanish (text_es) and Greek (text_el). The three texts
+say the same thing, each in natural wording for its language.
+
+The facts (JSON) give the two teams, the result, the margin ("narrow" or "clear"; null when level), whether
+there were no goals, the goals in order (team, scorer, half, late or not), each team's passing against
+expectation ("above", "below" or "close") and "claims": the only claims you may make, by id, each with what it
+says. A card next to your text shows every number (score, minutes, passes against expected), so you write none.
+
+Rules:
+- At most {sentences} sentences and {limit} words per language; aim for about {target}.
+- Make only listed claims. Put the id of every claim you make in claims_used, and express each of them in all
+  three languages. You need not use every claim; always use the result claim.
+- No numbers of any kind: no digits, no score, no number words (two, dos, δύο ...), no minutes, no percentages.
+- Report what happened, never why: no "because", "thanks to", "due to", "since" and the like, in any language.
+  Do not judge: no deserved, lucky or unlucky, dominated, controlled, should have. No tactics, pressing,
+  pressure, possession or formations. Never mention a model, xP or probabilities.
+- Name only the two teams and the scorers whose scorer claim you use; no other player.
+- Passing: say a team completed more passes than expected, fewer than expected, or about as many as expected,
+  exactly as its claim says. Put that team's name in the same clause as the phrase, and separate the two teams'
+  passing with a comma or a semicolon.
+- Late: with a late_winner or late_equaliser claim (or a scorer claim for a goal marked late) say it with one of:
+  EN "late", "in added time", "in stoppage time"; ES "tardío", "en el tiempo añadido", "en el descuento";
+  EL "στο φινάλε", "στις καθυστερήσεις". Without such a claim use none of them. Comeback words only with a
+  comeback claim.
+- Half time: nobody has won or lost yet. Say who leads, or that the teams are level.
+- Greek: teams take the feminine article (η Harbourne Athletic, την Kellsworth Rovers). For "after" write
+  "μετά"; never "αφού", "επειδή" or "γιατί" (they read as a cause).
+- Every scorer claim you list: name that scorer in all three languages.
+
+=== EXAMPLES ===
+{examples}
+=== END EXAMPLES ===
+
+If the facts include "rejected_because", your previous answer broke these rules. Fix every point.
+"""
+
+
+def recap_instructions() -> str:
+    """The RecapEditor's brief."""
+    return RECAP_TEMPLATE.format(sentences=RECAP_MAX_SENTENCES, limit=RECAP_WORD_LIMIT, target=RECAP_WORD_TARGET,
+                                 examples=render_recap_examples())
