@@ -178,7 +178,7 @@ def _failed(moment: Moment, step: str, exc: Exception, bundle: MomentBundle | No
 def final_step(verdict: VerifierResult, attempt: int) -> TraceStep:
     """The trace step of the final Verifier check of an accepted line."""
     return code_step("verifier", ok=verdict.ok, attempt=max(attempt, 1), reasons=list(verdict.reasons),
-                     notes=list(verdict.notes), final=True)
+                     notes=list(verdict.notes), final=True, checks=list(verdict.checks))
 
 
 # --- executors ---------------------------------------------------------------------------------

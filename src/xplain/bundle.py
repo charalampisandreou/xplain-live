@@ -27,8 +27,10 @@ minutes and calls no model:
   * recaps:  (schema "5", --recaps) per scope ("full_time", "half_time"): the recap card (recap.RecapCard, every
              number computed in code), the RecapEditor's verified text (or None) and how it came about
   * trace:   (schema "5") per commentated moment, its agent steps (trace.TraceStep: one per agent per
-             attempt, Verifier reasons, model, latency of model calls); per recap scope, the RecapEditor's steps.
-             For a later Analyst screen only; Studio does not show it.
+             attempt, Verifier reasons, model, latency of model calls, the checks each Verifier step ran); per
+             recap scope, the RecapEditor's steps; check_labels: the plain-words label of every check name the
+             steps record, per agent, written at build time from verifier.CHECKS / recap_verifier.RECAP_CHECKS.
+             For the Producer view only; Studio does not show it.
              A schema "4" file (no trace, no recaps) still loads as a MatchBundle.
 
 Narration: by default the Agent Framework workflow (workflow.run_match, needs az login). --no-llm
@@ -60,11 +62,11 @@ from .narration import NarratorOut, difficulty_tier, pass_tier
 from .narrator import NarrationResult, Narrator
 from .pipeline import analyse_match, ensure_match_file, load_events, player_summary, reports
 from .recap import RECAP_SCOPES, RecapCard, RecapOut, slot_values, star_player, team_passing
-from .recap_verifier import verify_recap
+from .recap_verifier import RECAP_CHECK_LABELS, verify_recap
 from .schema import PITCH_LENGTH, PITCH_WIDTH, MatchMetaEvent, ShotEvent
 from .scoring import XPassScorer, find_default_model
 from .trace import TraceStep, code_step, reused
-from .verifier import verify
+from .verifier import CHECK_LABELS, verify
 from .workflow import MomentOutcome, RecapOutcome, final_step, run_match, run_match_full
 
 SCHEMA_VERSION = "5"
@@ -274,6 +276,36 @@ class Trace(_Strict):
 
     moments: dict[str, list[TraceStep]] = {}
     recaps: dict[str, list[TraceStep]] = {}
+    # per agent ("verifier", "recap_verifier"), the label of every check name its steps record
+    check_labels: dict[str, dict[str, str]] = {}
+
+    @model_validator(mode="after")
+    def _check_labels(self) -> Trace:
+        for steps in (*self.moments.values(), *self.recaps.values()):
+            for s in steps:
+                missing = [n for n in s.checks or () if n not in self.check_labels.get(s.agent, {})]
+                if missing:
+                    raise ValueError(f"trace: {s.agent} checks without a label: {missing}")
+        return self
+
+
+CHECK_REGISTRY: dict[str, dict[str, str]] = {"verifier": CHECK_LABELS, "recap_verifier": RECAP_CHECK_LABELS}
+
+
+def check_labels(moments: dict[str, list[TraceStep]], recaps: dict[str, list[TraceStep]]) -> dict[str, dict[str, str]]:
+    """The label of every check name the steps record, per agent, from the registries (CHECK_REGISTRY), in registry
+    order. A name the registry no longer has (only on a step reused from an earlier build) keeps its name as label."""
+    used: dict[str, set[str]] = {}
+    for steps in (*moments.values(), *recaps.values()):
+        for s in steps:
+            if s.checks:
+                used.setdefault(s.agent, set()).update(s.checks)
+    out: dict[str, dict[str, str]] = {}
+    for agent, names in used.items():
+        registry = CHECK_REGISTRY[agent]
+        out[agent] = {n: registry[n] for n in registry if n in names}
+        out[agent].update({n: n for n in sorted(names - set(registry))})
+    return out
 
 
 class MatchBundle(_Strict):
@@ -469,10 +501,14 @@ def build_bundle(events: Sequence, scorer: XPassScorer, outcomes: Sequence[Momen
         score=score_track(events, meta, names),
         rankings=ranking_snapshots(bundles, cfg.highlights_per_kind),
         recaps=recap_entries(recaps),
-        trace=Trace(moments={b.moment.moment_id: list(o.trace) for b in bundles
-                             if b.qualifies_live and (o := by_id.get(b.moment.moment_id)) is not None and o.trace},
-                    recaps={r.scope: list(r.trace) for r in recaps if r.trace}),
+        trace=_trace({b.moment.moment_id: list(o.trace) for b in bundles
+                      if b.qualifies_live and (o := by_id.get(b.moment.moment_id)) is not None and o.trace},
+                     {r.scope: list(r.trace) for r in recaps if r.trace}),
     )
+
+
+def _trace(moments: dict[str, list[TraceStep]], recaps: dict[str, list[TraceStep]]) -> Trace:
+    return Trace(moments=moments, recaps=recaps, check_labels=check_labels(moments, recaps))
 
 
 # --- line reuse --------------------------------------------------------------------------------

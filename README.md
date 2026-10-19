@@ -19,7 +19,8 @@ overlay cards that a graphics system can render alongside the match.
 > narrated moments, an in-plate narration language switch, half-time and full-time recap cards), the
 > Recap Editor (the recap texts, with every number filled in by code), Players mode, the player-focus
 > personalization mode (one player's pass map, numbers and moments up to the match clock; from a recap it
-> opens on the star player), a script that compares Narrator models
+> opens on the star player), the Producer view (the control room: every line the clock has reached, the
+> agents' steps behind it, the checks the Verifier ran, model and latency), a script that compares Narrator models
 > (`scripts/compare_models.py`, see "Model comparison"), and the Azure deployment (Container Apps from
 > an ARM template, see "Deploy to Azure"). The deployed page serves a precomputed bundle: its lines were
 > generated with Foundry (gpt-6.1-sol) and checked by the Verifier when the bundle was built.
@@ -28,9 +29,7 @@ overlay cards that a graphics system can render alongside the match.
 > bundle CC BY 4.0). The bundle there was replaced after the narration retune; its SHA-256 is
 > `48f18c2bac40ca3cf91a08768c655d6d3f77585602b41910f52c38fae49d5a1b`.
 >
-> Not built yet: the Analyst screen, the agent trace (planned for a separate Producer view, the control
-> room), the other
-> personalization modes (analyst, casual fan, favourite club or player), and live mode (the deployed app
+> Not built yet: the Analyst screen, the other personalization modes (analyst, casual fan, favourite club or player), and live mode (the deployed app
 > calling Foundry itself).
 > Results and demo sections are filled in as they are measured.
 
@@ -197,7 +196,8 @@ the model uses, stay in the passer's own frame (always attacking toward x = 120)
 
 Without `--no-llm` it runs the workflow for the narration (needs `az login`). A line is written
 once per moment: if `--out` already holds a bundle of the same match and model, its lines are
-reused and the model is not called for those moments (the final Verifier check still runs).
+reused and the model is not called for those moments (the final Verifier check still runs, and records its
+checks; the reused Narrator steps keep what they recorded).
 Lines are also read from a schema 1, 2 or 3 bundle, so rebuilding after a schema change keeps them.
 With `--no-llm`, a moment whose line was rejected before is written as `not_run`.
 `--fresh` ignores the old file. The command prints a one-line summary with the goals and the
@@ -240,8 +240,8 @@ bottom-right Back to live, L or Esc return to the live pass. `?replay=MOMENT_ID`
 clock starts at it.
 
 The page only formats: every number, minute and ranking comes from the bundle (Players mode's numbers so
-far are the one exception, see below). The title reads "Live pass map" ("HT Recap" or "FT Recap" while a
-recap is shown). The tables and the
+far are the one exception, see below). The title reads "Live pass map" ("Half Time" or "Full Time" while a
+recap is shown, "Control room" in Producer). The tables and the
 plate show PVA (pass value added, the bundle's `delta` = outcome - xP: 1 - xP when completed, -xP
 when not) in points of completion chance, e.g. "+85%" or "−94%" (sign, round(100 * |PVA|)); the
 bar length is |PVA| on a 0..1 scale. xP is shown small in the plate as a percent with the same
@@ -299,6 +299,27 @@ in `src/xplain/web/player.js`, each checked against its Python twin (`pipeline.p
 `player.js` under Node and compares exactly: both sides add floats left to right (`analytics.seq_sum`;
 Python's own `sum()` corrects for rounding since 3.12 and would differ in the last bits). The test is
 skipped when `node` is not installed.
+
+**Producer** (the Producer button, or `?mode=producer`) is the control room: for the person who puts AI
+lines on air and must say why a line went out, what was checked, which model and how long. It shares the
+clock, score, plate and controls with the Studio; switching never pauses the match, and recaps do not open
+there.
+
+- **Log** (newest first): every commentated moment and recap the clock has reached, nothing later: minute,
+  player, kind, "On air" or "No line", attempts, and "Retried" when a line took more than one.
+- **Steps** of the selected line, in order, from the bundle's trace: Analyst and Explainer (code), Narrator
+  or Recap Editor (LLM: the model and the latency as stored), the Verifier and the final check (code: "18
+  checks passed" with a button that lists them in plain words), the Recap Filler's code-filled numbers. A
+  failed step always shows its reasons. Then the line that went on air in EN, ES and EL (a recap: the filled
+  text).
+- **Selection** is the Studio's: a log row replays its moment (Back to live, Esc or L return); the Studio's
+  replay or plate moment is selected in the log. A recap row is picked in Producer only.
+- The checks shown are the ones each Verifier step recorded when the bundle was built (`checks`, labels in
+  `trace.check_labels`, from the registries `verifier.CHECKS` and `recap_verifier.RECAP_CHECKS` that the
+  verifiers loop over): a check listed is a check that ran. A bundle built before checks were recorded says
+  "Checks not recorded in this bundle." on those steps (the demo bundle until its next rebuild); a bundle
+  without a trace shows "No agent trace in this match bundle." Every value shown is a bundle field; the only
+  count is the length of a step's stored check list ("18 checks passed").
 
 ## Docker
 

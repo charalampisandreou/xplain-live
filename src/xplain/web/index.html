@@ -31,11 +31,13 @@
       <button type="button" data-mode="studio" class="on" aria-pressed="true">Studio</button>
       <button type="button" disabled aria-disabled="true" title="Coming soon">Analyst</button>
       <button type="button" data-mode="player" aria-pressed="false">Players</button>
+      <button type="button" data-mode="producer" aria-pressed="false">Producer</button>
     </div>
   </div>
 
-  <!-- title: its wording lives here only; app.js swaps in data-ht / data-ft while a recap is shown -->
-  <h1 class="title" id="title" data-live="Live pass map" data-ht="HT Recap" data-ft="FT Recap">Live pass map</h1>
+  <!-- title: its wording lives here only; app.js swaps in data-ht / data-ft while a recap is shown, data-producer
+       in Producer mode -->
+  <h1 class="title" id="title" data-live="Live pass map" data-ht="Half Time" data-ft="Full Time" data-producer="Control room">Live pass map</h1>
 
   <!-- Player mode: the shirt number, the player's name and team in the title's slot (player.js sets them), and the
        picker button -->
@@ -223,10 +225,20 @@
   <!-- Player mode: the picker, over the player's column (player.js builds the two team lists) -->
   <div class="player-picker" id="player-picker" role="listbox" aria-label="Players" hidden></div>
 
+  <!-- Producer mode (the control room, producer.js): the log of lines the clock has reached, in the pitch's slot;
+       the selected line's agent steps and its final text, in the tables' slot -->
+  <section class="producer-log" id="producer-log" aria-label="Line log">
+    <div class="thead"><h2>Log</h2><div class="tsub">newest first</div></div>
+    <div class="pr-rows" id="pr-rows"></div>
+    <div class="empty" id="pr-empty" hidden>No agent trace in this match bundle.</div>
+  </section>
+  <section class="producer-detail" id="pr-detail" aria-label="Selected line" aria-live="polite"></section>
+
   <div class="status" id="status" role="status" hidden></div>
 </main>
 </div>
 <script src="/static/player.js"></script>
+<script src="/static/producer.js"></script>
 <script src="/static/app.js"></script>
 </body>
 </html>

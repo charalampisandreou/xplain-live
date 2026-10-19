@@ -131,7 +131,7 @@ class RecapEditor:
                     verdict = verify_recap(out, card, players)
                     rejected = verdict.reasons
                     trace.append(code_step("recap_verifier", ok=verdict.ok, attempt=attempts, reasons=verdict.reasons,
-                                           notes=verdict.notes, text=_texts(out)))
+                                           notes=verdict.notes, text=_texts(out), checks=verdict.checks))
                     if verdict.ok:
                         values = slot_values(card)
                         slots = {name: values[name] for name in verdict.slots_used}

@@ -1,6 +1,6 @@
 """
-Agent trace: one TraceStep per agent per attempt, captured into the match bundle (bundle.Trace) for a later
-Analyst screen. Studio never shows it.
+Agent trace: one TraceStep per agent per attempt, captured into the match bundle (bundle.Trace) for the Producer
+view (the control room: why a line went out, what was checked, which model, how long). Studio never shows it.
 
 Per commentated moment, in order:
   * analyst   (code): the commentary gate let the moment through; notes say how (ranking, threshold)
@@ -8,7 +8,9 @@ Per commentated moment, in order:
   * narrator  (llm):  one per model call; ok False on a timeout, an error or an answer that is not a NarratorOut
   * verifier  (code): one per answer the Narrator got back, with the Verifier's reasons (rejected) or notes
   * verifier  (code, final=True): the workflow's final check of the accepted line
-Latency is recorded for model calls only; code steps carry none.
+Latency is recorded for model calls only; code steps carry none. Verifier and recap_verifier steps record the
+names of the checks that ran (checks: verifier.CHECKS / recap_verifier.RECAP_CHECKS); None means not recorded (a
+bundle built before checks were recorded), never "no checks".
 
 A line reused from an earlier bundle (bundle.stored_lines, also with --no-llm) keeps its Narrator steps marked
 reused=True: they ran in an earlier build, not this one, so they carry no latency (attempt is the attempt number
@@ -40,6 +42,7 @@ class TraceStep(BaseModel):
     reused: bool = False                # ran in an earlier build (a reused line), not in this one
     text: dict[str, str] | None = None  # recap steps only: the raw text checked (recap_verifier, per attempt) or the
                                         # filled text (recap_filler), by language
+    checks: list[str] | None = None     # verifier / recap_verifier steps only: the checks that ran, in order
 
     @model_validator(mode="after")
     def _check(self) -> TraceStep:
@@ -47,13 +50,16 @@ class TraceStep(BaseModel):
             raise ValueError("a code step has no model and no latency")
         if self.reused and (self.latency_s is not None or self.final):
             raise ValueError("a reused step has no latency and is never the final check")
+        if self.checks is not None and self.agent not in ("verifier", "recap_verifier"):
+            raise ValueError("only a verifier or recap_verifier step records checks")
         return self
 
 
 def code_step(agent: Agent, ok: bool = True, attempt: int = 1, reasons: list[str] | None = None,
-              notes: list[str] | None = None, final: bool = False, text: dict[str, str] | None = None) -> TraceStep:
+              notes: list[str] | None = None, final: bool = False, text: dict[str, str] | None = None,
+              checks: list[str] | None = None) -> TraceStep:
     return TraceStep(agent=agent, kind="code", attempt=attempt, ok=ok, reasons=reasons or [], notes=notes or [],
-                     final=final, text=text)
+                     final=final, text=text, checks=checks)
 
 
 def reused(steps: list[TraceStep]) -> list[TraceStep]:

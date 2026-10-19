@@ -40,11 +40,16 @@ Checks on the filled text (every slot filled, no brace left):
 
 Clauses are split at punctuation (, ; : · — and sentence ends), so the prompt asks for each team's passing
 claim in its own clause.
+
+RECAP_CHECKS is the one list of these checks, one function per name: verify_recap() runs every entry in order and
+returns their names (RecapVerdict.checks; the trace records them per Recap Verifier step). Each entry carries the
+plain-words label the Producer view shows.
 """
 from __future__ import annotations
 
 import re
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 
 from pydantic import BaseModel, ConfigDict
 
@@ -192,6 +197,7 @@ class RecapVerdict(BaseModel):
     notes: list[str] = []
     filled: RecapOut | None = None   # the text with its slots filled (None when a slot could not be filled)
     slots_used: list[str] = []       # the slots of the raw text, in order of first use
+    checks: list[str] = []           # the names of the checks that ran (RECAP_CHECKS), in order
 
 
 def _find(patterns: list[re.Pattern[str]], text: str) -> str | None:
@@ -305,6 +311,7 @@ def fill(out: RecapOut, card: RecapCard) -> RecapOut:
 
 
 def _format(out: RecapOut) -> list[str]:
+    """format (on the filled text): not empty, no line break, at most RECAP_MAX_SENTENCES sentences."""
     reasons = []
     for lang in LANGS:
         field, text = f"text_{lang}", getattr(out, f"text_{lang}")
@@ -316,24 +323,36 @@ def _format(out: RecapOut) -> list[str]:
         sentences = len(SENTENCE_BREAK[lang].findall(text.strip())) + 1
         if sentences > RECAP_MAX_SENTENCES:
             reasons.append(f"format: {field} has {sentences} sentences (at most {RECAP_MAX_SENTENCES})")
+    return reasons
+
+
+def _length(out: RecapOut) -> list[str]:
+    """length (on the filled text): at most RECAP_WORD_LIMIT words; an empty text is format's."""
+    reasons = []
+    for lang in LANGS:
+        field, text = f"text_{lang}", getattr(out, f"text_{lang}")
         words = len(text.split())
-        if words > RECAP_WORD_LIMIT:
+        if text.strip() and words > RECAP_WORD_LIMIT:
             reasons.append(f"length: {field} has {words} words (at most {RECAP_WORD_LIMIT})")
     return reasons
 
 
-def _wording(out: RecapOut) -> list[str]:
-    """banned and recap_cause (on the filled text)."""
-    reasons = []
-    for lang in LANGS:
-        field, text = f"text_{lang}", getattr(out, f"text_{lang}")
-        if "{" in text or "}" in text:
-            reasons.append(f"recap_slots: {field} has an unfilled slot or a stray brace")
-        if hit := _find(_BANNED[lang], text):
-            reasons.append(f"banned: {field} has {hit!r}")
-        if hit := _find(_CAUSE[lang], text):
-            reasons.append(f"recap_cause: {field} has {hit!r}; a recap says what happened, never why")
-    return reasons
+def _unfilled(out: RecapOut) -> list[str]:
+    """recap_slots on the filled text: no slot left unfilled, no stray brace."""
+    return [f"recap_slots: text_{lang} has an unfilled slot or a stray brace" for lang in LANGS
+            if "{" in getattr(out, f"text_{lang}") or "}" in getattr(out, f"text_{lang}")]
+
+
+def _banned(out: RecapOut) -> list[str]:
+    """banned (on the filled text)."""
+    return [f"banned: text_{lang} has {hit!r}" for lang in LANGS
+            if (hit := _find(_BANNED[lang], getattr(out, f"text_{lang}")))]
+
+
+def _cause(out: RecapOut) -> list[str]:
+    """recap_cause (on the filled text)."""
+    return [f"recap_cause: text_{lang} has {hit!r}; a recap says what happened, never why" for lang in LANGS
+            if (hit := _find(_CAUSE[lang], getattr(out, f"text_{lang}")))]
 
 
 def _claims(out: RecapOut, card: RecapCard, players: Sequence[str]) -> tuple[list[str], list[str]]:
@@ -445,13 +464,43 @@ def _claims(out: RecapOut, card: RecapCard, players: Sequence[str]) -> tuple[lis
     return reasons, notes
 
 
+@dataclass(frozen=True)
+class RecapCheck:
+    """One Recap Verifier check: its name (the prefix of its reasons), its plain-words label and the function, which
+    gets (raw text, filled text, card, players) and gives (reasons, notes)."""
+    name: str
+    label: str
+    run: Callable[[RecapOut, RecapOut, RecapCard, Sequence[str]], tuple[list[str], list[str]]]
+
+
+# The order is the order of the reasons. Labels: English UI only (the Producer view).
+RECAP_CHECKS: tuple[RecapCheck, ...] = (
+    RecapCheck("no_numbers", "The model wrote no numbers", lambda raw, filled, card, players: (_numbers(raw), [])),
+    RecapCheck("recap_slots", "Numbers only in code-filled slots, the same in EN/ES/EL",
+               lambda raw, filled, card, players: (_slots(raw, card) + _unfilled(filled), [])),
+    RecapCheck("format", f"One paragraph, at most {RECAP_MAX_SENTENCES} sentences",
+               lambda raw, filled, card, players: (_format(filled), [])),
+    RecapCheck("length", f"At most {RECAP_WORD_LIMIT} words", lambda raw, filled, card, players: (_length(filled), [])),
+    RecapCheck("banned", "No banned words", lambda raw, filled, card, players: (_banned(filled), [])),
+    RecapCheck("recap_cause", "Says what happened, never why", lambda raw, filled, card, players: (_cause(filled), [])),
+    RecapCheck("recap_claims", "Every statement backed by the card",
+               lambda raw, filled, card, players: _claims(filled, card, players)),
+)
+RECAP_CHECK_LABELS: dict[str, str] = {c.name: c.label for c in RECAP_CHECKS}
+
+
 def verify_recap(out: RecapOut, card: RecapCard, players: Sequence[str] = ()) -> RecapVerdict:
-    """Every check on a raw RecapOut (with slots): no_numbers and recap_slots on the raw text, then the slots are
-    filled and every other check runs on the filled text. players: every player name of the match (recap.roster).
-    The verdict carries the filled text and the slots used."""
+    """Every check of RECAP_CHECKS on a raw RecapOut (with slots): no_numbers and recap_slots on the raw text, then
+    the slots are filled and every other check runs on the filled text (recap_slots also checks that no slot is left
+    unfilled). players: every player name of the match (recap.roster). The verdict carries the filled text, the slots
+    used and the names of the checks that ran."""
     slots_used = list(dict.fromkeys(SLOT_RE.findall(" ".join(getattr(out, f"text_{lang}") for lang in LANGS))))
     filled = fill(out, card)
-    reasons = _numbers(out) + _slots(out, card) + _format(filled) + _wording(filled)
-    claim_reasons, notes = _claims(filled, card, players)
-    reasons += claim_reasons
-    return RecapVerdict(ok=not reasons, reasons=reasons, notes=notes, filled=filled, slots_used=slots_used)
+    reasons: list[str] = []
+    notes: list[str] = []
+    for check in RECAP_CHECKS:
+        r, n = check.run(out, filled, card, players)
+        reasons += r
+        notes += n
+    return RecapVerdict(ok=not reasons, reasons=reasons, notes=notes, filled=filled, slots_used=slots_used,
+                        checks=[c.name for c in RECAP_CHECKS])

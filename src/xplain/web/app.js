@@ -46,7 +46,9 @@
     lang: 'en',
     scope: 'all',      // which ranking the tables show: whole match so far, or one half
     replay: null,      // moment_id being replayed: pitch, plate and tab show it; clock and tables run on
-    mode: 'studio',    // 'studio' or 'player' (player.js: one player's match); both share the state above
+    mode: 'studio',    // 'studio', 'player' (player.js: one player's match) or 'producer' (producer.js: the control
+                       // room); all share the state above
+    producerRecap: null,   // Producer mode: the recap scope picked in the log (Producer only; Studio is unchanged)
     player: null,      // Player mode's player_id
     playerNarr: null,  // Player mode: the moment_id the plate's chevrons picked, null for the player's latest
     tableSig: {},      // per table, what it last drew (rows are rebuilt only when this changes)
@@ -156,7 +158,13 @@
       bundle, current: () => ({ bundle, now: state.now, player: state.player }),
       setPlayer: (id) => { state.player = id; state.playerPicked = true; setMode('player'); } });
     if (bundle.meta.players.some((p) => p.player_id === params.get('player'))) state.player = params.get('player');
+    // Producer mode: a log row replays its moment, as a Studio table row does; a recap row is Producer's own pick
+    XplainProducer.mount({
+      selectMoment: (id) => { if (idx.markOf.has(id)) enterReplay(id); },
+      selectRecap: (scope) => { state.producerRecap = scope; },
+      redraw: () => { state.renderedKey = ''; render(); } });
     if (params.get('mode') === 'player') setMode('player');
+    else if (params.get('mode') === 'producer') setMode('producer');
     // ?recap=ht|ft opens that recap at its time, paused, with no auto-resume (demo links, screenshots)
     const rs = RECAP_KEYS[params.get('recap')];
     if (rs && idx.recapT[rs] !== undefined && state.mode === 'studio') {
@@ -282,7 +290,9 @@
     if (mode === 'player' && !state.player) state.player = defaultPlayer();
     state.playerNarr = null;
     XplainPlayer.invalidate();   // the pitch and its tab are drawn again by whichever mode is shown
+    XplainProducer.invalidate();
     $('stage').classList.toggle('mode-player', mode === 'player');
+    $('stage').classList.toggle('mode-producer', mode === 'producer');
     for (const b of $('mode').querySelectorAll('button[data-mode]')) {
       const on = b.dataset.mode === mode;
       b.classList.toggle('on', on);
@@ -292,6 +302,9 @@
     if (mode === 'player') {
       url.searchParams.set('mode', 'player');
       if (state.player) url.searchParams.set('player', state.player);
+    } else if (mode === 'producer') {
+      url.searchParams.set('mode', 'producer');
+      url.searchParams.delete('player');
     } else {
       url.searchParams.delete('mode');
       url.searchParams.delete('player');
@@ -314,6 +327,7 @@
     const from = selectedIndex();
     recapToMap();   // a recap stays open: the map shows the pass, the Recap button brings the card back
     exitReplay();   // stepping from a replayed pass leaves replay and steps on from it
+    state.producerRecap = null;
     state.selected = Math.max(0, Math.min(live, from + dir));
     state.follow = false;
     state.goal = null;
@@ -360,12 +374,13 @@
     return { list, reached: list.length, pos, prev: pos >= 2 ? list[pos - 2] : null, next: pos < list.length ? list[pos] : null };
   }
 
-  function backToLive() { exitReplay(); state.follow = true; }
+  function backToLive() { exitReplay(); state.follow = true; state.producerRecap = null; }
 
   // --- replay: a table row puts its moment on the pitch, the plate and the tab ---
 
   function enterReplay(id) {
     recapToMap();
+    state.producerRecap = null;
     if (id === state.replay) return;
     state.replay = id;
     state.goal = null;
@@ -381,7 +396,7 @@
     }
   }
 
-  function leaveReplay() { exitReplay(); state.follow = true; }   // back to the live pass
+  function leaveReplay() { exitReplay(); state.follow = true; state.producerRecap = null; }   // back to the live pass
 
   function wire() {
     $('play').addEventListener('click', () => setPlaying(!state.playing));
@@ -424,6 +439,7 @@
       if (state.mode === 'player' && ![' ', '[', ']'].includes(e.key)) return;
       if (e.key === 'Escape') {   // leaves replay and step mode; when live, closes a recap (play stays paused)
         if (state.replay || !state.follow) { leaveReplay(); e.preventDefault(); }
+        else if (state.producerRecap) { state.producerRecap = null; e.preventDefault(); }
         else if (state.recap) { closeRecap(); e.preventDefault(); }
       }
       else if (e.key === 'ArrowLeft') { step(-1); e.preventDefault(); }
@@ -453,7 +469,8 @@
     const key = [sel, live, tick, score, half, brk, state.scope, snaps.map((s) => (s ? s.t : '-')).join('|'),
       plate ? plate.bundle.moment.moment_id : '-', state.lang, state.follow, state.replay,
       narr.reached, narr.pos, goal, state.mode, state.player, state.playerNarr,
-      state.recap ? state.recap.scope + (state.recap.resumeAt !== null) + state.recap.view : '-', state.playerPicked].join('/');
+      state.recap ? state.recap.scope + (state.recap.resumeAt !== null) + state.recap.view : '-', state.playerPicked,
+      state.producerRecap, state.mode === 'producer' ? XplainProducer.items(state.bundle, state.now, idx.recapT).length : ''].join('/');
     if (key === state.renderedKey) return;   // every DOM write below runs in this one animation frame
     state.renderedKey = key;
     if (state.mode === 'player') {   // Player mode: the score bug stays live; player.js draws the rest
@@ -483,11 +500,26 @@
     if (r && r.view === 'recap') {   // the recap plate; the left chevron goes to the latest narrated moment
       renderNarrNav({ reached: narr.reached, pos: 0, prev: narr.reached > 0, next: null });
       renderRecapPlate();
+      if (state.mode === 'producer') renderProducer(plate);
       return;
     }
     // while a recap is open, the right chevron at the latest narrated moment leads back to the recap
     renderNarrNav(r && !narr.next && narr.reached > 0 ? { ...narr, next: true } : narr);
     if (goal >= 0) renderGoalPlate(goal); else renderPlate(plate);
+    if (state.mode === 'producer') renderProducer(plate);
+  }
+
+  // Producer mode: the log and the selected line. The selection is Studio's: the replayed moment, else the open
+  // recap card, else the plate's moment; a recap row picked in the log (Producer only) comes first.
+  function producerSelected(plate) {
+    if (state.producerRecap) return { type: 'recap', id: state.producerRecap };
+    if (state.replay) return { type: 'moment', id: state.replay };
+    if (state.recap && state.recap.view === 'recap') return { type: 'recap', id: state.recap.scope };
+    return plate ? { type: 'moment', id: plate.bundle.moment.moment_id } : null;
+  }
+
+  function renderProducer(plate) {
+    XplainProducer.render({ bundle: state.bundle, now: state.now, recapT: idx.recapT, selected: producerSelected(plate) });
   }
 
   // --- transitions ---------------------------------------------------------------------------
@@ -626,7 +658,8 @@
       }
     }
     const title = $('title');
-    title.textContent = open ? title.dataset[state.recap.scope === 'half_time' ? 'ht' : 'ft'] : title.dataset.live;
+    title.textContent = state.mode === 'producer' ? title.dataset.producer
+      : open ? title.dataset[state.recap.scope === 'half_time' ? 'ht' : 'ft'] : title.dataset.live;
     if (!on) return;
     const entry = state.bundle.recaps[state.recap.scope];
     const c = entry.card;

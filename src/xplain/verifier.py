@@ -43,15 +43,21 @@ Checks (every failing check adds a reason; all reasons are collected, not just t
 
 Reasons start with the check name, e.g. "no_numbers: line_en has '94%'". Notes are observations that
 do not fail a line, e.g. "difficulty: line_en has no difficulty word".
+
+CHECKS is the one list of these checks: verify() runs exactly the entries of its phrase mode, in order, and
+returns their names (VerifierResult.checks; the trace records them per Verifier step). Each entry carries the
+plain-words label the Producer view shows.
 """
 from __future__ import annotations
 
 import re
 from collections import Counter
+from collections.abc import Callable
+from dataclasses import dataclass
 
 from pydantic import BaseModel, ConfigDict
 
-from .config import phrase_mode
+from .config import PHRASE_MODES, phrase_mode
 from .contracts import Driver, MomentBundle
 from .narration import NarratorOut, difficulty_tier
 from .phrases import (DEPTH_HINTS, DEPTH_PHRASES, ENGLISH_HEIGHT_HINTS, GREEK_ADJECTIVES, GREEK_DEPTH_HINTS,
@@ -232,6 +238,7 @@ class VerifierResult(BaseModel):
     ok: bool
     reasons: list[str]
     notes: list[str] = []   # observations that do not fail the line
+    checks: list[str] = []  # the names of the checks that ran (CHECKS), in order
 
 
 def difficulty_words(lang: str, line: str) -> dict[str, list[str]]:
@@ -558,33 +565,71 @@ def check_double_contrast(out: NarratorOut) -> list[str]:
     return reasons
 
 
+@dataclass(frozen=True)
+class Check:
+    """One Verifier check: its name (the prefix of its reasons), its plain-words label, the phrase modes that run it,
+    and the function, which gives (reasons, notes)."""
+    name: str
+    label: str
+    run: Callable[[NarratorOut, MomentBundle], tuple[list[str], list[str]]]
+    modes: frozenset[str] = frozenset(PHRASE_MODES)
+
+
+def _on_line(fn: Callable[[NarratorOut], list[str]]) -> Callable[[NarratorOut, MomentBundle], tuple[list[str], list[str]]]:
+    return lambda out, bundle: (fn(out), [])
+
+
+def _on_moment(fn: Callable[[NarratorOut, MomentBundle], list[str]]
+               ) -> Callable[[NarratorOut, MomentBundle], tuple[list[str], list[str]]]:
+    return lambda out, bundle: (fn(out, bundle), [])
+
+
+# The order is the order of the reasons. Labels: English UI only (the Producer view).
+CHECKS: tuple[Check, ...] = (
+    Check("sentence", "One sentence per language", _on_line(check_sentence)),
+    Check("length", f"At most {WORD_LIMIT} words", _on_line(check_length)),
+    Check("no_numbers", "No numbers and no minute", _on_line(check_no_numbers)),
+    Check("difficulty", "Difficulty word matches the tier", check_difficulty),
+    Check("banned", "No banned words", _on_line(check_banned)),
+    Check("drivers", "Only drivers the model was shown", _on_moment(check_drivers)),
+    Check("phrases", "Approved driver phrases, word for word", _on_moment(check_phrases), frozenset({"strict"})),
+    Check("driver_direction", "Drivers agree with the rating", _on_moment(check_driver_direction)),
+    Check("outcome_cause", "A reason explains the rating, never the outcome", _on_moment(check_outcome_cause)),
+    Check("unsupported_fact", "Every fact comes from a driver", _on_moment(check_unsupported_facts)),
+    Check("lead_driver", "“Mainly” only for the strongest driver", _on_moment(check_lead_driver)),
+    Check("needs_driver", "A driver named whenever the rating needs one", _on_moment(check_needs_driver)),
+    Check("driver_expressed", "Every driver named in all three languages", _on_moment(check_driver_expressed),
+          frozenset({"hints"})),
+    Check("role_parity", "Same driver role in all three languages", _on_moment(check_role_parity)),
+    Check("one_position_piece", "Position named by depth or width, not both", _on_moment(check_one_position_piece),
+          frozenset({"free", "hints"})),
+    Check("one_role_per_clause", "One reason or concession per clause", _on_line(check_one_role_per_clause)),
+    Check("tier_first_contrast", "A contrast word after an opening difficulty word", _on_line(check_tier_first_contrast)),
+    Check("rating_tense", "Rating in the past tense", _on_line(check_rating_tense)),
+    Check("double_contrast", "One contrast per line", _on_line(check_double_contrast)),
+)
+CHECK_LABELS: dict[str, str] = {c.name: c.label for c in CHECKS}
+
+
+def checks_for(mode: str) -> tuple[Check, ...]:
+    """The checks verify() runs in a phrase mode, in order."""
+    return tuple(c for c in CHECKS if mode in c.modes)
+
+
 def verify(out: NarratorOut, bundle: MomentBundle, mode: str | None = None) -> VerifierResult:
-    """Run every check and collect every failing reason; ok when there are none. Notes never fail a line.
+    """Run every check of the phrase mode (checks_for) and collect every failing reason; ok when there are none.
+    Notes never fail a line.
 
     mode is the phrase mode (default config.phrase_mode()); the phrases check runs in "strict" mode only,
     driver_expressed in "hints" mode, one_position_piece in "free" and "hints" modes.
     """
     mode = mode or phrase_mode()
-    difficulty_reasons, notes = check_difficulty(out, bundle)
-    reasons = [
-        *check_sentence(out),
-        *check_length(out),
-        *check_no_numbers(out),
-        *difficulty_reasons,
-        *check_banned(out),
-        *check_drivers(out, bundle),
-        *(check_phrases(out, bundle) if mode == "strict" else []),
-        *check_driver_direction(out, bundle),
-        *check_outcome_cause(out, bundle),
-        *check_unsupported_facts(out, bundle),
-        *check_lead_driver(out, bundle),
-        *check_needs_driver(out, bundle),
-        *(check_driver_expressed(out, bundle) if mode == "hints" else []),
-        *check_role_parity(out, bundle),
-        *(check_one_position_piece(out, bundle) if mode != "strict" else []),
-        *check_one_role_per_clause(out),
-        *check_tier_first_contrast(out),
-        *check_rating_tense(out),
-        *check_double_contrast(out),
-    ]
-    return VerifierResult(ok=not reasons, reasons=reasons, notes=notes)
+    reasons: list[str] = []
+    notes: list[str] = []
+    ran: list[str] = []
+    for check in checks_for(mode):
+        r, n = check.run(out, bundle)
+        reasons += r
+        notes += n
+        ran.append(check.name)
+    return VerifierResult(ok=not reasons, reasons=reasons, notes=notes, checks=ran)

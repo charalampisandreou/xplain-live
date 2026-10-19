@@ -280,7 +280,7 @@ class Narrator:
                         checked = verify(out, bundle, self.mode)
                         rejected = checked.reasons
                         trace.append(code_step("verifier", ok=not rejected, attempt=attempts, reasons=rejected,
-                                               notes=checked.notes))
+                                               notes=checked.notes, checks=checked.checks))
                         if not rejected:
                             return result(out, checked.notes)
                         candidates.append(out)

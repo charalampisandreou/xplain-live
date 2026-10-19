@@ -1,4 +1,7 @@
 """The web routes: the Studio page, its static files and the match bundle endpoint."""
+import re
+from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -6,6 +9,8 @@ from xplain import api
 from xplain.api import create_app
 
 from .test_scoring import StubScorer
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 @pytest.fixture
@@ -275,6 +280,58 @@ def test_picker_shows_positions(client):
     assert ".pk-pos {" in client.get("/static/app.css").text
 
 
+def test_producer_mode_is_on_the_page(client):
+    html = client.get("/").text.replace("\r\n", "\n")
+    js = client.get("/static/producer.js")
+    assert js.status_code == 200 and "javascript" in js.headers["content-type"]
+    assert html.index("/static/producer.js") < html.index("/static/app.js")   # app.js mounts it
+    modes = html.split('id="mode"')[1].split("</div>")[0]
+    assert modes.index('data-mode="player"') < modes.index(
+        '<button type="button" data-mode="producer" aria-pressed="false">Producer</button>')
+    assert 'disabled aria-disabled="true" title="Coming soon">Analyst</button>' in modes   # left as it is
+    log = html.split('<section class="producer-log" id="producer-log"')[1].split("</section>")[0]
+    assert '<h2>Log</h2><div class="tsub">newest first</div>' in log and 'id="pr-rows"' in log
+    assert '<div class="empty" id="pr-empty" hidden>No agent trace in this match bundle.</div>' in log
+    assert 'id="pr-detail"' in html
+
+
+def test_producer_mode_is_wired_and_shares_studio_state(client):
+    app = client.get("/static/app.js").text.replace("\r\n", "\n")
+    js = client.get("/static/producer.js").text
+    assert "else if (params.get('mode') === 'producer') setMode('producer');" in app
+    assert "$('stage').classList.toggle('mode-producer', mode === 'producer');" in app
+    # a log row replays its moment as a Studio table row does; a recap row is Producer's own pick
+    assert "selectMoment: (id) => { if (idx.markOf.has(id)) enterReplay(id); }" in app
+    assert "selectRecap: (scope) => { state.producerRecap = scope; }" in app
+    sel = app.split("function producerSelected(plate) {")[1].split("\n  }\n")[0]
+    assert sel.index("state.producerRecap") < sel.index("state.replay") < sel.index("state.recap") < sel.index("plate ?")
+    assert "title.dataset.producer" in app
+    # recaps open (and pause) only in Studio: Producer keeps the match running
+    assert "!isLive() || state.mode !== 'studio') continue;" in app
+    # no spoilers: only commentated moments and reached recaps at or before the clock
+    assert "if (!m.bundle.qualifies_live || mo.t > now) continue;" in js
+    assert "if (!entry || at === undefined || at === null || at > now) continue;" in js
+    # checks only from the step's record; collapsed by default; a failed step shows its reasons
+    assert "if (!s.checks) {" in js and "const NOT_RECORDED = 'Checks not recorded in this bundle.';" in js
+    assert "let openChecks = new Set();" in js and "if (!s.ok && s.reasons.length) wrap.appendChild(reasonsBlock" in js
+    assert "s.latency_s + ' s'" in js   # latency as stored
+
+
+def test_producer_layout_keeps_studio_rules(client):
+    css = client.get("/static/app.css").text.replace("\r\n", "\n")
+    block = css.split("/* --- Producer mode")[1]
+    assert "#stage.mode-producer .pitch, #stage.mode-producer .tables, #stage.mode-producer .scope," in block
+    for slot, box in ((".producer-log {", "top: 196px; left: 40px; width: 780px; height: 520px"),
+                      (".producer-detail {", "top: 196px; left: 860px; width: 540px; height: 520px")):
+        rule = block.split("\n" + slot)[1].split("}")[0]
+        assert box in rule and "border:" not in rule and "box-shadow" not in rule and "background" not in rule
+    assert re.findall(r"#[0-9A-Fa-f]{3,6}\b", block) == []   # tokens only
+
+
+def test_web_files_check_out_with_lf():
+    assert "src/xplain/web/* text eol=lf" in (ROOT / ".gitattributes").read_text(encoding="utf-8")
+
+
 def test_empty_states_end_with_a_full_stop(client):
     app = client.get("/static/app.js").text
     js = client.get("/static/player.js").text
@@ -282,11 +339,16 @@ def test_empty_states_end_with_a_full_stop(client):
         assert "const NOT_STARTED = 'Starts in the 2nd half.';" in text
     assert "emptyText = 'No commentated moment yet.'" in app
     assert "'No surprises yet.'" in js
+    producer = client.get("/static/producer.js").text
+    for text in ("No agent trace in this match bundle.", "Checks not recorded in this bundle.", "No line went on air.",
+                 "No commentated moment yet.", "Pick a line in the log.", "No steps stored for this line."):
+        assert "'" + text + "'" in producer
 
 
 def test_title_and_recap_card_are_on_the_page(client):
     html = client.get("/").text
-    assert 'data-live="Live pass map" data-ht="HT Recap" data-ft="FT Recap">Live pass map</h1>' in html
+    assert ('data-live="Live pass map" data-ht="Half Time" data-ft="Full Time" data-producer="Control room">'
+            'Live pass map</h1>') in html
     assert "Pass outliers" not in html
     recap = html.split('<section class="recap" id="recap"')[1].split("</section>")[0]
     for node in ('id="rc-score"', 'id="rc-goal-rows"', 'id="rc-team-rows"', 'id="rc-star"', 'id="rc-text"'):
@@ -356,7 +418,7 @@ def test_recap_star_text_and_view_switch(client):
     render = app.split("function renderRecap() {")[1].split("function renderStar(")[0]
     assert "const on = open && state.recap.view === 'recap';" in render
     assert "$('recap-view').hidden = !open;" in render
-    assert "title.textContent = open ?" in render
+    assert "      : open ? title.dataset[state.recap.scope === 'half_time' ? 'ht' : 'ft'] : title.dataset.live;" in render
 
 
 def test_score_bug_reads_ht_and_ft(client):
