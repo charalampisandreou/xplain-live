@@ -255,8 +255,11 @@ def test_the_cause_chain_stops_after_three_and_follows_context():
 # --- network diagnosis: dns / resolv / proxy (fakes only, no real lookups) ---
 
 def fake_resolver(answers: dict):
-    def resolve(host):
+    """answers[host] is one answer for every family, or {family: answer}."""
+    def resolve(host, family):
         a = answers[host]
+        if isinstance(a, dict):
+            a = a[family]
         if isinstance(a, Exception):
             raise a
         if a == "hang":
@@ -274,9 +277,28 @@ def test_dns_report_gives_ok_the_first_two_addrs_or_the_error():
     })
     out = live.dns_report(["a.example", "b.example", "a.example", None], resolve)
     assert list(out) == ["a.example", "b.example"]   # in order, no repeats, no empty host
-    assert out["a.example"] == {"ok": True, "addrs": ["192.0.2.1", "192.0.2.2"], "error": None}
-    assert out["b.example"] == {"ok": False, "addrs": [],
-                                "error": "gaierror: [Errno -3] Temporary failure in name resolution"}
+    ok = {"ok": True, "addrs": ["192.0.2.1", "192.0.2.2"], "error": None}
+    assert out["a.example"] == {**ok, "ipv4": ok, "ipv6": ok}
+    failed = {"ok": False, "addrs": [], "error": "gaierror: [Errno -3] Temporary failure in name resolution"}
+    assert out["b.example"] == {**failed, "ipv4": failed, "ipv6": failed}
+
+
+def test_dns_report_looks_up_ipv4_and_ipv6_separately():
+    """The deployed case to tell apart: the unrestricted lookup fails while IPv4 alone answers."""
+    import socket
+    eai_again = socket.gaierror(-3, "Temporary failure in name resolution")
+    asked = []
+    resolve = fake_resolver({"f.example": {socket.AF_UNSPEC: eai_again, socket.AF_INET: ["192.0.2.7"],
+                                           socket.AF_INET6: eai_again}})
+
+    def recording(host, family):
+        asked.append(family)
+        return resolve(host, family)
+    out = live.dns_report(["f.example"], recording)["f.example"]
+    assert sorted(asked) == sorted([socket.AF_UNSPEC, socket.AF_INET, socket.AF_INET6])
+    assert out["ok"] is False and out["error"].startswith("gaierror: [Errno -3]")
+    assert out["ipv4"] == {"ok": True, "addrs": ["192.0.2.7"], "error": None}
+    assert out["ipv6"]["ok"] is False and out["ipv6"]["addrs"] == []
 
 
 def test_dns_report_has_one_budget_for_all_hosts():
@@ -284,19 +306,20 @@ def test_dns_report_has_one_budget_for_all_hosts():
     start = time.perf_counter()
     out = live.dns_report(["slow.example", "fast.example"], resolve, timeout_s=0.2)
     assert time.perf_counter() - start < 0.8
-    assert out["slow.example"] == {"ok": False, "addrs": [], "error": "TimeoutError: no answer within 0.2 s"}
-    assert out["fast.example"]["ok"] is True
+    timed_out = {"ok": False, "addrs": [], "error": "TimeoutError: no answer within 0.2 s"}
+    assert out["slow.example"] == {**timed_out, "ipv4": timed_out, "ipv6": timed_out}
+    assert out["fast.example"]["ok"] is True and out["fast.example"]["ipv6"]["ok"] is True
 
 
 def test_network_report_looks_up_the_endpoint_host_and_the_fixed_hosts(monkeypatch, tmp_path):
     monkeypatch.setenv("XPLAIN_FOUNDRY_ENDPOINT", "https://example.openai.azure.com/openai/v1/")
     asked = []
 
-    def resolve(host):
+    def resolve(host, family):
         asked.append(host)
         return ["192.0.2.1"]
     report = live.network_report(resolve, str(tmp_path / "missing"), environ={})
-    assert sorted(asked) == sorted(["example.openai.azure.com", *live.DNS_HOSTS])
+    assert sorted(asked) == sorted(["example.openai.azure.com", *live.DNS_HOSTS] * 3)   # any, IPv4, IPv6
     assert list(report["dns"]) == ["example.openai.azure.com", *live.DNS_HOSTS]
     assert live.DNS_HOSTS == ("plhack-foundry-candreou-resource.cognitiveservices.azure.com",
                               "login.microsoftonline.com", "management.azure.com", "pypi.org")
