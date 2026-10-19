@@ -31,8 +31,18 @@ class ManagedIdentityCredential:   # named like the class DefaultAzureCredential
 
 
 class FakeDefault:
-    def __init__(self):
-        self._successful_credential = ManagedIdentityCredential()
+    """Like DefaultAzureCredential: a chain that records the credential that returned a token."""
+    def __init__(self, error: Exception | None = None):
+        self.credentials = [ManagedIdentityCredential()]
+        self._successful_credential = None
+        self.error, self.scopes = error, []
+
+    def get_token(self, *scopes, **kw):
+        self.scopes.append(scopes)
+        if self.error:
+            raise self.error
+        self._successful_credential = self.credentials[0]
+        return SimpleNamespace(token="fake-token", expires_on=int(time.time()) + 3600)
 
 
 class Clock:
@@ -43,9 +53,16 @@ class Clock:
         return self.t
 
 
-def checker(completions: FakeCompletions, clock: Clock | None = None, **kw) -> LiveCheck:
+def checker(completions: FakeCompletions, clock: Clock | None = None, credential: FakeDefault | None = None,
+            tokens: list | None = None, **kw) -> LiveCheck:
     client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
-    return LiveCheck(credential_factory=FakeDefault, client_factory=lambda cred: client, clock=clock or Clock(), **kw)
+
+    def client_factory(token):
+        if tokens is not None:
+            tokens.append(token)
+        return client
+    cred = credential or FakeDefault()
+    return LiveCheck(credential_factory=lambda: cred, client_factory=client_factory, clock=clock or Clock(), **kw)
 
 
 @pytest.fixture
@@ -73,7 +90,9 @@ def test_one_tiny_call_with_the_live_deployment(monkeypatch, fake):
         body = c.get("/api/live/health").json()
     assert body["ok"] is True and body["cached"] is False
     assert body["model"] == "gpt-4.1-mini-2025-04-14" and body["credential"] == "ManagedIdentityCredential"
-    assert isinstance(body["latency_s"], float)
+    assert isinstance(body["latency_s"], float) and body["age_s"] == 0.0
+    assert body["endpoint_host"] == live.endpoint().split("/")[2]   # the host only
+    assert "stage" not in body and "causes" not in body
     assert fake.kwargs == {"model": "gpt-4.1-mini", "messages": [{"role": "user", "content": "Reply with OK"}],
                            "max_completion_tokens": 5}
     monkeypatch.setenv("XPLAIN_LIVE_DEPLOYMENT", "gpt-6.1-sol")
@@ -87,9 +106,31 @@ def test_at_most_one_real_call_per_minute_cached_in_between(fake):
     clock.t += 59.9
     second = check.run()
     assert fake.calls == 1 and first["cached"] is False and second["cached"] is True
-    assert {k: v for k, v in second.items() if k != "cached"} == {k: v for k, v in first.items() if k != "cached"}
+    assert {k: v for k, v in second.items() if k not in ("cached", "age_s")} == \
+        {k: v for k, v in first.items() if k not in ("cached", "age_s")}
+    assert second["age_s"] == 59.9
     clock.t += 0.1
     assert check.run()["cached"] is False and fake.calls == 2
+
+
+def test_a_result_older_than_a_minute_is_never_reused(fake):
+    """The deployed bug report: a call ~7 minutes later came back cached. 61 s, 7 minutes: always a new call."""
+    clock = Clock()
+    check = checker(fake, clock)
+    assert check.run()["cached"] is False
+    clock.t += 61
+    third = check.run()
+    assert third["cached"] is False and third["age_s"] == 0.0 and fake.calls == 2
+    clock.t += 7 * 60
+    assert check.run()["cached"] is False and fake.calls == 3
+    clock.t += 1
+    assert check.run()["cached"] is True and fake.calls == 3
+
+
+def test_the_endpoint_is_never_cached_by_a_browser_or_proxy(monkeypatch, fake):
+    monkeypatch.setenv("XPLAIN_LIVE", "1")
+    with app_client(checker(fake)) as c:
+        assert c.get("/api/live/health").headers["cache-control"] == "no-store"
 
 
 def test_a_failure_is_rate_limited_too_and_hides_secrets():
@@ -119,24 +160,42 @@ def test_scrub_keeps_plain_words():
     assert scrub("x\n  y") == "x y"
 
 
-def test_credential_name():
-    assert credential_name(FakeDefault()) == "ManagedIdentityCredential"
+def test_credential_name_is_the_one_that_returned_a_token():
+    chain = FakeDefault()
+    assert credential_name(chain) is None   # configured, but no token returned yet
+    chain.get_token(live.COGNITIVE_SCOPE)
+    assert credential_name(chain) == "ManagedIdentityCredential"
     assert credential_name(ManagedIdentityCredential()) == "ManagedIdentityCredential"
     assert credential_name(None) is None
 
 
-def test_the_client_uses_a_token_provider_not_a_key(monkeypatch):
+def test_the_token_comes_first_and_alone_and_is_the_bearer(fake):
+    cred, tokens = FakeDefault(), []
+    body = checker(fake, credential=cred, tokens=tokens).run()
+    assert body["ok"] is True and cred.scopes == [(live.COGNITIVE_SCOPE,)] and tokens == ["fake-token"]
+
+
+def test_a_token_failure_is_reported_as_the_token_stage_with_no_credential(fake):
+    from azure.core.exceptions import ClientAuthenticationError
+    cred = FakeDefault(error=ClientAuthenticationError("ManagedIdentityCredential: no identity token=abc123 found"))
+    body = checker(fake, credential=cred).run()
+    assert body["ok"] is False and body["stage"] == "token" and body["credential"] is None
+    assert body["error"] == "ClientAuthenticationError" and "abc123" not in body["message"]
+    assert fake.calls == 0   # the request never ran
+
+
+def test_a_request_failure_names_the_credential_that_gave_the_token():
+    body = checker(FakeCompletions(error=ConnectionError("refused"))).run()
+    assert body["stage"] == "request" and body["credential"] == "ManagedIdentityCredential"
+    assert body["error"] == "ConnectionError" and body["causes"] == []
+
+
+def test_the_client_sends_the_entra_token_not_a_key(monkeypatch):
     monkeypatch.setenv("XPLAIN_FOUNDRY_ENDPOINT", "https://example.openai.azure.com/openai/v1/")
-    asked = []
-
-    class Cred:
-        def get_token(self, *scopes, **kw):
-            asked.append(scopes)
-            return SimpleNamespace(token="t", expires_on=int(time.time()) + 3600)
-
-    client = live.make_client(Cred())
+    client = live.make_client("entra-access-token")
     assert str(client.base_url) == "https://example.openai.azure.com/openai/v1/"
-    assert client.api_key == "" and client.max_retries == 0 and client.timeout == live.TIMEOUT_S
+    assert live.endpoint_host() == "example.openai.azure.com"
+    assert client.api_key == "entra-access-token" and client.max_retries == 0 and client.timeout == live.TIMEOUT_S
     assert live.COGNITIVE_SCOPE == "https://cognitiveservices.azure.com/.default"
 
 
@@ -146,3 +205,44 @@ def test_the_credential_is_the_default_chain_with_the_managed_identity_client_id
     assert type(cred).__name__ == "DefaultAzureCredential"
     names = [type(c).__name__ for c in cred.credentials]
     assert "ManagedIdentityCredential" in names and "AzureCliCredential" in names
+
+
+def test_the_cause_chain_is_shown_scrubbed_and_logged(caplog):
+    """The openai client wraps any send failure as "Connection error."; the causes are what help."""
+    try:
+        try:
+            try:
+                raise OSError("[Errno -2] Name or service not known api-key=abc123")
+            except OSError as root:
+                raise TimeoutError("connect: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOi.eyJhdWQiOiJodHRw.c2ln") from root
+        except TimeoutError as mid:
+            raise RuntimeError("Connection error.") from mid
+    except RuntimeError as wrapped:
+        error = wrapped
+    with caplog.at_level("WARNING", logger="xplain.live"):
+        body = checker(FakeCompletions(error=error)).run()
+    assert body["ok"] is False and body["error"] == "RuntimeError" and body["message"] == "Connection error."
+    assert [c["error"] for c in body["causes"]] == ["TimeoutError", "OSError"]
+    assert body["causes"][1]["message"].startswith("[Errno -2] Name or service not known")
+    logged = caplog.text
+    assert "at request: RuntimeError: Connection error. <- TimeoutError: connect:" in logged
+    for leaked in ("eyJ", "abc123"):
+        assert leaked not in str(body["causes"]) and leaked not in logged
+    assert "Traceback" not in logged
+
+
+def test_the_cause_chain_stops_after_three_and_follows_context():
+    def nest(n):
+        if n == 0:
+            raise ValueError("root")
+        try:
+            nest(n - 1)
+        except Exception:
+            raise KeyError(f"level {n}")   # implicit __context__
+    try:
+        nest(5)
+    except KeyError as e:
+        error = e
+    body = checker(FakeCompletions(error=error)).run()
+    assert len(body["causes"]) == live.CAUSE_DEPTH == 3
+    assert all(c["error"] == "KeyError" for c in body["causes"])

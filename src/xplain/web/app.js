@@ -60,6 +60,8 @@
                        // view 'recap': the card in the pitch's slot, 'map': the pitch and the narration)
     playerPicked: false,   // a player was picked since the recap opened (else Players opens on its star)
     pendingRecap: null,   // a recap crossed while the goal plate still holds: shown when it ends
+    unseenRecap: null,    // a recap crossed by live playback in Producer or Players: reached, not yet seen
+                          // (showUnseenRecap on switching to Studio)
     fit: new Map(),    // "moment_id/lang" -> a smaller font size for a line that needs it (fitLines)
     fades: new Map(),  // element -> { anim, at }: its running cross-fade and when it started
   };
@@ -201,10 +203,16 @@
       // a goal flashes only when live playback crosses it: never on ?t, replay, step mode or language
       const after = lastAtOrBefore(idx.scoreT, state.now);
       if (after > before && idx.score[after].goal) goalFlash(after, ts);
-      // a recap opens the same way: only when live playback in Studio crosses its time
+      // a recap opens the same way: only when live playback crosses its time. In Studio it opens (paused); in
+      // Producer or Players nothing pauses or shows, it is marked reached-unseen (showUnseenRecap)
       for (const scope of ['half_time', 'full_time']) {
         const at = idx.recapT[scope];
-        if (at === undefined || !(prevNow < at && state.now >= at) || !isLive() || state.mode !== 'studio') continue;
+        if (at === undefined || !(prevNow < at && state.now >= at) || !isLive()) continue;
+        if (state.mode !== 'studio') {
+          if (state.recap && state.recap.scope !== scope) closeRecap();   // a newer recap supersedes an open one
+          state.unseenRecap = scope;
+          continue;
+        }
         state.now = at;
         setPlaying(false);
         state.pendingRecap = scope;
@@ -228,6 +236,19 @@
 
   function isLive() { return state.follow && !state.replay; }
 
+  // A recap crossed live in Producer or Players, on switching to Studio: while live, full time opens; half time
+  // opens only if no pass after its time has been played yet; otherwise it is dropped. Opening marks it seen (it
+  // opens through pendingRecap, paused, half time resuming by itself as when crossed in Studio).
+  function showUnseenRecap() {
+    const scope = state.unseenRecap;
+    state.unseenRecap = null;
+    if (!scope || !isLive() || state.recap) return;
+    const live = liveIndex();
+    if (scope === 'half_time' && live >= 0 && idx.markT[live] > idx.recapT.half_time) return;
+    setPlaying(false);
+    state.pendingRecap = scope;
+  }
+
   function liveIndex() { return lastAtOrBefore(idx.markT, state.now); }
   function selectedIndex() {
     if (state.replay) return idx.markOf.get(state.replay);
@@ -241,6 +262,7 @@
     if (on && state.now >= state.bundle.clock.last_event_t) {
       state.now = state.bundle.clock.first_event_t;   // play again from kick-off
       state.goal = null;
+      state.unseenRecap = null;
       exitReplay();
       state.follow = true;
     }
@@ -311,6 +333,7 @@
       url.searchParams.delete('player');
     }
     history.replaceState(null, '', url);
+    if (mode === 'studio') showUnseenRecap();
   }
 
   // the player of the replayed moment, else of the plate's moment, else of the live pass, else the first listed

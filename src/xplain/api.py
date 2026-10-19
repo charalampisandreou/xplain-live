@@ -11,7 +11,7 @@ bundle from GET /api/bundle/{name}: <bundle dir>/bundle_{name}.json, name matchi
 The bundle dir is create_app(bundle_dir=...), else XPLAIN_BUNDLE_DIR, else config.BUNDLE_DIR.
 
 GET /api/live/health (live spike, live.py) is 404 unless XPLAIN_LIVE=1: one tiny model call with the app's managed
-identity, at most once per 60 s server-wide (cached in between).
+identity, at most once per 60 s server-wide (cached in between; Cache-Control: no-store).
 """
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi import Path as PathParam
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -103,9 +103,10 @@ def create_app(scorer: Scorer | None = None, bundles: Path | None = None,
         )
 
     @app.get("/api/live/health", include_in_schema=False)
-    def live_health() -> dict:
+    def live_health(response: Response) -> dict:
         if not live.enabled():
             raise HTTPException(status_code=404, detail="Not Found")
+        response.headers["Cache-Control"] = "no-store"   # the server's cache is the only cache (age_s says how old)
         return checker.run()
 
     @app.get("/", include_in_schema=False)

@@ -306,8 +306,8 @@ def test_producer_mode_is_wired_and_shares_studio_state(client):
     sel = app.split("function producerSelected(plate) {")[1].split("\n  }\n")[0]
     assert sel.index("state.producerRecap") < sel.index("state.replay") < sel.index("state.recap") < sel.index("plate ?")
     assert "title.dataset.producer" in app
-    # recaps open (and pause) only in Studio: Producer keeps the match running
-    assert "!isLive() || state.mode !== 'studio') continue;" in app
+    # recaps open (and pause) only in Studio: Producer keeps the match running; a recap crossed there is remembered
+    assert "if (state.mode !== 'studio') {" in app and "state.unseenRecap = scope;" in app
     # no spoilers: only commentated moments and reached recaps at or before the clock
     assert "if (!m.bundle.qualifies_live || mo.t > now) continue;" in js
     assert "if (!entry || at === undefined || at === null || at > now) continue;" in js
@@ -333,6 +333,26 @@ def test_producer_layout_keeps_studio_rules(client):
         rule = block.split("\n" + slot)[1].split("}")[0]
         assert box in rule and "border:" not in rule and "box-shadow" not in rule and "background" not in rule
     assert re.findall(r"#[0-9A-Fa-f]{3,6}\b", block) == []   # tokens only
+
+
+def test_a_recap_crossed_in_producer_or_players_opens_on_switching_to_studio(client):
+    app = client.get("/static/app.js").text.replace("\r\n", "\n")
+    frame = app.split("function frame(ts) {")[1].split("\n  }\n")[0]
+    # crossed by live playback only (not in replay or step mode); outside Studio: marked reached-unseen, no pause
+    assert "if (at === undefined || !(prevNow < at && state.now >= at) || !isLive()) continue;" in frame
+    outside = frame.split("if (state.mode !== 'studio') {")[1].split("continue;")[0]
+    assert "state.unseenRecap = scope;" in outside and "setPlaying" not in outside
+    assert "unseenRecap" not in frame.split("state.unseenRecap = scope;")[1]   # opened only by the mode switch
+    # switching to Studio while live: FT opens, HT only before any second-half pass; opening marks it seen
+    mode = app.split("function setMode(mode) {")[1].split("\n  }\n")[0]
+    assert mode.rstrip().endswith("if (mode === 'studio') showUnseenRecap();")
+    show = app.split("function showUnseenRecap() {")[1].split("\n  }\n")[0]
+    assert show.index("state.unseenRecap = null;") < show.index("if (!scope || !isLive() || state.recap) return;")
+    assert "if (scope === 'half_time' && live >= 0 && idx.markT[live] > idx.recapT.half_time) return;" in show
+    assert show.rstrip().endswith("setPlaying(false);\n    state.pendingRecap = scope;")
+    # a restart from kick-off forgets it
+    restart = app.split("function setPlaying(on) {")[1].split("\n  }\n")[0]
+    assert "state.unseenRecap = null;" in restart
 
 
 def test_web_files_check_out_with_lf():
@@ -386,7 +406,8 @@ def test_recap_plate_state_and_drain(client):
 def test_recap_opens_only_on_live_playback_and_by_link(client):
     app = client.get("/static/app.js").text
     assert "const RECAP_KEYS = { ht: 'half_time', ft: 'full_time' };" in app
-    assert "!(prevNow < at && state.now >= at) || !isLive() || state.mode !== 'studio'" in app
+    assert "if (at === undefined || !(prevNow < at && state.now >= at) || !isLive()) continue;" in app
+    assert "if (state.mode !== 'studio') {" in app   # Producer / Players: reached-unseen (unseenRecap), not opened
     assert "openRecap(scope, scope === 'half_time' ? ts + RECAP_PAUSE_MS : null);" in app   # FT stays paused
     assert "const RECAP_PAUSE_MS = 10000;" in app
     link = app.split("const rs = RECAP_KEYS[params.get('recap')];")[1].split("requestAnimationFrame(frame);")[0]

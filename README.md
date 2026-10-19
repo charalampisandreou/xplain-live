@@ -271,7 +271,10 @@ Also in the Studio:
   decimals too ("19.45" in English, "19,45" in Spanish and Greek). The score bug reads HT or FT. A Recap /
   Map switch shows the card or the pitch; the plate's chevrons step from the recap into the narrated
   moments and back, and stepping or replaying keeps the recap. Half time resumes by itself after 10
-  seconds unless you step away; full time stays. `?recap=ht` or `?recap=ft` opens one, paused.
+  seconds unless you step away; full time stays. `?recap=ht` or `?recap=ft` opens one, paused. A recap
+  that live playback passes while you are in Producer or Players (neither pauses or shows it) is kept as
+  reached and unseen: switching to Studio while live opens the full-time one, and the half-time one only if
+  no second-half pass has been played yet.
 
 **Players mode** (the player-focus personalization mode: the Players button in the header, or
 `?mode=player&player=PLAYER_ID`, e.g.
@@ -380,10 +383,15 @@ does not set `environmentMode`). Express facts that matter here:
 completion ("Reply with OK", at most 5 output tokens) on `XPLAIN_LIVE_DEPLOYMENT` (default `gpt-4.1-mini`) at
 `XPLAIN_FOUNDRY_ENDPOINT`. It is off (404) unless `XPLAIN_LIVE=1`. Auth is Entra ID only:
 `DefaultAzureCredential` with `AZURE_CLIENT_ID`, so in Azure the app's user-assigned identity `id-xplain-live`
-(Cognitive Services OpenAI User on the Foundry resource) gives the token and locally `az login` does; the OpenAI
-client gets a bearer-token provider, never a key. At most one real call per 60 s for the whole server; in between
-it returns the last result with `"cached": true`. It answers `{ok, model, latency_s, credential, cached}`, and on
-an error `ok: false` with the exception class and a short message with anything token- or key-like removed.
+(Cognitive Services OpenAI User on the Foundry resource) gives the token and locally `az login` does; it gets the
+token first, on its own (stage `token`), then makes the request with it as the bearer (stage `request`), never a
+key. At most one real call per 60 s for the whole server; in between
+it returns the last result with `"cached": true` and its `age_s` (never older than 60 s; the response is
+`Cache-Control: no-store`). It answers `{ok, model, latency_s, credential, endpoint_host, cached, age_s}`:
+`credential` is the class that actually returned the token (null if none did), `endpoint_host` the host only. On
+an error `ok: false` adds `stage`, the exception class, a short message and `causes` (up to three of its
+cause / context chain, each `{error, message}`: the openai client reports any failure while sending as
+"Connection error."), all with anything token- or key-like removed; the same chain is logged as a warning.
 The template sets `AZURE_CLIENT_ID` from the identity itself (`reference(...).clientId`), `XPLAIN_LIVE=1`, the
 endpoint and the deployment. The Studio page still plays the precomputed bundle and makes no model calls.
 
