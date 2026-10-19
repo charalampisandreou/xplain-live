@@ -1,5 +1,7 @@
 # xplain-live
 
+[![tests](https://github.com/charalampisandreou/xplain-live/actions/workflows/tests.yml/badge.svg)](https://github.com/charalampisandreou/xplain-live/actions/workflows/tests.yml)
+
 Expectation versus outcome, live. A studio copilot for the Microsoft
 "Inside the Game" hackathon: it ingests synthetic match events, compares what a trained model
 expected with what happened, explains the gap, and emits timed, machine-readable
@@ -506,6 +508,11 @@ python scripts/make_dataset.py
 python -m xplain.train --train data/xpass_train.csv --holdout data/xpass_holdout.csv `
     --out models/xpass_v2 --report reports/xpass_v2_metrics.json
 ```
+
+CI (`.github/workflows/tests.yml`) runs the same suite on every push and pull request to `main`
+(Ubuntu, Python 3.13). It downloads `xpass_v2.joblib`, `feature_list.json` and `bundle_seed3001.json`
+from the data-v1 release, checks their SHA-256 against the values pinned in the workflow, and fails on
+a mismatch before any test runs.
 
 ## License
 

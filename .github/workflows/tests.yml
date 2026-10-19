@@ -1,0 +1,61 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  PYTHONPATH: src
+  PYTHONUTF8: "1"
+  PYTHONIOENCODING: utf-8
+  # Git-ignored files the tests need, from the public data-v1 release (model files MIT, bundle CC BY 4.0).
+  # The one place for their SHA-256: when a release asset is swapped, update it here too.
+  RELEASE_URL: https://github.com/charalampisandreou/xplain-live/releases/download/data-v1
+  SHA_XPASS_JOBLIB: ee2053aeb1ba3b315bee97a9a9169970528ae269dd01f313bd93aebdb21f7515
+  SHA_FEATURE_LIST: d2d13f7f3c0ca777c50b037ffdd4efd9e3439d1b860d2f38cd76d549321e61bf
+  SHA_BUNDLE_3001: 48f18c2bac40ca3cf91a08768c655d6d3f77585602b41910f52c38fae49d5a1b
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      # tests/test_player_js.py runs src/xplain/web/player.js under node.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Download release files and check SHA-256
+        run: |
+          mkdir -p models/xpass_v2 data
+          curl -fsSL --retry 3 -o models/xpass_v2/xpass_v2.joblib    "$RELEASE_URL/xpass_v2.joblib"
+          curl -fsSL --retry 3 -o models/xpass_v2/feature_list.json  "$RELEASE_URL/feature_list.json"
+          curl -fsSL --retry 3 -o data/bundle_seed3001.json          "$RELEASE_URL/bundle_seed3001.json"
+          sha256sum --check --strict <<EOF
+          $SHA_XPASS_JOBLIB  models/xpass_v2/xpass_v2.joblib
+          $SHA_FEATURE_LIST  models/xpass_v2/feature_list.json
+          $SHA_BUNDLE_3001  data/bundle_seed3001.json
+          EOF
+
+      - name: Run tests
+        run: python -m pytest -q -rs
