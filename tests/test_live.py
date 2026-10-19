@@ -96,7 +96,7 @@ def test_one_tiny_call_with_the_live_deployment(monkeypatch, fake):
     assert body["model"] == "gpt-4.1-mini-2025-04-14" and body["credential"] == "ManagedIdentityCredential"
     assert isinstance(body["latency_s"], float) and body["age_s"] == 0.0
     assert body["endpoint_host"] == live.endpoint().split("/")[2]   # the host only
-    assert "stage" not in body and "causes" not in body
+    assert "stage" not in body and "causes" not in body and body["attempts"] == 1
     assert fake.kwargs == {"model": "gpt-4.1-mini", "messages": [{"role": "user", "content": "Reply with OK"}],
                            "max_completion_tokens": 5}
     monkeypatch.setenv("XPLAIN_LIVE_DEPLOYMENT", "gpt-6.1-sol")
@@ -340,3 +340,98 @@ def test_the_diagnosis_is_in_the_body_and_cached_with_the_call(fake):
 def test_the_diagnosis_comes_with_a_failed_call_too():
     body = checker(FakeCompletions(error=ConnectionError("refused"))).run()
     assert body["ok"] is False and {"dns", "resolv", "proxy"} <= set(body)
+
+
+# --- retry on name resolution (socket.gaierror) only ---
+
+class SequenceCompletions(FakeCompletions):
+    """Raises the given errors in turn, then answers."""
+    def __init__(self, errors: list, delay_s: float = 0.0):
+        super().__init__(delay_s=delay_s)
+        self.errors = list(errors)
+
+    def create(self, **kwargs):
+        self.error = self.errors.pop(0) if self.errors else None
+        return super().create(**kwargs)
+
+
+def dns_failure() -> Exception:
+    """Shaped like the openai client's: APIConnectionError "Connection error." <- httpx.ConnectError <- gaierror."""
+    import socket
+    try:
+        try:
+            try:
+                raise socket.gaierror(-3, "Temporary failure in name resolution")
+            except socket.gaierror as root:
+                raise ConnectionError("[Errno -3] Temporary failure in name resolution") from root
+        except ConnectionError as mid:
+            raise RuntimeError("Connection error.") from mid
+    except RuntimeError as wrapped:
+        return wrapped
+
+
+def no_sleep(waits: list):
+    return waits.append
+
+
+def test_a_name_resolution_failure_is_retried_and_then_succeeds():
+    fake, waits, cred, tokens = SequenceCompletions([dns_failure()]), [], FakeDefault(), []
+    body = checker(fake, credential=cred, tokens=tokens, sleep=no_sleep(waits)).run()
+    assert body["ok"] is True and body["attempts"] == 2 and fake.calls == 2
+    assert waits == [0.5]
+    assert cred.scopes == [(live.COGNITIVE_SCOPE,)] and tokens == ["fake-token", "fake-token"]   # one token, reused
+
+
+def test_three_name_resolution_failures_give_up_with_the_causes():
+    fake, waits = SequenceCompletions([dns_failure(), dns_failure(), dns_failure(), dns_failure()]), []
+    body = checker(fake, sleep=no_sleep(waits)).run()
+    assert body["ok"] is False and body["attempts"] == 3 and fake.calls == 3
+    assert waits == [0.5, 1.0] and live.RETRY_BACKOFF_S == (0.5, 1.0)
+    assert body["stage"] == "request" and body["error"] == "RuntimeError"
+    assert [c["error"] for c in body["causes"]] == ["ConnectionError", "gaierror"]
+
+
+def test_an_auth_error_is_not_retried():
+    import httpx
+    import openai
+    response = httpx.Response(401, request=httpx.Request("POST", "https://example.openai.azure.com/openai/v1/x"))
+    error = openai.AuthenticationError("Unauthorized", response=response, body=None)
+    fake, waits = SequenceCompletions([error]), []
+    body = checker(fake, sleep=no_sleep(waits)).run()
+    assert body["ok"] is False and body["attempts"] == 1 and fake.calls == 1 and waits == []
+    assert body["error"] == "AuthenticationError"
+
+
+def test_other_errors_and_timeouts_are_not_retried():
+    fake, waits = SequenceCompletions([ConnectionError("refused")]), []
+    body = checker(fake, sleep=no_sleep(waits)).run()
+    assert body["attempts"] == 1 and fake.calls == 1 and waits == []
+    slow = FakeCompletions(delay_s=0.5)
+    body = checker(slow, timeout_s=0.1, sleep=no_sleep(waits)).run()
+    assert body["error"] == "TimeoutError" and body["attempts"] == 1 and waits == []
+
+
+def test_a_token_failure_is_one_attempt():
+    from azure.core.exceptions import ClientAuthenticationError
+    body = checker(FakeCompletions(), credential=FakeDefault(error=ClientAuthenticationError("no identity"))).run()
+    assert body["stage"] == "token" and body["attempts"] == 1
+
+
+def test_the_retries_stay_inside_the_budget():
+    """1 s budget, real waits: the 0.5 s wait fits, the 1 s one would not, so the call stops at 2 attempts."""
+    fake = SequenceCompletions([dns_failure(), dns_failure(), dns_failure()])
+    start = time.perf_counter()
+    body = checker(fake, timeout_s=1.0).run()
+    assert time.perf_counter() - start < 1.0
+    assert body["ok"] is False and body["attempts"] == 2 and fake.calls == 2
+    # a budget shorter than the first wait: no retry at all
+    fake = SequenceCompletions([dns_failure()])
+    body = checker(fake, timeout_s=0.3).run()
+    assert body["attempts"] == 1 and fake.calls == 1
+
+
+def test_is_name_resolution_follows_the_whole_chain():
+    import socket
+    assert live.is_name_resolution(dns_failure()) is True
+    assert live.is_name_resolution(socket.gaierror(-2, "Name or service not known")) is True
+    assert live.is_name_resolution(ConnectionError("refused")) is False

@@ -15,7 +15,13 @@ inside it. "credential" is the class that actually returned this call's token (D
 successful one), null when no token was returned.
 
 At most one real call per MIN_INTERVAL_S server-wide (successes and failures alike), on time.monotonic; in between,
-the last result comes back with cached=true and age_s. Both stages share TIMEOUT_S. Errors return ok=false with
+the last result comes back with cached=true and age_s. Both stages share TIMEOUT_S.
+
+Retry: the request stage is retried ONLY when its exception chain holds a socket.gaierror (name resolution, which is
+intermittent for the Foundry hosts in the container): at most len(RETRY_BACKOFF_S) retries, waiting 0.5 s then 1 s,
+all inside TIMEOUT_S (a retry whose wait would not leave time to send is not made). Auth errors, HTTP errors and
+timeouts are never retried; the token is fetched once and reused. "attempts" (1 to 3, on success and failure) counts
+the tries of the stage that ended the call (a token failure is 1). Errors return ok=false with
 "stage", the exception class and a short message, and "causes": up to CAUSE_DEPTH of its __cause__ / __context__
 chain, each {"error": class, "message": ...}. Every message is scrubbed of anything that looks like a token or a key.
 The scrubbed chain is also logged (warning, logger xplain.live) for the container logs; never a traceback. The body
@@ -51,6 +57,7 @@ MIN_INTERVAL_S = 60.0
 TIMEOUT_S = 15.0
 MESSAGE_CHARS = 200
 CAUSE_DEPTH = 3
+RETRY_BACKOFF_S = (0.5, 1.0)
 DNS_TIMEOUT_S = 3.0
 DNS_HOSTS = ("plhack-foundry-candreou-resource.cognitiveservices.azure.com", "login.microsoftonline.com",
              "management.azure.com", "pypi.org")
@@ -133,6 +140,18 @@ def error_chain(exc: BaseException) -> list[dict]:
     return out
 
 
+def is_name_resolution(exc: BaseException) -> bool:
+    """True when exc or anything in its __cause__ / __context__ chain is a socket.gaierror."""
+    seen: set[int] = set()
+    e: BaseException | None = exc
+    while e is not None and id(e) not in seen:
+        if isinstance(e, socket.gaierror):
+            return True
+        seen.add(id(e))
+        e = e.__cause__ or e.__context__
+    return False
+
+
 def lookup(host: str) -> list[str]:
     """The IPs socket.getaddrinfo gives for host:443, in its order, without repeats."""
     ips: list[str] = []
@@ -194,8 +213,10 @@ class LiveCheck:
     def __init__(self, credential_factory: Callable[[], Any] = make_credential,
                  client_factory: Callable[[str], Any] = make_client, clock: Callable[[], float] = time.monotonic,
                  interval_s: float = MIN_INTERVAL_S, timeout_s: float = TIMEOUT_S,
-                 network: Callable[[], dict] = network_report):
+                 network: Callable[[], dict] = network_report, backoff_s: tuple[float, ...] = RETRY_BACKOFF_S,
+                 sleep: Callable[[float], None] = time.sleep):
         self._credential_factory, self._client_factory, self._network = credential_factory, client_factory, network
+        self._backoff_s, self._sleep = backoff_s, sleep
         self._clock, self._interval_s, self._timeout_s = clock, interval_s, timeout_s
         self._lock = threading.Lock()
         self._credential: Any = None
@@ -218,23 +239,38 @@ class LiveCheck:
         model = deployment()
         start = time.perf_counter()
         deadline = start + self._timeout_s
-        stage, credential = "token", None
+        stage, credential, attempts = "token", None, 1
         try:
             # the token first, on its own: a token failure must never look like a connection error
             token = self._pool.submit(self._token).result(timeout=self._left(deadline))
             credential = credential_name(self._credential)
             stage = "request"
-            reply = self._pool.submit(self._complete, model, token).result(timeout=self._left(deadline))
+            while True:
+                try:
+                    reply = self._pool.submit(self._complete, model, token).result(timeout=self._left(deadline))
+                    break
+                except FutureTimeout:
+                    raise
+                except Exception as exc:  # noqa: BLE001
+                    retries = attempts - 1
+                    if not is_name_resolution(exc) or retries >= len(self._backoff_s):
+                        raise
+                    wait = self._backoff_s[retries]
+                    if self._left(deadline) <= wait:   # no time left to send after the wait
+                        raise
+                    log.warning("live check: name resolution failed (attempt %d), retrying in %g s", attempts, wait)
+                    self._sleep(wait)
+                    attempts += 1
             return {"ok": True, "model": reply or model, "latency_s": round(time.perf_counter() - start, 3),
-                    "credential": credential, "endpoint_host": endpoint_host()}
+                    "credential": credential, "endpoint_host": endpoint_host(), "attempts": attempts}
         except FutureTimeout:
-            return self._error(model, start, stage, credential,
+            return self._error(model, start, stage, credential, attempts,
                                [{"error": "TimeoutError", "message": f"no answer within {self._timeout_s:g} s"}])
         except Exception as exc:  # noqa: BLE001  (the endpoint reports, never raises)
             chain = error_chain(exc)
-            log.warning("live check failed at %s: %s", stage,
-                        " <- ".join(f"{c['error']}: {c['message']}" for c in chain))
-            return self._error(model, start, stage, credential, chain)
+            log.warning("live check failed at %s: %s (attempts %d)", stage,
+                        " <- ".join(f"{c['error']}: {c['message']}" for c in chain), attempts)
+            return self._error(model, start, stage, credential, attempts, chain)
 
     def _left(self, deadline: float) -> float:
         return max(0.0, deadline - time.perf_counter())
@@ -249,7 +285,8 @@ class LiveCheck:
             model=model, messages=[{"role": "user", "content": PROMPT}], max_completion_tokens=MAX_TOKENS)
         return getattr(response, "model", None)
 
-    def _error(self, model: str, start: float, stage: str, credential: str | None, chain: list[dict]) -> dict:
+    def _error(self, model: str, start: float, stage: str, credential: str | None, attempts: int,
+               chain: list[dict]) -> dict:
         return {"ok": False, "model": model, "latency_s": round(time.perf_counter() - start, 3),
-                "credential": credential, "endpoint_host": endpoint_host(), "stage": stage,
+                "credential": credential, "endpoint_host": endpoint_host(), "stage": stage, "attempts": attempts,
                 "error": chain[0]["error"], "message": chain[0]["message"], "causes": chain[1:]}
