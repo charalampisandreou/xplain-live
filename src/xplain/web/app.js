@@ -162,6 +162,7 @@
     XplainProducer.mount({
       selectMoment: (id) => { if (idx.markOf.has(id)) enterReplay(id); },
       selectRecap: (scope) => { state.producerRecap = scope; },
+      teamCode: (id) => teamCode(id, ''),
       redraw: () => { state.renderedKey = ''; render(); } });
     if (params.get('mode') === 'player') setMode('player');
     else if (params.get('mode') === 'producer') setMode('producer');
@@ -519,7 +520,8 @@
   }
 
   function renderProducer(plate) {
-    XplainProducer.render({ bundle: state.bundle, now: state.now, recapT: idx.recapT, selected: producerSelected(plate) });
+    XplainProducer.render({ bundle: state.bundle, now: state.now, recapT: idx.recapT, lang: state.lang,
+      selected: producerSelected(plate) });
   }
 
   // --- transitions ---------------------------------------------------------------------------

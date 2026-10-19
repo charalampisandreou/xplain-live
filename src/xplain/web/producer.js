@@ -17,13 +17,16 @@
   const RECAP_MINUTE = { half_time: 'HT', full_time: 'FT' };
   const AGENT_WORDS = {
     analyst: 'Analyst', explainer: 'Explainer', narrator: 'Narrator', verifier: 'Verifier',
-    recap_editor: 'Recap Editor', recap_verifier: 'Recap Verifier', recap_filler: 'Recap Filler',
+    recap_editor: 'Recap Editor', recap_verifier: 'Recap Verifier', recap_filler: 'Numbers filled by code',
   };
   const GATE_WORDS = { ranking: 'in the running top of its half', threshold: 'past the commentary floor' };
   const ON_AIR = ['accepted', 'retried'];
   const LANGS = ['en', 'es', 'el'];
   const EMPTY = 'No agent trace in this match bundle.';
   const NOT_RECORDED = 'Checks not recorded in this bundle.';
+  const REFILL_NOTE = "filled again by refresh_recap_cards with the card's two-decimal values";
+  const REFILLED = "First filled with whole numbers; refilled with the card's two-decimal values.";
+  const FILLED_AGAIN = 'Filled again; the last fill is shown.';
 
   // --- pure functions (no DOM; also loaded by node in the test) -----------------------------------
 
@@ -70,6 +73,26 @@
     return [reason, ''];
   }
 
+  // The recap's numbers in plain words, from its LAST recap_filler step (the text on air): each note
+  // "{slot} = value" read as stored (no maths), the teams by their codes. A second line when an earlier filler ran:
+  // the refresh's own words when its note says so. { text, again } or null when there is no filler step.
+  function fillerSummary(steps, homeCode, awayCode) {
+    const fillers = steps.filter((s) => s.agent === 'recap_filler');
+    if (fillers.length === 0) return null;
+    const last = fillers[fillers.length - 1];
+    const slot = {};
+    for (const n of last.notes) {
+      const m = /^\{([a-z_]+)\} = (.*)$/.exec(n);
+      if (m) slot[m[1]] = m[2];
+    }
+    const parts = [];
+    if ('home_vs_expected' in slot) parts.push(homeCode + ' vs expected ' + slot.home_vs_expected);
+    if ('away_vs_expected' in slot) parts.push(awayCode + ' vs expected ' + slot.away_vs_expected);
+    if ('star_name' in slot) parts.push('Star ' + slot.star_name + ('star_pva' in slot ? ', ' + slot.star_pva : ''));
+    const again = fillers.length < 2 ? '' : last.notes.includes(REFILL_NOTE) ? REFILLED : FILLED_AGAIN;
+    return { text: parts.length ? parts.join(' · ') : 'No numbers in this text.', again };
+  }
+
   // --- DOM ------------------------------------------------------------------------------------
 
   const $ = (id) => document.getElementById(id);
@@ -109,7 +132,7 @@
 
   function invalidate() { drawn = { list: '', detail: '' }; }
 
-  // args: { bundle, now, recapT, selected: { type, id } | null }
+  // args: { bundle, now, recapT, lang (the plate's NARRATION language), selected: { type, id } | null }
   function render(args) {
     const { bundle } = args;
     const empty = !hasTrace(bundle);
@@ -127,10 +150,10 @@
     }
     const item = sel && log.find((i) => i.type === sel.type && i.id === sel.id);
     if (selKey !== openFor) { openFor = selKey; openChecks = new Set(); }
-    const detailKey = (item ? selKey : '-') + '/' + [...openChecks].join(',');
+    const detailKey = (item ? selKey : '-') + '/' + args.lang + '/' + [...openChecks].join(',');
     if (detailKey !== drawn.detail) {
       drawn.detail = detailKey;
-      renderDetail(bundle, item || null);
+      renderDetail(bundle, item || null, args.lang);
     }
   }
 
@@ -175,12 +198,11 @@
     if (s.agent === 'explainer' && s.ok) parts.push('drivers computed');
     if (s.agent === 'narrator' && s.ok && s.kind === 'llm') parts.push('line written');
     if (s.agent === 'recap_editor' && s.ok) parts.push('text written with slots');
-    if (s.agent === 'recap_filler') parts.push('numbers filled by code');
     if (s.reused) parts.push('from an earlier build');
     return parts.filter(Boolean).join(' · ');
   }
 
-  function renderDetail(bundle, item) {
+  function renderDetail(bundle, item, lang) {
     const box = $('pr-detail');
     box.replaceChildren();
     if (!item) {
@@ -194,7 +216,9 @@
     box.appendChild(head);
     const list = node('div', 'pr-steps');
     if (steps.length === 0) list.appendChild(node('div', 'empty', 'No steps stored for this line.'));
+    const lastFiller = steps.map((s) => s.agent).lastIndexOf('recap_filler');
     steps.forEach((s, i) => {
+      if (s.agent === 'recap_filler' && i !== lastFiller) return;   // one step: the last fill, the text on air
       const row = node('div', 'pr-step' + (s.ok ? '' : ' fail'));
       const top = node('div', 'pr-step-top');
       top.append(node('span', 'pr-mark', s.ok ? '✓' : '✕'), node('span', 'pr-agent', stepName(s)),
@@ -202,11 +226,17 @@
       row.appendChild(top);
       if (s.agent === 'verifier' || s.agent === 'recap_verifier') row.appendChild(checksBlock(s, labels[s.agent], item.id + '/' + i));
       else if (!s.ok && s.reasons.length) row.appendChild(reasonsBlock(s.reasons, null));
-      else if (s.agent === 'recap_filler' && s.notes.length) row.appendChild(node('div', 'pr-checks pr-note', s.notes.join(' · ')));
+      else if (s.agent === 'recap_filler') {
+        const f = fillerSummary(steps, ctx.teamCode(bundle.meta.home.team_id), ctx.teamCode(bundle.meta.away.team_id));
+        const wrap = node('div', 'pr-checks');
+        wrap.appendChild(node('div', 'pr-sum', f.text));
+        if (f.again) wrap.appendChild(node('div', 'pr-note', f.again));
+        row.appendChild(wrap);
+      }
       list.appendChild(row);
     });
     box.appendChild(list);
-    box.appendChild(onAir(bundle, item));
+    box.appendChild(onAir(bundle, item, lang));
   }
 
   // A Verifier step: its recorded checks (collapsed: "18 checks passed" and a button), or the note that they were
@@ -248,38 +278,36 @@
     return ul;
   }
 
-  // the final line in EN/ES/EL (a recap: the filled text), or why none went out
-  function onAir(bundle, item) {
+  // the final line in the plate's NARRATION language (a recap: the filled text), or why none went out
+  function onAir(bundle, item, lang) {
     const wrap = node('div', 'pr-onair');
+    const code = LANGS.includes(lang) ? lang : 'en';
     const head = node('div', 'thead');
-    head.append(node('h2', '', 'On air'));
+    head.append(node('h2', '', 'On air'), node('div', 'tsub', code.toUpperCase()));
     wrap.appendChild(head);
-    let texts = null, reasons = [];
+    let text = null, reasons = [];
     if (item.type === 'recap') {
       const e = bundle.recaps[item.id];
-      if (e.text) texts = LANGS.map((l) => e.text['text_' + l]);
+      if (e.text) text = e.text['text_' + code];
       reasons = e.reasons || [];
     } else {
       const m = bundle.moments.find((x) => x.bundle.moment.moment_id === item.id);
-      if (m && m.line) texts = LANGS.map((l) => m.line['line_' + l]);
+      if (m && m.line) text = m.line['line_' + code];
       reasons = (m && m.narration && m.narration.reasons) || [];
     }
-    if (!texts) {
+    if (!text) {
       wrap.appendChild(node('div', 'empty', 'No line went on air.'));
       if (reasons.length) wrap.appendChild(reasonsBlock(reasons, null));
       return wrap;
     }
-    LANGS.forEach((l, i) => {
-      const row = node('div', 'pr-lang-row');
-      const text = node('span', 'pr-text', texts[i]);
-      text.setAttribute('lang', l);
-      row.append(node('span', 'pr-lang', l.toUpperCase()), text);
-      wrap.appendChild(row);
-    });
+    const p = node('p', 'pr-text', text);
+    p.setAttribute('lang', code);
+    wrap.appendChild(p);
     return wrap;
   }
 
-  const api = { hasTrace, items, stepsOf, splitReason, mount, render, invalidate, EMPTY, NOT_RECORDED };
+  const api = { hasTrace, items, stepsOf, splitReason, fillerSummary, mount, render, invalidate, EMPTY, NOT_RECORDED,
+    REFILLED };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.XplainProducer = api;
 })(typeof window !== 'undefined' ? window : this);

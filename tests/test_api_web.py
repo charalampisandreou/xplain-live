@@ -315,6 +315,13 @@ def test_producer_mode_is_wired_and_shares_studio_state(client):
     assert "if (!s.checks) {" in js and "const NOT_RECORDED = 'Checks not recorded in this bundle.';" in js
     assert "let openChecks = new Set();" in js and "if (!s.ok && s.reasons.length) wrap.appendChild(reasonsBlock" in js
     assert "s.latency_s + ' s'" in js   # latency as stored
+    # On air: one language, the plate's NARRATION switch (state.lang is in render()'s key, so a switch redraws it)
+    assert "lang: state.lang," in app and "state.lang, state.follow" in app
+    assert "if (m && m.line) text = m.line['line_' + code];" in js and "if (e.text) text = e.text['text_' + code];" in js
+    assert "LANGS.map(" not in js.split("function onAir(")[1]
+    # the recap's numbers: one step from the last filler, team codes from app.js
+    assert "teamCode: (id) => teamCode(id, '')," in app
+    assert "if (s.agent === 'recap_filler' && i !== lastFiller) return;" in js
 
 
 def test_producer_layout_keeps_studio_rules(client):
@@ -322,7 +329,7 @@ def test_producer_layout_keeps_studio_rules(client):
     block = css.split("/* --- Producer mode")[1]
     assert "#stage.mode-producer .pitch, #stage.mode-producer .tables, #stage.mode-producer .scope," in block
     for slot, box in ((".producer-log {", "top: 196px; left: 40px; width: 780px; height: 520px"),
-                      (".producer-detail {", "top: 196px; left: 860px; width: 540px; height: 520px")):
+                      (".producer-detail {", "top: 196px; left: 860px; width: 540px; height: 496px")):
         rule = block.split("\n" + slot)[1].split("}")[0]
         assert box in rule and "border:" not in rule and "box-shadow" not in rule and "background" not in rule
     assert re.findall(r"#[0-9A-Fa-f]{3,6}\b", block) == []   # tokens only

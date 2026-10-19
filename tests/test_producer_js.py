@@ -26,7 +26,9 @@ const fs = require('fs');
 const P = require(process.argv[1]);
 const d = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
 const out = d.cases.map((now) => P.items(d.bundle, now, d.recapT).map((i) => [i.type, i.id, i.onAir, i.attempts]));
-process.stdout.write(JSON.stringify({ items: out, hasTrace: P.hasTrace(d.bundle),
+const fillers = {};
+for (const [scope, steps] of Object.entries((d.bundle.trace || {}).recaps || {})) fillers[scope] = P.fillerSummary(steps, 'DUS', 'MAR');
+process.stdout.write(JSON.stringify({ items: out, hasTrace: P.hasTrace(d.bundle), fillers, refilled: P.REFILLED,
   empty: P.EMPTY, notRecorded: P.NOT_RECORDED, split: P.splitReason('no_numbers: line_en has 3', { no_numbers: 'No numbers' }) }));
 """
 
@@ -76,6 +78,23 @@ def run_node(tmp_path, b: dict, cases: list[float]) -> dict:
     return json.loads(done.stdout)
 
 
+def filler_twin(steps: list, home: str, away: str) -> dict | None:
+    """Python twin of fillerSummary: the last recap_filler step's "{slot} = value" notes, as stored."""
+    fillers = [s for s in steps if s["agent"] == "recap_filler"]
+    if not fillers:
+        return None
+    slot = dict(n[1:].split("} = ", 1) for n in fillers[-1]["notes"] if n.startswith("{") and "} = " in n)
+    parts = [f"{home} vs expected {slot['home_vs_expected']}"] if "home_vs_expected" in slot else []
+    parts += [f"{away} vs expected {slot['away_vs_expected']}"] if "away_vs_expected" in slot else []
+    if "star_name" in slot:
+        parts.append(f"Star {slot['star_name']}" + (f", {slot['star_pva']}" if "star_pva" in slot else ""))
+    refill = "filled again by refresh_recap_cards with the card's two-decimal values"
+    again = "" if len(fillers) < 2 else (
+        "First filled with whole numbers; refilled with the card's two-decimal values." if refill in fillers[-1]["notes"]
+        else "Filled again; the last fill is shown.")
+    return {"text": " · ".join(parts) or "No numbers in this text.", "again": again}
+
+
 def check_no_spoilers(tmp_path, b: dict):
     recap_t = recap_times(b)
     cases = times(b, recap_t)
@@ -96,6 +115,8 @@ def built(seed42_events, tiny_scorer):  # noqa: F811
 def test_the_log_holds_only_what_the_clock_reached(tmp_path, built):
     got = check_no_spoilers(tmp_path, built)
     assert got["hasTrace"] is True
+    for scope, steps in built["trace"]["recaps"].items():   # one fill, no slots in this fake recap
+        assert got["fillers"][scope] == filler_twin(steps, "DUS", "MAR") == {"text": "No numbers in this text.", "again": ""}
     assert got["items"][0] == []                                  # kick-off: nothing yet
     assert [i[0] for i in got["items"][-1]][:1] == ["recap"]      # full time: the full-time recap on top
     assert got["split"] == ["No numbers", "line_en has 3"]
@@ -125,3 +146,8 @@ def test_no_spoilers_on_the_demo_bundle(tmp_path):
     b = json.loads(BUNDLE_3001.read_text(encoding="utf-8"))
     got = check_no_spoilers(tmp_path, b)
     assert len(got["items"][-1]) == 17 + 2
+    # the recap's numbers in plain words, from the last fill (the text on air)
+    assert got["fillers"]["full_time"] == {
+        "text": "DUS vs expected 19.45 · MAR vs expected 19.11 · Star Nevek Iversani, 5.48", "again": got["refilled"]}
+    for scope, steps in b["trace"]["recaps"].items():
+        assert got["fillers"][scope] == filler_twin(steps, "DUS", "MAR")

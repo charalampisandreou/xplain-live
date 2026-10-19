@@ -309,9 +309,11 @@ there.
   player, kind, "On air" or "No line", attempts, and "Retried" when a line took more than one.
 - **Steps** of the selected line, in order, from the bundle's trace: Analyst and Explainer (code), Narrator
   or Recap Editor (LLM: the model and the latency as stored), the Verifier and the final check (code: "18
-  checks passed" with a button that lists them in plain words), the Recap Filler's code-filled numbers. A
-  failed step always shows its reasons. Then the line that went on air in EN, ES and EL (a recap: the filled
-  text).
+  checks passed" with a button that lists them in plain words), and for a recap one "Numbers filled by code"
+  step from the last fill, in plain words ("DUS vs expected 19.45 · MAR vs expected 19.11 · Star Nevek
+  Iversani, 5.48"). A failed step always shows its reasons. Then the line that went on air, in the language of
+  the plate's NARRATION switch (a recap: the filled text). The panel stops 24 px above the playback controls;
+  an open check list scrolls inside it.
 - **Selection** is the Studio's: a log row replays its moment (Back to live, Esc or L return); the Studio's
   replay or plate moment is selected in the log. A recap row is picked in Producer only.
 - The checks shown are the ones each Verifier step recorded when the bundle was built (`checks`, labels in
