@@ -62,7 +62,11 @@ def checker(completions: FakeCompletions, clock: Clock | None = None, credential
             tokens.append(token)
         return client
     cred = credential or FakeDefault()
+    kw.setdefault("network", lambda: dict(FAKE_NETWORK))   # no real network in tests
     return LiveCheck(credential_factory=lambda: cred, client_factory=client_factory, clock=clock or Clock(), **kw)
+
+
+FAKE_NETWORK = {"dns": {}, "resolv": None, "proxy": []}
 
 
 @pytest.fixture
@@ -246,3 +250,93 @@ def test_the_cause_chain_stops_after_three_and_follows_context():
     body = checker(FakeCompletions(error=error)).run()
     assert len(body["causes"]) == live.CAUSE_DEPTH == 3
     assert all(c["error"] == "KeyError" for c in body["causes"])
+
+
+# --- network diagnosis: dns / resolv / proxy (fakes only, no real lookups) ---
+
+def fake_resolver(answers: dict):
+    def resolve(host):
+        a = answers[host]
+        if isinstance(a, Exception):
+            raise a
+        if a == "hang":
+            time.sleep(1.0)
+            return ["192.0.2.99"]
+        return a
+    return resolve
+
+
+def test_dns_report_gives_ok_the_first_two_addrs_or_the_error():
+    import socket
+    resolve = fake_resolver({
+        "a.example": ["192.0.2.1", "192.0.2.2", "192.0.2.3"],
+        "b.example": socket.gaierror(-3, "Temporary failure in name resolution"),
+    })
+    out = live.dns_report(["a.example", "b.example", "a.example", None], resolve)
+    assert list(out) == ["a.example", "b.example"]   # in order, no repeats, no empty host
+    assert out["a.example"] == {"ok": True, "addrs": ["192.0.2.1", "192.0.2.2"], "error": None}
+    assert out["b.example"] == {"ok": False, "addrs": [],
+                                "error": "gaierror: [Errno -3] Temporary failure in name resolution"}
+
+
+def test_dns_report_has_one_budget_for_all_hosts():
+    resolve = fake_resolver({"slow.example": "hang", "fast.example": ["192.0.2.1"]})
+    start = time.perf_counter()
+    out = live.dns_report(["slow.example", "fast.example"], resolve, timeout_s=0.2)
+    assert time.perf_counter() - start < 0.8
+    assert out["slow.example"] == {"ok": False, "addrs": [], "error": "TimeoutError: no answer within 0.2 s"}
+    assert out["fast.example"]["ok"] is True
+
+
+def test_network_report_looks_up_the_endpoint_host_and_the_fixed_hosts(monkeypatch, tmp_path):
+    monkeypatch.setenv("XPLAIN_FOUNDRY_ENDPOINT", "https://example.openai.azure.com/openai/v1/")
+    asked = []
+
+    def resolve(host):
+        asked.append(host)
+        return ["192.0.2.1"]
+    report = live.network_report(resolve, str(tmp_path / "missing"), environ={})
+    assert sorted(asked) == sorted(["example.openai.azure.com", *live.DNS_HOSTS])
+    assert list(report["dns"]) == ["example.openai.azure.com", *live.DNS_HOSTS]
+    assert live.DNS_HOSTS == ("plhack-foundry-candreou-resource.cognitiveservices.azure.com",
+                              "login.microsoftonline.com", "management.azure.com", "pypi.org")
+    assert report["resolv"] is None and report["proxy"] == []
+
+
+def test_resolv_keeps_only_nameserver_search_and_options(tmp_path):
+    conf = tmp_path / "resolv.conf"
+    conf.write_text("# generated\nnameserver 10.0.0.10\nsearch k8se-apps.svc.cluster.local svc.cluster.local\n"
+                    "options ndots:5\ndomain cluster.local\nsortlist 10.0.0.0\n", encoding="utf-8")
+    assert live.resolv_lines(str(conf)) == ["nameserver 10.0.0.10",
+                                            "search k8se-apps.svc.cluster.local svc.cluster.local", "options ndots:5"]
+
+
+def test_proxy_names_only_never_values():
+    env = {"HTTPS_PROXY": "http://user:secret@proxy:3128", "no_proxy": "localhost", "HTTP_PROXY": ""}
+    names = live.proxy_names(env)
+    assert names == ["HTTPS_PROXY", "NO_PROXY"]
+    assert "secret" not in str(names)
+
+
+def test_the_diagnosis_is_in_the_body_and_cached_with_the_call(fake):
+    runs = []
+
+    def network():
+        runs.append(1)
+        return {"dns": {"h.example": {"ok": True, "addrs": ["192.0.2.1"], "error": None}},
+                "resolv": ["nameserver 10.0.0.10"], "proxy": []}
+    clock = Clock()
+    check = checker(fake, clock, network=network)
+    first = check.run()
+    assert first["dns"]["h.example"]["ok"] is True and first["resolv"] == ["nameserver 10.0.0.10"]
+    assert first["proxy"] == [] and first["ok"] is True
+    clock.t += 30
+    assert check.run()["dns"] == first["dns"] and len(runs) == 1   # same 60 s cache as the call
+    clock.t += 31
+    check.run()
+    assert len(runs) == 2
+
+
+def test_the_diagnosis_comes_with_a_failed_call_too():
+    body = checker(FakeCompletions(error=ConnectionError("refused"))).run()
+    assert body["ok"] is False and {"dns", "resolv", "proxy"} <= set(body)

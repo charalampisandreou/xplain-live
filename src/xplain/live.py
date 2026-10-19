@@ -20,12 +20,19 @@ the last result comes back with cached=true and age_s. Both stages share TIMEOUT
 chain, each {"error": class, "message": ...}. Every message is scrubbed of anything that looks like a token or a key.
 The scrubbed chain is also logged (warning, logger xplain.live) for the container logs; never a traceback. The body
 names the endpoint's host only ("endpoint_host").
+
+Network diagnosis, computed with the call (so at most once per MIN_INTERVAL_S, cached alike): "dns" maps each of
+the endpoint host and DNS_HOSTS to socket.getaddrinfo(host, 443) within DNS_TIMEOUT_S ({"ok", "addrs": the first two
+IPs, "error": "Class: message" or null}; the hosts are looked up in parallel); "resolv" is the nameserver, search and
+options lines of /etc/resolv.conf (null where there is none, e.g. Windows); "proxy" names which of PROXY_VARS are set
+(names only, never values). The endpoint host is XPLAIN_FOUNDRY_ENDPOINT's, so it changes without code changes.
 """
 from __future__ import annotations
 
 import logging
 import os
 import re
+import socket
 import threading
 import time
 from collections.abc import Callable
@@ -44,6 +51,12 @@ MIN_INTERVAL_S = 60.0
 TIMEOUT_S = 15.0
 MESSAGE_CHARS = 200
 CAUSE_DEPTH = 3
+DNS_TIMEOUT_S = 3.0
+DNS_HOSTS = ("plhack-foundry-candreou-resource.cognitiveservices.azure.com", "login.microsoftonline.com",
+             "management.azure.com", "pypi.org")
+RESOLV_CONF = "/etc/resolv.conf"
+RESOLV_KEYS = ("nameserver", "search", "options")
+PROXY_VARS = ("HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY")
 
 log = logging.getLogger("xplain.live")
 
@@ -120,13 +133,69 @@ def error_chain(exc: BaseException) -> list[dict]:
     return out
 
 
+def lookup(host: str) -> list[str]:
+    """The IPs socket.getaddrinfo gives for host:443, in its order, without repeats."""
+    ips: list[str] = []
+    for *_, sockaddr in socket.getaddrinfo(host, 443, proto=socket.IPPROTO_TCP):
+        if sockaddr[0] not in ips:
+            ips.append(sockaddr[0])
+    return ips
+
+
+def dns_report(hosts: list[str], resolver: Callable[[str], list[str]] = lookup,
+               timeout_s: float = DNS_TIMEOUT_S) -> dict:
+    """{host: {"ok", "addrs" (the first two), "error"}}; all hosts looked up in parallel within timeout_s."""
+    hosts = list(dict.fromkeys(h for h in hosts if h))
+    out: dict = {}
+    if not hosts:
+        return out
+    pool = ThreadPoolExecutor(max_workers=len(hosts), thread_name_prefix="live-dns")
+    futures = {host: pool.submit(resolver, host) for host in hosts}
+    deadline = time.perf_counter() + timeout_s
+    for host, future in futures.items():
+        try:
+            addrs = future.result(timeout=max(0.0, deadline - time.perf_counter()))
+            out[host] = {"ok": True, "addrs": list(addrs)[:2], "error": None}
+        except FutureTimeout:
+            out[host] = {"ok": False, "addrs": [], "error": f"TimeoutError: no answer within {timeout_s:g} s"}
+        except Exception as exc:  # noqa: BLE001  (a diagnosis reports, never raises)
+            out[host] = {"ok": False, "addrs": [], "error": scrub(f"{type(exc).__name__}: {exc}")}
+    pool.shutdown(wait=False, cancel_futures=True)   # a stuck lookup never holds the answer
+    return out
+
+
+def resolv_lines(path: str = RESOLV_CONF) -> list[str] | None:
+    """The nameserver / search / options lines of resolv.conf; None when the file cannot be read."""
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            lines = f.read().splitlines()
+    except OSError:
+        return None
+    return [scrub(line.strip()) for line in lines if line.split()[:1] and line.split()[0] in RESOLV_KEYS]
+
+
+def proxy_names(environ: dict | None = None) -> list[str]:
+    """Which proxy variables are set (either case), by name only; never their values."""
+    env = os.environ if environ is None else environ
+    return [name for name in PROXY_VARS if env.get(name) or env.get(name.lower())]
+
+
+def network_report(resolver: Callable[[str], list[str]] = lookup, resolv_path: str = RESOLV_CONF,
+                   environ: dict | None = None, timeout_s: float = DNS_TIMEOUT_S) -> dict:
+    """The "dns", "resolv" and "proxy" fields of the body."""
+    return {"dns": dns_report([endpoint_host(), *DNS_HOSTS], resolver, timeout_s),
+            "resolv": resolv_lines(resolv_path), "proxy": proxy_names(environ)}
+
+
 class LiveCheck:
-    """The rate-limited live call. credential_factory and client_factory are injectable for tests."""
+    """The rate-limited live call. credential_factory, client_factory and network (the dns / resolv / proxy
+    fields) are injectable for tests."""
 
     def __init__(self, credential_factory: Callable[[], Any] = make_credential,
                  client_factory: Callable[[str], Any] = make_client, clock: Callable[[], float] = time.monotonic,
-                 interval_s: float = MIN_INTERVAL_S, timeout_s: float = TIMEOUT_S):
-        self._credential_factory, self._client_factory = credential_factory, client_factory
+                 interval_s: float = MIN_INTERVAL_S, timeout_s: float = TIMEOUT_S,
+                 network: Callable[[], dict] = network_report):
+        self._credential_factory, self._client_factory, self._network = credential_factory, client_factory, network
         self._clock, self._interval_s, self._timeout_s = clock, interval_s, timeout_s
         self._lock = threading.Lock()
         self._credential: Any = None
@@ -141,7 +210,8 @@ class LiveCheck:
             now = self._clock()
             if self._last is not None and self._last_at is not None and 0 <= now - self._last_at < self._interval_s:
                 return {**self._last, "cached": True, "age_s": round(now - self._last_at, 1)}
-            self._last, self._last_at = self._call(), now
+            # the diagnosis runs after the call (latency_s is the call's alone) and is cached with it
+            self._last, self._last_at = {**self._call(), **self._network()}, now
             return {**self._last, "cached": False, "age_s": 0.0}
 
     def _call(self) -> dict:
