@@ -26,7 +26,8 @@ overlay cards that a graphics system can render alongside the match.
 > bundle CC BY 4.0). The bundle there was replaced after the narration retune; its SHA-256 is
 > `48f18c2bac40ca3cf91a08768c655d6d3f77585602b41910f52c38fae49d5a1b`.
 >
-> Not built yet: the Analyst screen, the agent trace (planned for the Analyst screen), the other
+> Not built yet: the Analyst screen, the agent trace (planned for a separate Producer view, the control
+> room), the other
 > personalization modes (analyst, casual fan, favourite club or player), and live mode (the deployed app
 > calling Foundry itself).
 > Results and demo sections are filled in as they are measured.
