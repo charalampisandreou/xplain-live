@@ -60,3 +60,23 @@ def test_scale_to_zero_and_size():
     (app,) = resources("Microsoft.App/containerApps")
     assert app["properties"]["template"]["scale"] == {"minReplicas": 0, "maxReplicas": 1}
     assert app["properties"]["configuration"]["ingress"]["targetPort"] == 8000
+
+
+def test_the_container_gets_the_live_settings_and_the_identity_client_id():
+    (app,) = resources("Microsoft.App/containerApps")
+    (container,) = app["properties"]["template"]["containers"]
+    env = {e["name"]: e["value"] for e in container["env"]}
+    assert env == {
+        "AZURE_CLIENT_ID": "[reference(variables('identityId'), '2023-01-31').clientId]",   # read, not hard-coded
+        "XPLAIN_LIVE": "1",
+        "XPLAIN_FOUNDRY_ENDPOINT": "[parameters('foundryEndpoint')]",
+        "XPLAIN_LIVE_DEPLOYMENT": "[parameters('liveDeployment')]",
+    }
+    params = template()["parameters"]
+    assert params["foundryEndpoint"]["defaultValue"].endswith(".openai.azure.com/openai/v1/")
+    assert params["liveDeployment"]["defaultValue"] == "gpt-4.1-mini"
+    assert not any("secretRef" in e for e in container["env"])
+    text = TEMPLATE.read_text(encoding="utf-8")
+    assert not re.search(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", text)   # no GUIDs
+    # the same identity serves the image pull and the app at run time (userAssignedIdentities)
+    assert list(app["identity"]["userAssignedIdentities"]) == ["[variables('identityId')]"]

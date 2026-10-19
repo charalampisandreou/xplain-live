@@ -9,6 +9,9 @@ band, delta and outlier flag. The scorer only ever receives ``event.inputs``.
 GET / is the Studio page (src/xplain/web/index.html, its files under /static). It plays a match
 bundle from GET /api/bundle/{name}: <bundle dir>/bundle_{name}.json, name matching ^[a-z0-9_]+$.
 The bundle dir is create_app(bundle_dir=...), else XPLAIN_BUNDLE_DIR, else config.BUNDLE_DIR.
+
+GET /api/live/health (live spike, live.py) is 404 unless XPLAIN_LIVE=1: one tiny model call with the app's managed
+identity, at most once per 60 s server-wide (cached in between).
 """
 from __future__ import annotations
 
@@ -23,7 +26,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import analytics
+from . import analytics, live
 from .analytics import Band, Outlier
 from .config import BUNDLE_DIR
 from .features import FEATURE_ORDER
@@ -60,8 +63,11 @@ def bundle_dir() -> Path:
     return Path(os.environ.get("XPLAIN_BUNDLE_DIR") or BUNDLE_DIR)
 
 
-def create_app(scorer: Scorer | None = None, bundles: Path | None = None) -> FastAPI:
-    """Build the app. Without an injected scorer, the xPass model is loaded once at startup."""
+def create_app(scorer: Scorer | None = None, bundles: Path | None = None,
+               live_check: live.LiveCheck | None = None) -> FastAPI:
+    """Build the app. Without an injected scorer, the xPass model is loaded once at startup. live_check: the
+    /api/live/health call (default live.LiveCheck(): no client is built until the first call)."""
+    checker = live_check if live_check is not None else live.LiveCheck()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -95,6 +101,12 @@ def create_app(scorer: Scorer | None = None, bundles: Path | None = None) -> Fas
             drivers=list(result.drivers),
             model_version=request.app.state.scorer.model_version,
         )
+
+    @app.get("/api/live/health", include_in_schema=False)
+    def live_health() -> dict:
+        if not live.enabled():
+            raise HTTPException(status_code=404, detail="Not Found")
+        return checker.run()
 
     @app.get("/", include_in_schema=False)
     def index() -> FileResponse:

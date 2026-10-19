@@ -30,7 +30,7 @@ overlay cards that a graphics system can render alongside the match.
 > `48f18c2bac40ca3cf91a08768c655d6d3f77585602b41910f52c38fae49d5a1b`.
 >
 > Not built yet: the Analyst screen, the other personalization modes (analyst, casual fan, favourite club or player), and live mode (the deployed app
-> calling Foundry itself).
+> narrating with Foundry itself; so far only a one-call live check, `/api/live/health`, see "Deploy to Azure").
 > Results and demo sections are filled in as they are measured.
 
 ## What it does
@@ -325,7 +325,7 @@ there.
 
 ## Docker
 
-The image serves the Studio page, `/api/bundle` and `/score`. It needs the trained model
+The image serves the Studio page, `/api/bundle`, `/score` and (with `XPLAIN_LIVE=1`) `/api/live/health`. It needs the trained model
 (`models/xpass_v2/`, git-ignored: train it first) and the demo bundle `data/bundle_seed3001.json`;
 no Azure or OpenAI settings are needed to serve. Build and run from this folder:
 
@@ -375,6 +375,17 @@ does not set `environmentMode`). Express facts that matter here:
   template does; adding the registry to an existing app afterwards failed with `BuildFailed: Authentication failed`;
 - `az containerapp logs show` (Azure CLI 2.91) fails on Express apps, so read logs with a query on
   `ContainerAppConsoleLogs_CL` in the workspace.
+
+**Live check (spike).** `GET /api/live/health` makes one real model call from the running app: a tiny chat
+completion ("Reply with OK", at most 5 output tokens) on `XPLAIN_LIVE_DEPLOYMENT` (default `gpt-4.1-mini`) at
+`XPLAIN_FOUNDRY_ENDPOINT`. It is off (404) unless `XPLAIN_LIVE=1`. Auth is Entra ID only:
+`DefaultAzureCredential` with `AZURE_CLIENT_ID`, so in Azure the app's user-assigned identity `id-xplain-live`
+(Cognitive Services OpenAI User on the Foundry resource) gives the token and locally `az login` does; the OpenAI
+client gets a bearer-token provider, never a key. At most one real call per 60 s for the whole server; in between
+it returns the last result with `"cached": true`. It answers `{ok, model, latency_s, credential, cached}`, and on
+an error `ok: false` with the exception class and a short message with anything token- or key-like removed.
+The template sets `AZURE_CLIENT_ID` from the identity itself (`reference(...).clientId`), `XPLAIN_LIVE=1`, the
+endpoint and the deployment. The Studio page still plays the precomputed bundle and makes no model calls.
 
 ## Phrase modes
 

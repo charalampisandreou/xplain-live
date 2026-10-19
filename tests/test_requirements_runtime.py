@@ -20,5 +20,7 @@ def test_runtime_pins_equal_the_full_pins():
     assert {p: v for p, v in runtime.items() if full.get(p) != v} == {}, "a runtime pin differs from requirements.txt"
 
 
-def test_runtime_has_no_azure_or_agent_packages():
-    assert not {p for p in pins("requirements-runtime.txt") if p.startswith(("openai", "azure", "agent-framework"))}
+def test_runtime_has_the_live_client_but_no_agent_framework():
+    runtime = pins("requirements-runtime.txt")
+    assert {"openai", "azure-identity"} <= set(runtime)   # src/xplain/live.py: /api/live/health
+    assert not {p for p in runtime if p.startswith("agent-framework")}

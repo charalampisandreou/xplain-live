@@ -2,7 +2,7 @@
   "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
   "contentVersion": "1.0.0.0",
   "metadata": {
-    "description": "Standard (workload profiles, Consumption) Container Apps environment + the Studio app. environmentMode is deliberately not set. The app pulls from ACR with the user-assigned identity (AcrPull); the workspace key is read with listKeys() inside the template and never passes through the CLI."
+    "description": "Standard (workload profiles, Consumption) Container Apps environment + the Studio app. environmentMode is deliberately not set. The app pulls from ACR with the user-assigned identity (AcrPull) and uses the same identity at run time for Foundry (Cognitive Services OpenAI User): AZURE_CLIENT_ID is the identity's clientId, read with reference(); the workspace key is read with listKeys() inside the template and never passes through the CLI."
   },
   "parameters": {
     "location": {
@@ -15,7 +15,9 @@
     "workspaceName": { "type": "string", "defaultValue": "workspace-rgplhackdesV2i" },
     "identityName": { "type": "string", "defaultValue": "id-xplain-live" },
     "registryServer": { "type": "string", "defaultValue": "xplainlive.azurecr.io" },
-    "image": { "type": "string", "defaultValue": "xplainlive.azurecr.io/xplain-live:591db22" }
+    "image": { "type": "string", "defaultValue": "xplainlive.azurecr.io/xplain-live:591db22" },
+    "foundryEndpoint": { "type": "string", "defaultValue": "https://plhack-foundry-candreou-resource.openai.azure.com/openai/v1/" },
+    "liveDeployment": { "type": "string", "defaultValue": "gpt-4.1-mini" }
   },
   "variables": {
     "workspaceId": "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName'))]",
@@ -75,7 +77,13 @@
             {
               "name": "xplain-studio",
               "image": "[parameters('image')]",
-              "resources": { "cpu": "[json('0.5')]", "memory": "1Gi" }
+              "resources": { "cpu": "[json('0.5')]", "memory": "1Gi" },
+              "env": [
+                { "name": "AZURE_CLIENT_ID", "value": "[reference(variables('identityId'), '2023-01-31').clientId]" },
+                { "name": "XPLAIN_LIVE", "value": "1" },
+                { "name": "XPLAIN_FOUNDRY_ENDPOINT", "value": "[parameters('foundryEndpoint')]" },
+                { "name": "XPLAIN_LIVE_DEPLOYMENT", "value": "[parameters('liveDeployment')]" }
+              ]
             }
           ],
           "scale": { "minReplicas": 0, "maxReplicas": 1 }
