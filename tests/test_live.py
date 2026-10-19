@@ -458,3 +458,91 @@ def test_is_name_resolution_follows_the_whole_chain():
     assert live.is_name_resolution(dns_failure()) is True
     assert live.is_name_resolution(socket.gaierror(-2, "Name or service not known")) is True
     assert live.is_name_resolution(ConnectionError("refused")) is False
+
+
+# --- IPv4 only: the container's DNS fails the Foundry names' AAAA question, so the client never asks it ---
+
+def test_the_backend_asks_only_for_ipv4_and_connects_to_that_ip(monkeypatch):
+    import httpcore2 as httpcore
+    asked, connected = [], []
+
+    def resolve(host, port):
+        asked.append((host, port))
+        return "192.0.2.7"
+    monkeypatch.setattr(httpcore.SyncBackend, "connect_tcp",
+                        lambda self, host, port, **kw: connected.append((host, port, kw)) or "stream")
+    stream = live.IPv4Backend(resolve).connect_tcp("x.openai.azure.com", 443, timeout=5.0)
+    assert stream == "stream" and asked == [("x.openai.azure.com", 443)]
+    assert connected == [("192.0.2.7", 443, {"timeout": 5.0, "local_address": None, "socket_options": None})]
+
+
+def test_ipv4_address_is_an_a_lookup_only(monkeypatch):
+    import socket
+    calls = []
+
+    def getaddrinfo(host, port, family=0, type=0, *a, **kw):
+        calls.append((host, port, family, type))
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("192.0.2.8", port))]
+    monkeypatch.setattr(live.socket, "getaddrinfo", getaddrinfo)
+    assert live.ipv4_address("x.example", 443) == "192.0.2.8"
+    assert calls == [("x.example", 443, socket.AF_INET, socket.SOCK_STREAM)]
+
+
+def test_an_ipv4_lookup_failure_is_a_connect_error_and_still_retried():
+    import socket
+    import httpcore2 as httpcore
+
+    def resolve(host, port):
+        raise socket.gaierror(-3, "Temporary failure in name resolution")
+    with pytest.raises(httpcore.ConnectError) as caught:
+        live.IPv4Backend(resolve).connect_tcp("x.example", 443)
+    assert isinstance(caught.value.__cause__, socket.gaierror) and live.is_name_resolution(caught.value)
+    assert str(caught.value) == "gaierror: [Errno -3] Temporary failure in name resolution"
+
+
+def test_the_openai_client_connects_over_ipv4(monkeypatch):
+    monkeypatch.setenv("XPLAIN_FOUNDRY_ENDPOINT", "https://example.openai.azure.com/openai/v1/")
+    client = live.make_client("entra-access-token")
+    transport = client._client._transport
+    assert isinstance(transport, live.IPv4Transport)
+    # guards the one private httpx2 attribute used: the pool really uses the IPv4 backend
+    assert isinstance(transport._pool._network_backend, live.IPv4Backend)
+    assert client._client.timeout.connect == live.TIMEOUT_S
+
+
+def test_a_real_request_over_the_ipv4_transport_keeps_the_hostname():
+    """Loopback only: "localhost" is resolved to 127.0.0.1 by the transport, the Host header still says localhost."""
+    import http.server
+    import threading
+    seen = {}
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            seen["host"] = self.headers["Host"]
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"ok")
+
+        def log_message(self, *a):
+            pass
+    server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.handle_request, daemon=True).start()
+    port = server.server_address[1]
+    resolved = []
+
+    def resolve(host, p):
+        resolved.append(host)
+        return live.ipv4_address(host, p)
+    try:
+        import httpx2 as httpx
+        with httpx.Client(transport=live.IPv4Transport(resolve)) as c:
+            r = c.get(f"http://localhost:{port}/", timeout=5)
+    finally:
+        server.server_close()
+    assert r.status_code == 200 and r.text == "ok"
+    assert resolved == ["localhost"] and seen["host"] == f"localhost:{port}"
+
+
+def test_the_body_says_ipv4_on_success_and_failure(fake):
+    assert checker(fake).run()["ip_family"] == "ipv4"
+    assert checker(FakeCompletions(error=ConnectionError("refused"))).run()["ip_family"] == "ipv4"

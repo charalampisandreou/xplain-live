@@ -17,6 +17,12 @@ successful one), null when no token was returned.
 At most one real call per MIN_INTERVAL_S server-wide (successes and failures alike), on time.monotonic; in between,
 the last result comes back with cached=true and age_s. Both stages share TIMEOUT_S.
 
+IPv4 only: in the container Azure DNS answers the Foundry names' IPv4 (A) question but always fails their IPv6 (AAAA)
+one with EAI_AGAIN (measured 2026-10-19: 8/8 vs 0/8), and glibc then often fails the whole getaddrinfo. So the client
+connects through ipv4_http_client(): IPv4Backend looks the host up with AF_INET only and connects to that IP; TLS still
+uses the hostname (SNI and the certificate check come from the request URL, not the socket address) and so does the
+Host header. The body says "ip_family": "ipv4". The narration in the container can reuse ipv4_http_client().
+
 Retry: the request stage is retried ONLY when its exception chain holds a socket.gaierror (name resolution, which is
 intermittent for the Foundry hosts in the container): at most len(RETRY_BACKOFF_S) retries, waiting 0.5 s then 1 s,
 all inside TIMEOUT_S (a retry whose wait would not leave time to send is not made). Auth errors, HTTP errors and
@@ -42,11 +48,14 @@ import re
 import socket
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeout
 from typing import Any
 from urllib.parse import urlparse
+
+import httpcore2 as httpcore   # openai 3.x sends through httpx2 / httpcore2 (not httpx / httpcore)
+import httpx2 as httpx
 
 from .config import FoundryConfig
 
@@ -59,6 +68,7 @@ TIMEOUT_S = 15.0
 MESSAGE_CHARS = 200
 CAUSE_DEPTH = 3
 RETRY_BACKOFF_S = (0.5, 1.0)
+IP_FAMILY = "ipv4"
 DNS_TIMEOUT_S = 3.0
 DNS_HOSTS = ("plhack-foundry-candreou-resource.cognitiveservices.azure.com", "login.microsoftonline.com",
              "management.azure.com", "pypi.org")
@@ -97,11 +107,48 @@ def make_credential() -> Any:
     return DefaultAzureCredential(managed_identity_client_id=os.environ.get("AZURE_CLIENT_ID"))
 
 
+def ipv4_address(host: str, port: int) -> str:
+    """The first IPv4 address getaddrinfo gives for host:port (an A lookup only, never AAAA)."""
+    return socket.getaddrinfo(host, port, socket.AF_INET, socket.SOCK_STREAM)[0][4][0]
+
+
+class IPv4Backend(httpcore.SyncBackend):
+    """httpcore's network backend, connecting to the host's IPv4 address. Only the TCP connect gets the IP: httpcore
+    starts TLS with the request's hostname (SNI, certificate check) and the Host header comes from the URL."""
+
+    def __init__(self, resolve: Callable[[str, int], str] = ipv4_address):
+        self._resolve = resolve
+
+    def connect_tcp(self, host: str, port: int, timeout: float | None = None, local_address: str | None = None,
+                    socket_options: Iterable[Any] | None = None) -> httpcore.NetworkStream:
+        try:
+            ip = self._resolve(host, port)
+        except OSError as exc:   # a ConnectError like httpcore's own, the gaierror kept as its cause
+            raise httpcore.ConnectError(f"{type(exc).__name__}: {exc}") from exc
+        return super().connect_tcp(ip, port, timeout=timeout, local_address=local_address,
+                                   socket_options=socket_options)
+
+
+class IPv4Transport(httpx.HTTPTransport):
+    """httpx2's transport with IPv4Backend (httpx2 has no public option for a network backend)."""
+
+    def __init__(self, resolve: Callable[[str, int], str] = ipv4_address, **kwargs: Any):
+        super().__init__(**kwargs)
+        self._pool._network_backend = IPv4Backend(resolve)
+
+
+def ipv4_http_client(timeout: float = TIMEOUT_S) -> httpx.Client:
+    """The http client for Foundry calls from the container: openai's defaults, connecting over IPv4 only."""
+    from openai import DefaultHttpxClient
+    return DefaultHttpxClient(transport=IPv4Transport(), timeout=timeout)
+
+
 def make_client(token: str) -> Any:
-    """An OpenAI client on the Foundry /openai/v1/ route. api_key is the Entra ID access token from the token stage
-    (sent as "Authorization: Bearer <token>"), never a key."""
+    """An OpenAI client on the Foundry /openai/v1/ route, over IPv4 only. api_key is the Entra ID access token from
+    the token stage (sent as "Authorization: Bearer <token>"), never a key."""
     from openai import OpenAI
-    return OpenAI(base_url=endpoint(), api_key=token, timeout=TIMEOUT_S, max_retries=0)
+    return OpenAI(base_url=endpoint(), api_key=token, timeout=TIMEOUT_S, max_retries=0,
+                  http_client=ipv4_http_client(TIMEOUT_S))
 
 
 def endpoint_host() -> str | None:
@@ -278,7 +325,8 @@ class LiveCheck:
                     self._sleep(wait)
                     attempts += 1
             return {"ok": True, "model": reply or model, "latency_s": round(time.perf_counter() - start, 3),
-                    "credential": credential, "endpoint_host": endpoint_host(), "attempts": attempts}
+                    "credential": credential, "endpoint_host": endpoint_host(), "ip_family": IP_FAMILY,
+                    "attempts": attempts}
         except FutureTimeout:
             return self._error(model, start, stage, credential, attempts,
                                [{"error": "TimeoutError", "message": f"no answer within {self._timeout_s:g} s"}])
@@ -304,5 +352,6 @@ class LiveCheck:
     def _error(self, model: str, start: float, stage: str, credential: str | None, attempts: int,
                chain: list[dict]) -> dict:
         return {"ok": False, "model": model, "latency_s": round(time.perf_counter() - start, 3),
-                "credential": credential, "endpoint_host": endpoint_host(), "stage": stage, "attempts": attempts,
+                "credential": credential, "endpoint_host": endpoint_host(), "ip_family": IP_FAMILY, "stage": stage,
+                "attempts": attempts,
                 "error": chain[0]["error"], "message": chain[0]["message"], "causes": chain[1:]}
