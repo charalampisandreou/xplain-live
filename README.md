@@ -10,6 +10,12 @@ overlay cards that a graphics system can render alongside the match.
 > Status: work in progress. **Live demo:** the Studio page playing a synthetic match (seed 3001) at
 > https://xplain-studio.whiteocean-b5bbd7fb.germanywestcentral.azurecontainerapps.io/
 >
+> **Hidden-skill check (synthetic data):** on the 100 hold-out matches (seeds 2001-2100, xpass_v2), a
+> player's PVA per pass correlates with the generator's hidden pass skill at Pearson 0.70 (raw completion
+> rate: 0.62), and the match's top-PVA player is in the hidden top 3 in 64% of matches (chance 14%).
+> This validates that the pipeline separates player quality from pass difficulty on generated matches; it
+> is not a measure of real-world scouting accuracy. Reproduce with `python scripts/skill_check.py`.
+>
 > Built: the synthetic match generator, the pass model trained in this repository (xpass_v2) behind a
 > scoring API (`/score`), replay, an offline deterministic analysis pipeline (outlier moments,
 > SHAP-based drivers, per-half commentary gate, half reports, timeline, pass marks), the Narrator with
