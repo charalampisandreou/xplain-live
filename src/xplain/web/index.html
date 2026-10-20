@@ -29,15 +29,15 @@
     <div class="mark">xPlain <span>Live</span></div>
     <div class="seg" role="group" aria-label="Mode" id="mode">
       <button type="button" data-mode="studio" class="on" aria-pressed="true">Studio</button>
-      <button type="button" disabled aria-disabled="true" title="Coming soon">Analyst</button>
+      <button type="button" data-mode="analyst" aria-pressed="false">Analyst</button>
       <button type="button" data-mode="player" aria-pressed="false">Players</button>
       <button type="button" data-mode="producer" aria-pressed="false">Producer</button>
     </div>
   </div>
 
   <!-- title: its wording lives here only; app.js swaps in data-ht / data-ft while a recap is shown, data-producer
-       in Producer mode -->
-  <h1 class="title" id="title" data-live="Live pass map" data-ht="Half Time" data-ft="Full Time" data-producer="Control room">Live pass map</h1>
+       in Producer mode, data-analyst in Analyst mode -->
+  <h1 class="title" id="title" data-live="Live pass map" data-ht="Half Time" data-ft="Full Time" data-producer="Control room" data-analyst="Match analysis">Live pass map</h1>
 
   <!-- Player mode: the shirt number, the player's name and team in the title's slot (player.js sets them), and the
        picker button -->
@@ -234,11 +234,44 @@
   </section>
   <section class="producer-detail" id="pr-detail" aria-label="Selected line" aria-live="polite"></section>
 
+  <!-- Analyst mode (analyst.js): the match swing and the model's reasons for the shown surprise in the pitch's
+       slot; the teams' passing and their passes per difficulty tier in the tables' slot. Every number is set by
+       analyst.js. -->
+  <section class="analyst-left" id="analyst-left" aria-label="Match swing and the model's reasons">
+    <div class="thead"><h2>Match swing</h2><div class="tsub">completed passes minus expected, running</div></div>
+    <div class="an-chartbox">
+      <svg id="an-chart" viewBox="0 0 780 270" width="780" height="270" role="img" aria-label="Match swing"></svg>
+      <div class="empty an-chart-empty" id="an-chart-empty" hidden></div>
+    </div>
+    <div class="an-shap" aria-live="polite">
+      <div class="thead"><h2 id="an-shap-title">Why the model rated it</h2><div class="tsub" id="an-shap-sub"></div></div>
+      <div class="an-shap-rows" id="an-shap-rows"></div>
+      <div class="an-shap-footrow">
+        <div class="an-shap-foot" id="an-shap-foot"></div>
+        <button type="button" class="an-replay" id="an-replay" hidden>Replay in Studio<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"></path></svg></button>
+      </div>
+    </div>
+  </section>
+  <section class="analyst-right" id="analyst-right" aria-label="Team passing">
+    <div class="an-passing">
+      <div class="thead"><h2>Passing</h2><div class="tsub">so far</div></div>
+      <div class="rc-row rc-colhead" aria-hidden="true"><span class="rc-team"></span><span class="rc-n">Passes</span><span class="rc-n">Completed</span><span class="rc-n">Expected</span><span class="rc-n">vs expected</span></div>
+      <div id="an-team-rows"></div>
+    </div>
+    <div class="an-tiers">
+      <div class="thead"><h2>By difficulty</h2><div class="tsub">completed of passes · vs expected</div></div>
+      <div class="rc-row rc-colhead an-tier" aria-hidden="true"><span class="rc-team"></span><span class="an-cell" id="an-tier-home"></span><span class="an-cell" id="an-tier-away"></span></div>
+      <div id="an-tier-rows"></div>
+    </div>
+    <div class="footnote">vs expected: completed passes minus the completions <span class="xp">xP</span> expected. Difficulty in the narration's words.</div>
+  </section>
+
   <div class="status" id="status" role="status" hidden></div>
 </main>
 </div>
 <script src="/static/player.js"></script>
 <script src="/static/producer.js"></script>
+<script src="/static/analyst.js"></script>
 <script src="/static/app.js"></script>
 </body>
 </html>

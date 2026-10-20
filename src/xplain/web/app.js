@@ -12,6 +12,7 @@
     surprise_success: 'No surprise successes yet.',
   };
   const NOT_STARTED = 'Starts in the 2nd half.';
+  const NOT_COMMENTATED = 'Not commentated: it did not reach the commentary gate when it happened.';
   // recaps: the bundle's scope names, their ?recap values, and the plate's words in the recap state
   const RECAP_KEYS = { ht: 'half_time', ft: 'full_time' };
   const RECAP_TAB = { half_time: 'Half-time recap', full_time: 'Full-time recap' };
@@ -46,8 +47,9 @@
     lang: 'en',
     scope: 'all',      // which ranking the tables show: whole match so far, or one half
     replay: null,      // moment_id being replayed: pitch, plate and tab show it; clock and tables run on
-    mode: 'studio',    // 'studio', 'player' (player.js: one player's match) or 'producer' (producer.js: the control
-                       // room); all share the state above
+    mode: 'studio',    // 'studio', 'player' (player.js: one player's match), 'producer' (producer.js: the control
+                       // room) or 'analyst' (analyst.js: both teams against the model); all share the state above
+    analystPick: null, // Analyst mode: the surprise picked on the swing, null for the latest one
     producerRecap: null,   // Producer mode: the recap scope picked in the log (Producer only; Studio is unchanged)
     player: null,      // Player mode's player_id
     playerNarr: null,  // Player mode: the moment_id the plate's chevrons picked, null for the player's latest
@@ -166,8 +168,17 @@
       selectRecap: (scope) => { state.producerRecap = scope; },
       teamCode: (id) => teamCode(id, ''),
       redraw: () => { state.renderedKey = ''; render(); } });
+    // Analyst mode: a dot picks its surprise; Replay in Studio replays a commentated one there
+    XplainAnalyst.mount({ fixed2: XplainPlayer.fixed2, percent, pva,
+      pick: (id) => { state.analystPick = id; },
+      replay: (id) => { if (idx.markOf.has(id)) { setMode('studio'); enterReplay(id); } } });
     if (params.get('mode') === 'player') setMode('player');
     else if (params.get('mode') === 'producer') setMode('producer');
+    else if (params.get('mode') === 'analyst') {
+      // ?moment=<moment_id> picks that surprise (demo links); one the clock has not reached waits until it is
+      if (idx.moments.has(params.get('moment'))) state.analystPick = params.get('moment');
+      setMode('analyst');
+    }
     // ?recap=ht|ft opens that recap at its time, paused, with no auto-resume (demo links, screenshots)
     const rs = RECAP_KEYS[params.get('recap')];
     if (rs && idx.recapT[rs] !== undefined && state.mode === 'studio') {
@@ -316,8 +327,10 @@
     state.playerNarr = null;
     XplainPlayer.invalidate();   // the pitch and its tab are drawn again by whichever mode is shown
     XplainProducer.invalidate();
+    XplainAnalyst.invalidate();
     $('stage').classList.toggle('mode-player', mode === 'player');
     $('stage').classList.toggle('mode-producer', mode === 'producer');
+    $('stage').classList.toggle('mode-analyst', mode === 'analyst');
     for (const b of $('mode').querySelectorAll('button[data-mode]')) {
       const on = b.dataset.mode === mode;
       b.classList.toggle('on', on);
@@ -327,13 +340,14 @@
     if (mode === 'player') {
       url.searchParams.set('mode', 'player');
       if (state.player) url.searchParams.set('player', state.player);
-    } else if (mode === 'producer') {
-      url.searchParams.set('mode', 'producer');
+    } else if (mode === 'producer' || mode === 'analyst') {
+      url.searchParams.set('mode', mode);
       url.searchParams.delete('player');
     } else {
       url.searchParams.delete('mode');
       url.searchParams.delete('player');
     }
+    if (mode !== 'analyst') url.searchParams.delete('moment');
     history.replaceState(null, '', url);
     if (mode === 'studio') showUnseenRecap();
   }
@@ -463,6 +477,12 @@
       if (control && (e.key === ' ' || e.key === 'Enter')) return;
       // Player mode: space plays or pauses, [ ] page the plate; nothing steps or replays
       if (state.mode === 'player' && ![' ', '[', ']'].includes(e.key)) return;
+      // Analyst mode: space plays or pauses; Esc or L drops the pick (the swing shows the latest surprise again)
+      if (state.mode === 'analyst') {
+        if (e.key === ' ') { setPlaying(!state.playing); e.preventDefault(); }
+        else if (e.key === 'Escape' || e.key === 'l' || e.key === 'L') { state.analystPick = null; e.preventDefault(); }
+        return;
+      }
       if (e.key === 'Escape') {   // leaves replay and step mode; when live, closes a recap (play stays paused)
         if (state.replay || !state.follow) { leaveReplay(); e.preventDefault(); }
         else if (state.producerRecap) { state.producerRecap = null; e.preventDefault(); }
@@ -496,7 +516,8 @@
       plate ? plate.bundle.moment.moment_id : '-', state.lang, state.follow, state.replay,
       narr.reached, narr.pos, goal, state.mode, state.player, state.playerNarr,
       state.recap ? state.recap.scope + (state.recap.resumeAt !== null) + state.recap.view : '-', state.playerPicked,
-      state.producerRecap, state.mode === 'producer' ? XplainProducer.items(state.bundle, state.now, idx.recapT).length : ''].join('/');
+      state.producerRecap, state.mode === 'producer' ? XplainProducer.items(state.bundle, state.now, idx.recapT).length : '',
+      state.analystPick].join('/');
     if (key === state.renderedKey) return;   // every DOM write below runs in this one animation frame
     state.renderedKey = key;
     if (state.mode === 'player') {   // Player mode: the score bug stays live; player.js draws the rest
@@ -509,6 +530,18 @@
       renderNarrNav(pn);
       renderPlate(pn.pos > 0 ? pn.list[pn.pos - 1] : null,
         'No commentated moment for ' + (who ? who.name : 'this player') + ' yet.');
+      return;
+    }
+    if (state.mode === 'analyst') {   // Analyst mode: the score bug stays live; analyst.js draws the rest; the plate
+      renderRecap();                  // shows the surprise the swing shows (its line when it was commentated)
+      renderScoreBug(tick, score, live >= 0 ? half : null, brk);
+      const shown = XplainAnalyst.render({ bundle: state.bundle, now: state.now, scope: state.scope,
+        period: XplainPlayer.scopePeriod(state.scope), notStarted: state.scope === '2' && half !== 2,
+        pick: state.analystPick, h1End: idx.h1End, teamCode: (id) => teamCode(id, '') });
+      renderNarrNav({ reached: 0, pos: 0, prev: null, next: null });
+      renderPlate(shown, 'No surprise yet.');
+      // a surprise that was not commentated has no line: the plate says so instead of an empty line
+      if (shown && !shown.line) { $('lower-line').textContent = NOT_COMMENTATED; $('lower-line').removeAttribute('lang'); }
       return;
     }
 
@@ -686,6 +719,7 @@
     }
     const title = $('title');
     title.textContent = state.mode === 'producer' ? title.dataset.producer
+      : state.mode === 'analyst' ? title.dataset.analyst
       : open ? title.dataset[state.recap.scope === 'half_time' ? 'ht' : 'ft'] : title.dataset.live;
     if (!on) return;
     const entry = state.bundle.recaps[state.recap.scope];

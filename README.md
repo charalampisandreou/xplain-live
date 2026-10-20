@@ -27,8 +27,10 @@ overlay cards that a graphics system can render alongside the match.
 > narrated moments, an in-plate narration language switch, half-time and full-time recap cards), the
 > Recap Editor (the recap texts, with every number filled in by code), Players mode, the player-focus
 > personalization mode (one player's pass map, numbers and moments up to the match clock; from a recap it
-> opens on the star player), the Producer view (the control room: every line the clock has reached, the
-> agents' steps behind it, the checks the Verifier ran, model and latency), a script that compares Narrator models
+> opens on the star player), Analyst mode (both teams' running vs expected as a match swing, their passing
+> per difficulty tier, and the model's SHAP reasons for each surprise), the Producer view (the control room:
+> every line the clock has reached, the agents' steps behind it, the checks the Verifier ran, model and
+> latency), a script that compares Narrator models
 > (`scripts/compare_models.py`, see "Model comparison"), and the Azure deployment (Container Apps from
 > an ARM template, see "Deploy to Azure"). The deployed page serves a precomputed bundle: its lines were
 > generated with Foundry (gpt-6.1-sol) and checked by the Verifier when the bundle was built.
@@ -37,7 +39,7 @@ overlay cards that a graphics system can render alongside the match.
 > bundle CC BY 4.0). The bundle there was replaced after the 2026-10-20 rebuild (Greek link words); its SHA-256 is
 > `8d251454121739086483d31ab39e5b01f643d5b2bc8b45595040229bb69a1bff`.
 >
-> Not built yet: the Analyst screen, the other personalization modes (analyst, casual fan, favourite club or player), and live mode (the deployed app
+> Not built yet: the other personalization modes (analyst, casual fan, favourite club or player), and live mode (the deployed app
 > narrating with Foundry itself; so far only a one-call live check, `/api/live/health`, see "Deploy to Azure").
 > Results and demo sections are filled in as they are measured.
 
@@ -247,9 +249,9 @@ bottom-right Back to live, L or Esc return to the live pass. `?replay=MOMENT_ID`
 `?replay=moment:m42-00817`) opens in replay; if the moment is later than the start time, the
 clock starts at it.
 
-The page only formats: every number, minute and ranking comes from the bundle (Players mode's numbers so
-far are the one exception, see below). The title reads "Live pass map" ("Half Time" or "Full Time" while a
-recap is shown, "Control room" in Producer). The tables and the
+The page only formats: every number, minute and ranking comes from the bundle (Players and Analyst modes'
+numbers so far are the one exception, see below). The title reads "Live pass map" ("Half Time" or "Full Time"
+while a recap is shown, "Match analysis" in Analyst, "Control room" in Producer). The tables and the
 plate show PVA (pass value added, the bundle's `delta` = outcome - xP: 1 - xP when completed, -xP
 when not) in points of completion chance, e.g. "+85%" or "−94%" (sign, round(100 * |PVA|)); the
 bar length is |PVA| on a 0..1 scale. xP is shown small in the plate as a percent with the same
@@ -259,7 +261,7 @@ toward the goal it attacks (from `meta.attacks_right`; still under reduced motio
 shows the minute and the half, and HT or FT at half time and full time; the possession tab stays at the pitch's top-left, with the code
 then right-pointing chevrons when attacking right and left-pointing chevrons then the code when
 attacking left. The lower third is a cyan name tab (shirt number, player, team code and minute) on a dark body
-with the commentator's line in the chosen language, the tier and xP, and PVA on the right. The Analyst mode is not built yet.
+with the commentator's line in the chosen language, the tier and xP, and PVA on the right.
 
 Also in the Studio:
 
@@ -303,13 +305,31 @@ language as the Studio:
   (arrows, Enter, Esc). From a recap, Players opens on its star player; the star's row on the recap
   card opens the star directly.
 
+**Analyst mode** (the Analyst button, or `?mode=analyst`, with `&moment=MOMENT_ID` to pick a surprise) puts
+both teams against the model on the same clock, score and plate:
+
+- **Match swing.** Each team's running vs expected (completed passes minus the sum of their xP, the recap
+  card's measure), one line per team, a step at each pass, with half time and the goals marked. Every
+  surprise is a dot on its team's line (green: a hard pass completed; red: an easy pass not completed).
+  All / 1st / 2nd pick the span; the lines grow with the clock, so nothing is spoiled. At full time the
+  lines end on the card's values (seed 3001: DUS +19.45, MAR −19.11).
+- **Why the model rated it.** For the picked dot (by default the latest surprise): the pass's SHAP drivers
+  and the rest as stored by the Explainer, as bars each way from the centre (green raises the model's score,
+  red lowers it), with the model's start value, the raw score and the calibrated xP. The values are log-odds
+  of the raw score, never points of xP, and the panel says so. "Replay in Studio" opens a commentated
+  surprise in the Studio's replay. The plate shows the picked surprise: its line, or a note that it was
+  not commentated.
+- **Passing and By difficulty.** Each team's passes, completed, expected and vs expected so far, and the
+  same per difficulty tier (the narration's five words): completed of passes and vs expected.
+
 These numbers are the one place the page computes anything (the browser computation exception): sums,
 counts, means and rates over the bundle's marks at the clock, shown to two decimals with `toFixed(2)`,
-in `src/xplain/web/player.js`, each checked against its Python twin (`pipeline.player_summary`,
-`recap.xp_sum`, `recap.round2` and others) in `tests/test_player_js.py`, which runs
-`player.js` under Node and compares exactly: both sides add floats left to right (`analytics.seq_sum`;
-Python's own `sum()` corrects for rounding since 3.12 and would differ in the last bits). The test is
-skipped when `node` is not installed.
+in `src/xplain/web/player.js` and `src/xplain/web/analyst.js`, each checked against its Python twin
+(`pipeline.player_summary`, `recap.xp_sum`, `recap.round2`, `swing.team_swing`, `swing.team_tiers` and
+others) in `tests/test_player_js.py` and `tests/test_analyst_js.py`, which run the scripts under Node and
+compare exactly: both sides add floats left to right (`analytics.seq_sum`; Python's own `sum()` corrects
+for rounding since 3.12 and would differ in the last bits). The tests are skipped when `node` is not
+installed. The SHAP panel computes nothing: it shows the stored values to two decimals.
 
 **Producer** (the Producer button, or `?mode=producer`) is the control room: for the person who puts AI
 lines on air and must say why a line went out, what was checked, which model and how long. It shares the

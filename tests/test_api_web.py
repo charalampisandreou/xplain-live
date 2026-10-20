@@ -189,7 +189,7 @@ def test_players_mode_is_on_the_page(client):
     modes = html.split('id="mode"')[1].split("</div>")[0]
     assert '<button type="button" data-mode="studio" class="on" aria-pressed="true">Studio</button>' in modes
     assert '<button type="button" data-mode="player" aria-pressed="false">Players</button>' in modes
-    assert 'disabled aria-disabled="true" title="Coming soon">Analyst</button>' in modes   # still to come
+    assert '<button type="button" data-mode="analyst" aria-pressed="false">Analyst</button>' in modes
     assert 'id="player-pick" aria-haspopup="listbox" aria-expanded="false" aria-controls="player-picker"' in html
     assert 'id="player-picker" role="listbox" aria-label="Players" hidden' in html
     view = html.split('id="player-view"')[1].split("</section>")[0]
@@ -288,7 +288,7 @@ def test_producer_mode_is_on_the_page(client):
     modes = html.split('id="mode"')[1].split("</div>")[0]
     assert modes.index('data-mode="player"') < modes.index(
         '<button type="button" data-mode="producer" aria-pressed="false">Producer</button>')
-    assert 'disabled aria-disabled="true" title="Coming soon">Analyst</button>' in modes   # left as it is
+    assert "Coming soon" not in modes and "disabled" not in modes   # every mode is built
     log = html.split('<section class="producer-log" id="producer-log"')[1].split("</section>")[0]
     assert '<h2>Log</h2><div class="tsub">newest first</div>' in log and 'id="pr-rows"' in log
     assert '<div class="empty" id="pr-empty" hidden>No agent trace in this match bundle.</div>' in log
@@ -390,8 +390,8 @@ def test_empty_states_end_with_a_full_stop(client):
 
 def test_title_and_recap_card_are_on_the_page(client):
     html = client.get("/").text
-    assert ('data-live="Live pass map" data-ht="Half Time" data-ft="Full Time" data-producer="Control room">'
-            'Live pass map</h1>') in html
+    assert ('data-live="Live pass map" data-ht="Half Time" data-ft="Full Time" data-producer="Control room" '
+            'data-analyst="Match analysis">Live pass map</h1>') in html
     assert "Pass outliers" not in html
     recap = html.split('<section class="recap" id="recap"')[1].split("</section>")[0]
     for node in ('id="rc-score"', 'id="rc-goal-rows"', 'id="rc-team-rows"', 'id="rc-star"', 'id="rc-text"'):
@@ -536,6 +536,64 @@ def test_picker_columns_stay_in_the_panel_and_numbers_line_up(client):
 
 
 def test_no_league_names_in_the_page(client):
-    for path in ("/", "/static/app.js", "/static/player.js", "/static/app.css"):
+    for path in ("/", "/static/app.js", "/static/player.js", "/static/analyst.js", "/static/app.css"):
         text = client.get(path).text
         assert "Premier League" not in text and "Premier" not in text
+
+
+# --- Analyst mode (src/xplain/web/analyst.js) ---
+
+def test_analyst_mode_is_on_the_page(client):
+    html = client.get("/").text.replace("\r\n", "\n")
+    js = client.get("/static/analyst.js")
+    assert js.status_code == 200 and "javascript" in js.headers["content-type"]
+    assert html.index("/static/analyst.js") < html.index("/static/app.js")   # app.js mounts it
+    modes = html.split('id="mode"')[1].split("</div>")[0]
+    assert modes.index('data-mode="studio"') < modes.index('data-mode="analyst"') < modes.index('data-mode="player"')
+    left = html.split('<section class="analyst-left" id="analyst-left"')[1].split("</section>")[0]
+    for node in ('<h2>Match swing</h2>', 'id="an-chart"', 'id="an-chart-empty"', 'id="an-shap-title"',
+                 'id="an-shap-rows"', 'id="an-shap-foot"', 'id="an-replay"'):
+        assert node in left
+    right = html.split('<section class="analyst-right" id="analyst-right"')[1].split("</section>")[0]
+    for node in ('<h2>Passing</h2>', 'id="an-team-rows"', '<h2>By difficulty</h2>', 'id="an-tier-rows"'):
+        assert node in right
+    assert '<span class="rc-n">vs expected</span>' in right   # the recap card's words
+
+
+def test_analyst_mode_is_wired_and_shares_studio_state(client):
+    app = client.get("/static/app.js").text.replace("\r\n", "\n")
+    js = client.get("/static/analyst.js").text
+    assert "else if (params.get('mode') === 'analyst') {" in app
+    assert "$('stage').classList.toggle('mode-analyst', mode === 'analyst');" in app
+    assert "XplainAnalyst.invalidate();" in app and "title.dataset.analyst" in app
+    # the scope selector and the clock are Studio's; the plate shows the surprise the swing shows
+    assert "period: XplainPlayer.scopePeriod(state.scope)" in app and "renderPlate(shown, 'No surprise yet.');" in app
+    # Replay in Studio leaves Analyst for Studio's replay of that moment
+    assert "replay: (id) => { if (idx.markOf.has(id)) { setMode('studio'); enterReplay(id); } }" in app
+    # no spoilers: only surprises and passes at or before the clock
+    assert "return m.t <= limit &&" in js and "m.t <= limit && (period === null" in js
+    assert "if (!s.goal || s.t > ctx.now" in js
+    # SHAP in its own unit, never as points of xP; the values as stored
+    assert "(log-odds, not points of xP)" in js and "x.drivers.map(" in js and "x.rest" in js
+    assert "fetch(" not in js and "XMLHttpRequest" not in js
+
+
+def test_analyst_layout_keeps_studio_rules(client):
+    css = client.get("/static/app.css").text.replace("\r\n", "\n")
+    block = css.split("/* --- Analyst mode")[1]
+    assert "#stage.mode-analyst .pitch, #stage.mode-analyst .tables, #stage.mode-analyst .recap," in block
+    for slot, box in ((".analyst-left {", "top: 196px; left: 40px; width: 780px; height: 520px"),
+                      (".analyst-right {", "top: 196px; left: 860px; width: 540px; height: 520px")):
+        rule = block.split("\n" + slot)[1].split("}")[0]
+        assert box in rule and "border:" not in rule and "box-shadow" not in rule and "background" not in rule
+    assert re.findall(r"#[0-9A-Fa-f]{3,6}\b", block) == []   # tokens only
+
+
+def test_analyst_empty_states_end_with_a_full_stop(client):
+    js = client.get("/static/analyst.js").text
+    app = client.get("/static/app.js").text
+    for text in ("Starts in the 2nd half.", "No passes yet."):
+        assert "'" + text + "'" in js
+    assert "const NO_PICK = 'No surprise yet. " in js and "as it did.';" in js
+    assert "'No surprise yet.'" in app
+    assert "const NOT_COMMENTATED = 'Not commentated: it did not reach the commentary gate when it happened.';" in app
