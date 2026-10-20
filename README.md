@@ -2,6 +2,8 @@
 
 [![tests](https://github.com/charalampisandreou/xplain-live/actions/workflows/tests.yml/badge.svg)](https://github.com/charalampisandreou/xplain-live/actions/workflows/tests.yml)
 
+**Every pass rated. Every surprise explained.**
+
 Expectation versus outcome, live. A studio copilot for the Microsoft
 "Inside the Game" hackathon: it ingests synthetic match events, compares what a trained model
 expected with what happened, explains the gap, and emits timed, machine-readable
@@ -32,8 +34,8 @@ overlay cards that a graphics system can render alongside the match.
 > generated with Foundry (gpt-6.1-sol) and checked by the Verifier when the bundle was built.
 > The model files and the demo bundle are published in the open-licence release
 > [data-v1](https://github.com/charalampisandreou/xplain-live/releases/tag/data-v1) (model files MIT,
-> bundle CC BY 4.0). The bundle there was replaced after the narration retune; its SHA-256 is
-> `48f18c2bac40ca3cf91a08768c655d6d3f77585602b41910f52c38fae49d5a1b`.
+> bundle CC BY 4.0). The bundle there was replaced after the 2026-10-20 rebuild (Greek link words); its SHA-256 is
+> `8d251454121739086483d31ab39e5b01f643d5b2bc8b45595040229bb69a1bff`.
 >
 > Not built yet: the Analyst screen, the other personalization modes (analyst, casual fan, favourite club or player), and live mode (the deployed app
 > narrating with Foundry itself; so far only a one-call live check, `/api/live/health`, see "Deploy to Azure").

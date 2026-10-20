@@ -18,7 +18,7 @@ env:
   RELEASE_URL: https://github.com/charalampisandreou/xplain-live/releases/download/data-v1
   SHA_XPASS_JOBLIB: ee2053aeb1ba3b315bee97a9a9169970528ae269dd01f313bd93aebdb21f7515
   SHA_FEATURE_LIST: d2d13f7f3c0ca777c50b037ffdd4efd9e3439d1b860d2f38cd76d549321e61bf
-  SHA_BUNDLE_3001: 48f18c2bac40ca3cf91a08768c655d6d3f77585602b41910f52c38fae49d5a1b
+  SHA_BUNDLE_3001: 8d251454121739086483d31ab39e5b01f643d5b2bc8b45595040229bb69a1bff
 
 jobs:
   pytest:

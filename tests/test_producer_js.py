@@ -146,8 +146,9 @@ def test_no_spoilers_on_the_demo_bundle(tmp_path):
     b = json.loads(BUNDLE_3001.read_text(encoding="utf-8"))
     got = check_no_spoilers(tmp_path, b)
     assert len(got["items"][-1]) == 17 + 2
-    # the recap's numbers in plain words, from the last fill (the text on air)
+    # the recap's numbers in plain words, from the last fill (the text on air); the 2026-10-20 rebuild filled each
+    # text once, with the two-decimal values, so there is no refill line
     assert got["fillers"]["full_time"] == {
-        "text": "DUS vs expected 19.45 · MAR vs expected 19.11 · Star Nevek Iversani, 5.48", "again": got["refilled"]}
+        "text": "DUS vs expected 19.45 · MAR vs expected 19.11 · Star Nevek Iversani, 5.48", "again": ""}
     for scope, steps in b["trace"]["recaps"].items():
         assert got["fillers"][scope] == filler_twin(steps, "DUS", "MAR")
