@@ -355,6 +355,22 @@ def test_a_recap_crossed_in_producer_or_players_opens_on_switching_to_studio(cli
     assert "state.unseenRecap = null;" in restart
 
 
+def test_leaving_studio_keeps_the_recap_and_its_switch(client):
+    # bug 2026-10-19: the half-time recap's 10 s auto-resume kept running in Players (the star's row opens it)
+    # and Producer; play resumed unseen, closed the recap, and back in Studio the Recap / Map switch was gone
+    app = client.get("/static/app.js").text.replace("\r\n", "\n")
+    mode = app.split("function setMode(mode) {")[1].split("\n  }\n")[0]
+    off = "if (mode !== 'studio' && state.recap) state.recap.resumeAt = null;"
+    assert off in mode and "closeRecap" not in mode
+    assert mode.index(off) < mode.index("if (mode === 'studio') showUnseenRecap();")
+    # the auto-resume is the only timed path to closeRecap: it fires only while resumeAt is set
+    frame = app.split("function frame(ts) {")[1].split("\n  }\n")[0]
+    assert "if (state.recap && state.recap.resumeAt !== null && ts >= state.recap.resumeAt) setPlaying(true);" in frame
+    # the star's row goes through setMode, so it is covered too
+    star = app.split("function openStar() {")[1].split("\n  }\n")[0]
+    assert "setMode('player');" in star
+
+
 def test_web_files_check_out_with_lf():
     assert "src/xplain/web/* text eol=lf" in (ROOT / ".gitattributes").read_text(encoding="utf-8")
 

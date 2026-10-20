@@ -304,8 +304,10 @@
   // ?mode and ?player for demo links, the way it drops ?replay on leaving replay.
   function setMode(mode) {
     state.mode = mode;
-    // Players mode shows no recap, but an open one stays open: back in Studio it is there again. From a recap,
-    // Players opens on its star until a player is picked.
+    // Players and Producer show no recap, but an open one stays open: back in Studio it is there again. Leaving
+    // Studio turns the half-time auto-resume off (as Map does), else play resumed unseen and closed the recap,
+    // taking the Recap / Map switch with it. From a recap, Players opens on its star until a player is picked.
+    if (mode !== 'studio' && state.recap) state.recap.resumeAt = null;
     if (mode === 'player' && state.recap && !state.playerPicked) {
       const star = state.bundle.recaps[state.recap.scope].card.star;
       if (star) state.player = star.player_id;
@@ -803,7 +805,7 @@
     // the drain line runs over the pause, from full to empty; with reduced motion it stays hidden
     if (r.resumeAt !== null && !reducedMotion.matches && drainLine.animate) {
       lower.classList.add('ticking');
-      // from what is left of the pause: back from Players mode, it goes on where it was
+      // from what is left of the pause (the full pause unless a frame ran late)
       const left = Math.max(0, r.resumeAt - performance.now());
       drain = drainLine.animate([{ transform: 'scaleX(' + left / RECAP_PAUSE_MS + ')' }, { transform: 'scaleX(0)' }],
         { duration: left, easing: 'linear', fill: 'forwards' });
