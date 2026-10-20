@@ -555,7 +555,7 @@ def test_analyst_mode_is_on_the_page(client):
                  'id="an-shap-rows"', 'id="an-shap-foot"', 'id="an-replay"'):
         assert node in left
     right = html.split('<section class="analyst-right" id="analyst-right"')[1].split("</section>")[0]
-    for node in ('<h2>Passing</h2>', 'id="an-team-rows"', '<h2>By difficulty</h2>', 'id="an-tier-rows"'):
+    for node in ('<h2>Passing Stats</h2>', 'id="an-team-rows"', '<h2>By difficulty</h2>', 'id="an-tier-rows"'):
         assert node in right
     assert '<span class="rc-n">vs expected</span>' in right   # the recap card's words
 
