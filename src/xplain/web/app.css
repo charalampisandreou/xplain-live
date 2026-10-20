@@ -15,7 +15,7 @@
   --plate-text: #0A1B2E;
   --pitch: #10294A;
   --switch-border: rgba(255, 255, 255, 0.10);
-  --home: #B794FF;   /* Analyst mode's team lines: the home team in violet (not the accent cyan, which marks the
+  --home: #F25CE6;   /* Analyst mode's team lines: the home team in magenta (not the accent cyan, which marks the
                         page itself), the away team in amber; both clear of the green / red of the outcomes */
   --away: #FFB547;
   --font: 'Archivo', 'Noto Sans', sans-serif;   /* Noto Sans covers Greek, which Archivo lacks */
