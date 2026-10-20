@@ -521,7 +521,9 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .an-dot .dot { stroke: var(--bg); stroke-width: 1.5; }
 .an-dot.surprise_success .dot { fill: var(--completed); }
 .an-dot.surprise_failure .dot { fill: var(--failed); }
-.an-dot .ring { fill: none; stroke: var(--text); stroke-width: 2; }
+.an-dot .ring { fill: none; stroke: var(--text); stroke-width: 2; visibility: hidden; }
+.an-dot.on .ring { visibility: visible; }
+.an-dot.on .dot { r: 5.5px; }
 .an-dot:hover .dot { stroke: var(--text); }
 .an-dot:focus-visible .hit { stroke: var(--accent); stroke-width: 2; }
 /* the model's reasons: one row per driver and one for the rest, a bar each way from the centre of its track */
@@ -558,7 +560,6 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .an-key.home { background: var(--home); }
 .an-key.away { background: var(--away); }
 .an-tier .rc-team { display: flex; align-items: center; font-weight: 600; }
-.an-tier .key { display: inline-block; width: 10px; height: 10px; margin-right: 8px; border-radius: 2px; flex: none; }
 .an-tier .an-cell { width: 150px; flex: none; display: flex; justify-content: flex-end; align-items: baseline; gap: 12px; }
 .rc-colhead.an-tier .an-cell { font-size: 12px; font-weight: 800; letter-spacing: 0.08em; color: var(--muted); }
 .an-frac { font-weight: 700; color: var(--text-soft); }

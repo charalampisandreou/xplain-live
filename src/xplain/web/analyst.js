@@ -84,7 +84,7 @@
   const $ = (id) => document.getElementById(id);
 
   function mount(api) {
-    view = { api, sig: '', shapSig: '' };
+    view = { api, sig: '', shapSig: '', frameSig: '', goalSig: '', dotSig: '' };
     const chart = $('an-chart');
     chart.addEventListener('click', (e) => {
       const dot = e.target.closest && e.target.closest('[data-moment]');
@@ -102,6 +102,7 @@
     if (!view) return;
     view.sig = '';
     view.shapSig = '';
+    view.frameSig = '';
   }
 
   function el(name, attrs) {
@@ -143,7 +144,8 @@
   }
 
   // Analyst mode at the clock and in the scope. ctx: bundle, now, scope, period, notStarted, pick (a moment_id or
-  // null: the latest surprise), h1End. Returns the moment entry the SHAP panel shows (null: none), for the plate.
+  // null: the latest surprise), h1End. Returns { shown, list }: the moment entry the SHAP panel shows (null: none)
+  // and the surprises reached, in seq order, for the plate and its chevrons.
   function render(ctx) {
     const { bundle } = ctx;
     const teams = [bundle.meta.home, bundle.meta.away];
@@ -152,23 +154,36 @@
     const shown = picked || (found.length ? found[found.length - 1] : null);
     view.shown = shown ? shown.bundle.moment.moment_id : null;
     const swings = teams.map((t) => (ctx.notStarted ? [] : teamSwing(bundle.marks, t.team_id, ctx.now, ctx.period)));
-    const sig = [ctx.scope, ctx.notStarted, swings[0].length, swings[1].length, found.length, view.shown].join('/');
+    const sig = [ctx.scope, ctx.notStarted, swings[0].length, swings[1].length, found.length].join('/');
     if (sig !== view.sig) {
       view.sig = sig;
       renderChart(ctx, teams, swings, found);
       renderTeams(ctx, teams, swings);
     }
+    markShown();
     renderShap(shown, ctx);
-    return shown;
+    return { shown, list: found };
   }
 
   // --- the match swing: one line per team, the surprises as dots on their team's line ---------------
+  // The chart is drawn in layers that stay in place: the frame (grid, minutes, half time) and the dots are rebuilt
+  // only when the scale, the span or the number of surprises changes; the lines and their end labels are updated in
+  // place as passes come in; picking a dot only moves the ring. So a dot under the pointer is not replaced while the
+  // match plays, and a click lands.
+
+  function layer(name) {
+    const svg = $('an-chart');
+    let g = svg.querySelector('g.' + name);
+    if (!g) { g = el('g', { class: name }); svg.appendChild(g); }
+    return g;
+  }
 
   function renderChart(ctx, teams, swings, found) {
     const svg = $('an-chart');
-    svg.replaceChildren();
     const { bundle } = ctx;
     if (ctx.notStarted || (swings[0].length + swings[1].length) === 0) {
+      svg.replaceChildren();
+      view.frameSig = '';
       $('an-chart-empty').textContent = ctx.notStarted ? NOT_STARTED : NO_PASSES;
       $('an-chart-empty').hidden = false;
       svg.setAttribute('aria-label', 'Match swing, ' + (ctx.notStarted ? 'second half not started' : 'no passes yet'));
@@ -182,8 +197,106 @@
     const x = (t) => PAD_L + ((t - t0) / Math.max(t1 - t0, 1)) * (W - PAD_L - PAD_R);
     const y = (v) => PAD_T + ((top - v) / (2 * top)) * (H - PAD_T - PAD_B);
 
-    // grid: zero, the axis ends, the minutes; half-time in the whole-match view
-    const grid = el('g', { class: 'an-grid' });
+    const frameSig = [ctx.scope, top, t0, t1].join('/');
+    if (frameSig !== view.frameSig) {   // a new scale or span: every layer is drawn again, in this order
+      view.frameSig = frameSig;
+      view.goalSig = '';
+      view.dotSig = '';
+      svg.replaceChildren();
+      for (const name of ['an-grid', 'an-goals', 'an-lines', 'an-ends', 'an-dots']) layer(name);
+      for (const i of [0, 1]) layer('an-lines').appendChild(el('path', { class: 'an-line ' + TEAM_CLASS[i], d: '' }));
+      drawGrid(ctx, x, y, top, t0, t1);
+    }
+
+    // goals reached so far in the span: a dashed line in the scorer's team colour, labelled with the minute
+    // (two goals close together: the earlier label ends at its line, the later one starts at its own)
+    const goalList = bundle.score.filter((s) => s.goal && s.t <= ctx.now && s.t >= t0 && s.t <= t1);
+    if (String(goalList.length) !== view.goalSig) {
+      view.goalSig = String(goalList.length);
+      const goals = layer('an-goals');
+      goals.replaceChildren();
+      let prev = null;
+      for (const s of goalList) {
+        const side = TEAM_CLASS[teams.findIndex((t) => t.team_id === s.goal.team_id)] || 'home';
+        const gx = x(s.t);
+        goals.appendChild(el('line', { x1: gx, x2: gx, y1: PAD_T, y2: H - PAD_B, class: 'goal ' + side }));
+        const label = el('text', { x: gx, y: PAD_T - 8, 'text-anchor': 'middle', class: 'an-goal ' + side });
+        label.textContent = 'Goal ' + s.minute_label + "'";
+        if (prev && gx - prev.x < GOAL_LABEL_PX) {
+          prev.label.setAttribute('text-anchor', 'end');
+          prev.label.setAttribute('x', prev.x - 3);
+          label.setAttribute('text-anchor', 'start');
+          label.setAttribute('x', gx + 3);
+        }
+        goals.appendChild(label);
+        prev = { x: gx, label };
+      }
+    }
+
+    // the lines (a step at each pass: the value holds until the team's next pass), updated in place
+    const paths = layer('an-lines').querySelectorAll('path');
+    const ends = [];
+    swings.forEach((s, i) => {
+      if (!s.length) { paths[i].setAttribute('d', ''); return; }
+      let d = 'M' + x(Math.max(t0, s[0].t)).toFixed(1) + ' ' + y(0).toFixed(1);
+      for (const p of s) d += 'H' + x(p.t).toFixed(1) + 'V' + y(p.vsExpectedXp).toFixed(1);
+      paths[i].setAttribute('d', d);
+      const last = s[s.length - 1];
+      ends.push({ i, y: y(last.vsExpectedXp), v: last.vsExpectedXp });
+    });
+    // end labels: the team code over its value, pushed apart when the two lines end close together
+    if (ends.length === 2 && Math.abs(ends[0].y - ends[1].y) < 34) {
+      const [hi, lo] = ends[0].y <= ends[1].y ? ends : [ends[1], ends[0]];
+      const mid = (hi.y + lo.y) / 2;
+      hi.ly = mid - 17; lo.ly = mid + 17;
+    }
+    const endLayer = layer('an-ends');
+    endLayer.replaceChildren();
+    for (const e of ends) {
+      const ly = e.ly !== undefined ? e.ly : e.y;
+      const g = el('g', { class: 'an-end ' + TEAM_CLASS[e.i] });
+      const code = el('text', { x: W - PAD_R + 10, y: ly - 2, class: 'an-code' });
+      code.textContent = ctx.teamCode(teams[e.i].team_id);
+      const val = el('text', { x: W - PAD_R + 10, y: ly + 15, class: 'an-val' });
+      val.textContent = view.api.fixed2(e.v, true);
+      g.append(code, val);
+      endLayer.appendChild(g);
+    }
+
+    // the surprises: on their team's line at the value just after that pass. A dot never moves once drawn, so the
+    // layer is rebuilt only when a surprise is added (keyboard focus stays on the same dot)
+    if (String(found.length) !== view.dotSig) {
+      view.dotSig = String(found.length);
+      const dots = layer('an-dots');
+      const focused = document.activeElement && dots.contains(document.activeElement)
+        ? document.activeElement.getAttribute('data-moment') : null;
+      dots.replaceChildren();
+      for (const e of found) {
+        const m = e.bundle.moment;
+        const i = teams.findIndex((t) => t.team_id === m.team_id);
+        const p = i < 0 ? null : swings[i].find((q) => q.seq === m.seq);
+        if (!p) continue;
+        const g = el('g', { 'data-moment': m.moment_id, class: 'an-dot ' + m.kind, tabindex: '0', role: 'button',
+          'aria-pressed': 'false',
+          'aria-label': KIND_LABEL[m.kind] + ', ' + (m.player_name || 'unknown player') + ', '
+            + ctx.teamCode(m.team_id) + ', ' + m.minute_label + "', PVA " + view.api.pva(m.delta) });
+        const cx = x(p.t), cy = y(p.vsExpectedXp);
+        g.append(el('circle', { cx, cy, r: 12, class: 'hit' }), el('circle', { cx, cy, r: 9, class: 'ring' }),
+          el('circle', { cx, cy, r: 4.5, class: 'dot' }));
+        dots.appendChild(g);
+        if (m.moment_id === focused) g.focus();
+      }
+    }
+
+    const words = ends.map((e) => teams[e.i].name + ' ' + view.api.fixed2(e.v, true)).join(', ');
+    svg.setAttribute('aria-label', 'Match swing: each team\'s completed passes minus expected, running. Now ' + words
+      + '. ' + found.length + (found.length === 1 ? ' surprise' : ' surprises') + ' marked as dots.');
+  }
+
+  // grid: zero, the axis ends, the minutes; half-time in the whole-match view
+  function drawGrid(ctx, x, y, top, t0, t1) {
+    const { bundle } = ctx;
+    const grid = layer('an-grid');
     for (const v of [top, top / 2, 0, -top / 2, -top]) {
       grid.appendChild(el('line', { x1: PAD_L, x2: W - PAD_R, y1: y(v), y2: y(v), class: v === 0 ? 'zero' : '' }));
       const label = el('text', { x: PAD_L - 8, y: y(v) + 4, 'text-anchor': 'end', class: 'an-axis' });
@@ -205,79 +318,16 @@
       ht.textContent = 'HT';
       grid.appendChild(ht);
     }
-    svg.appendChild(grid);
+  }
 
-    // goals reached so far in the span: a tick on the top edge in the scorer's team colour, with the minute
-    // (two goals close together: the earlier label ends at its line, the later one starts at its own)
-    const goals = el('g', { class: 'an-goals' });
-    let prev = null;
-    for (const s of bundle.score) {
-      if (!s.goal || s.t > ctx.now || s.t < t0 || s.t > t1) continue;
-      const side = TEAM_CLASS[teams.findIndex((t) => t.team_id === s.goal.team_id)] || 'home';
-      const gx = x(s.t);
-      goals.appendChild(el('line', { x1: gx, x2: gx, y1: PAD_T, y2: H - PAD_B, class: 'goal ' + side }));
-      const label = el('text', { x: gx, y: PAD_T - 8, 'text-anchor': 'middle', class: 'an-goal ' + side });
-      label.textContent = 'Goal ' + s.minute_label + "'";
-      if (prev && gx - prev.x < GOAL_LABEL_PX) {
-        prev.label.setAttribute('text-anchor', 'end');
-        prev.label.setAttribute('x', prev.x - 3);
-        label.setAttribute('text-anchor', 'start');
-        label.setAttribute('x', gx + 3);
-      }
-      goals.appendChild(label);
-      prev = { x: gx, label };
+  // the shown surprise's dot carries the ring (class "on"); nothing is redrawn
+  function markShown() {
+    for (const g of $('an-chart').querySelectorAll('.an-dot')) {
+      const on = g.getAttribute('data-moment') === view.shown;
+      if (g.classList.contains('on') === on) continue;
+      g.classList.toggle('on', on);
+      g.setAttribute('aria-pressed', String(on));
     }
-    svg.appendChild(goals);
-
-    // the lines (a step at each pass: the value holds until the team's next pass), each ending in its code and value
-    const ends = [];
-    swings.forEach((s, i) => {
-      if (!s.length) return;
-      let d = 'M' + x(Math.max(t0, s[0].t)).toFixed(1) + ' ' + y(0).toFixed(1);
-      for (const p of s) d += 'H' + x(p.t).toFixed(1) + 'V' + y(p.vsExpectedXp).toFixed(1);
-      svg.appendChild(el('path', { d, class: 'an-line ' + TEAM_CLASS[i] }));
-      const last = s[s.length - 1];
-      ends.push({ i, x: x(last.t), y: y(last.vsExpectedXp), v: last.vsExpectedXp });
-    });
-    // end labels: the team code over its value, pushed apart when the two lines end close together
-    if (ends.length === 2 && Math.abs(ends[0].y - ends[1].y) < 34) {
-      const [hi, lo] = ends[0].y <= ends[1].y ? ends : [ends[1], ends[0]];
-      const mid = (hi.y + lo.y) / 2;
-      hi.ly = mid - 17; lo.ly = mid + 17;
-    }
-    for (const e of ends) {
-      const ly = e.ly !== undefined ? e.ly : e.y;
-      const g = el('g', { class: 'an-end ' + TEAM_CLASS[e.i] });
-      const code = el('text', { x: W - PAD_R + 10, y: ly - 2, class: 'an-code' });
-      code.textContent = ctx.teamCode(teams[e.i].team_id);
-      const val = el('text', { x: W - PAD_R + 10, y: ly + 15, class: 'an-val' });
-      val.textContent = view.api.fixed2(e.v, true);
-      g.append(code, val);
-      svg.appendChild(g);
-    }
-
-    // the surprises: on their team's line at the value just after that pass; the shown one ringed
-    const dots = el('g', { class: 'an-dots' });
-    for (const e of found) {
-      const m = e.bundle.moment;
-      const i = teams.findIndex((t) => t.team_id === m.team_id);
-      const p = i < 0 ? null : swings[i].find((q) => q.seq === m.seq);
-      if (!p) continue;
-      const on = m.moment_id === view.shown;
-      const g = el('g', { 'data-moment': m.moment_id, class: 'an-dot ' + m.kind + (on ? ' on' : ''), tabindex: '0',
-        role: 'button', 'aria-pressed': String(on),
-        'aria-label': KIND_LABEL[m.kind] + ', ' + (m.player_name || 'unknown player') + ', '
-          + ctx.teamCode(m.team_id) + ', ' + m.minute_label + "', PVA " + view.api.pva(m.delta) });
-      g.appendChild(el('circle', { cx: x(p.t), cy: y(p.vsExpectedXp), r: 12, class: 'hit' }));
-      if (on) g.appendChild(el('circle', { cx: x(p.t), cy: y(p.vsExpectedXp), r: 9, class: 'ring' }));
-      g.appendChild(el('circle', { cx: x(p.t), cy: y(p.vsExpectedXp), r: on ? 5.5 : 4.5, class: 'dot' }));
-      dots.appendChild(g);
-    }
-    svg.appendChild(dots);
-
-    const words = ends.map((e) => teams[e.i].name + ' ' + view.api.fixed2(e.v, true)).join(', ');
-    svg.setAttribute('aria-label', 'Match swing: each team\'s completed passes minus expected, running. Now ' + words
-      + '. ' + found.length + (found.length === 1 ? ' surprise' : ' surprises') + ' marked as dots.');
   }
 
   // --- the teams: passing so far, and per difficulty tier ------------------------------------------
@@ -302,8 +352,7 @@
     body.replaceChildren();
     TIERS.forEach((tier, k) => {
       const row = div('rc-row an-tier');
-      const name = span('rc-team');
-      name.append(span('key t' + k), tier[0].toUpperCase() + tier.slice(1));
+      const name = span('rc-team', tier[0].toUpperCase() + tier.slice(1));
       row.appendChild(name);
       for (const ts of tiers) {
         const c = ts ? ts[k] : null;

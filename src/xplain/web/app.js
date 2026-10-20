@@ -388,6 +388,12 @@
 
   // chevrons and [ ]: replay the previous / next narrated moment (the match keeps running)
   function narrStep(dir) {
+    if (state.mode === 'analyst') {   // Analyst mode: the plate pages through the surprises; the newest follows live
+      const n = analystNarration();
+      const target = dir < 0 ? n.prev : n.next;
+      if (target) state.analystPick = target === n.list[n.list.length - 1] ? null : target.bundle.moment.moment_id;
+      return;
+    }
     if (state.mode === 'player') {   // Player mode: the plate pages through the player's lines; the newest follows live
       const n = playerNarration();
       const target = dir < 0 ? n.prev : n.next;
@@ -412,6 +418,18 @@
     const picked = state.playerNarr ? list.findIndex((m) => m.bundle.moment.moment_id === state.playerNarr) : -1;
     const pos = picked >= 0 ? picked + 1 : list.length;
     return { list, reached: list.length, pos, prev: pos >= 2 ? list[pos - 2] : null, next: pos < list.length ? list[pos] : null };
+  }
+
+  // Analyst mode: the swing, the panels and the plate's surprise, drawn by analyst.js; the plate's chevrons page
+  // through the surprises the clock has reached (the dots on the swing), the same shape as narration()
+  function analystNarration() {
+    const half = liveIndex() >= 0 ? idx.marks[liveIndex()].period : 1;
+    const r = XplainAnalyst.render({ bundle: state.bundle, now: state.now, scope: state.scope,
+      period: XplainPlayer.scopePeriod(state.scope), notStarted: state.scope === '2' && half !== 2,
+      pick: state.analystPick, h1End: idx.h1End, teamCode: (id) => teamCode(id, '') });
+    const pos = r.shown ? r.list.indexOf(r.shown) + 1 : 0;
+    return { list: r.list, shown: r.shown, reached: r.list.length, pos,
+      prev: pos >= 2 ? r.list[pos - 2] : null, next: pos > 0 && pos < r.list.length ? r.list[pos] : null };
   }
 
   function backToLive() { exitReplay(); state.follow = true; state.producerRecap = null; }
@@ -477,9 +495,11 @@
       if (control && (e.key === ' ' || e.key === 'Enter')) return;
       // Player mode: space plays or pauses, [ ] page the plate; nothing steps or replays
       if (state.mode === 'player' && ![' ', '[', ']'].includes(e.key)) return;
-      // Analyst mode: space plays or pauses; Esc or L drops the pick (the swing shows the latest surprise again)
+      // Analyst mode: space plays or pauses, [ ] page the plate's surprises; Esc or L drops the pick (the swing
+      // shows the latest surprise again)
       if (state.mode === 'analyst') {
         if (e.key === ' ') { setPlaying(!state.playing); e.preventDefault(); }
+        else if (e.key === '[' || e.key === ']') { narrStep(e.key === '[' ? -1 : 1); e.preventDefault(); }
         else if (e.key === 'Escape' || e.key === 'l' || e.key === 'L') { state.analystPick = null; e.preventDefault(); }
         return;
       }
@@ -535,11 +555,10 @@
     if (state.mode === 'analyst') {   // Analyst mode: the score bug stays live; analyst.js draws the rest; the plate
       renderRecap();                  // shows the surprise the swing shows (its line when it was commentated)
       renderScoreBug(tick, score, live >= 0 ? half : null, brk);
-      const shown = XplainAnalyst.render({ bundle: state.bundle, now: state.now, scope: state.scope,
-        period: XplainPlayer.scopePeriod(state.scope), notStarted: state.scope === '2' && half !== 2,
-        pick: state.analystPick, h1End: idx.h1End, teamCode: (id) => teamCode(id, '') });
-      renderNarrNav({ reached: 0, pos: 0, prev: null, next: null });
-      renderPlate(shown, 'No surprise yet.');
+      const an = analystNarration();
+      renderNarrNav(an);
+      renderPlate(an.shown, 'No surprise yet.');
+      const shown = an.shown;
       // a surprise that was not commentated has no line: the plate says so instead of an empty line
       if (shown && !shown.line) { $('lower-line').textContent = NOT_COMMENTATED; $('lower-line').removeAttribute('lang'); }
       return;

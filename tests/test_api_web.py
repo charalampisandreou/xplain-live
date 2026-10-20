@@ -567,7 +567,13 @@ def test_analyst_mode_is_wired_and_shares_studio_state(client):
     assert "$('stage').classList.toggle('mode-analyst', mode === 'analyst');" in app
     assert "XplainAnalyst.invalidate();" in app and "title.dataset.analyst" in app
     # the scope selector and the clock are Studio's; the plate shows the surprise the swing shows
-    assert "period: XplainPlayer.scopePeriod(state.scope)" in app and "renderPlate(shown, 'No surprise yet.');" in app
+    assert "period: XplainPlayer.scopePeriod(state.scope)" in app and "renderPlate(an.shown, 'No surprise yet.');" in app
+    # the plate's chevrons and [ ] page through the surprises on the swing; the newest follows live
+    assert "if (state.mode === 'analyst') {   // Analyst mode: the plate pages through the surprises" in app
+    assert "else if (e.key === '[' || e.key === ']') { narrStep(e.key === '[' ? -1 : 1); e.preventDefault(); }" in app
+    # a pick only moves the ring: the dots are rebuilt only when a surprise is added, so a click always lands
+    assert "markShown();" in js and "if (String(found.length) !== view.dotSig) {" in js
+    assert "key t" not in js   # By difficulty has no colour keys (they belong to Players' band bar)
     # Replay in Studio leaves Analyst for Studio's replay of that moment
     assert "replay: (id) => { if (idx.markOf.has(id)) { setMode('studio'); enterReplay(id); } }" in app
     # no spoilers: only surprises and passes at or before the clock
