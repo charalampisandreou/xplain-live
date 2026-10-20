@@ -578,7 +578,7 @@ def test_analyst_mode_is_wired_and_shares_studio_state(client):
     assert "replay: (id) => { if (idx.markOf.has(id)) { setMode('studio'); enterReplay(id); } }" in app
     # no spoilers: only surprises and passes at or before the clock
     assert "return m.t <= limit &&" in js and "m.t <= limit && (period === null" in js
-    assert "if (!s.goal || s.t > ctx.now" in js
+    assert "s.goal && s.t <= ctx.now" in js
     # SHAP in its own unit, never as points of xP; the values as stored
     assert "(log-odds, not points of xP)" in js and "x.drivers.map(" in js and "x.rest" in js
     assert "fetch(" not in js and "XMLHttpRequest" not in js
