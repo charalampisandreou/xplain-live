@@ -121,6 +121,14 @@ OPENINGS: tuple[dict[str, str], ...] = (
     {"en": "The pass from {p}", "es": "El envío de {p}", "el": "Η μπαλιά του {p}"},
 )
 
+# The Greek link word, rotating by slot (owner's choice, 2026-10-20: Greek lines repeated with one concession word
+# and one contrast word everywhere). Concession frames take a concession marker, the reason frames a contrast word;
+# all are in verifier.CONCESSION_MARKERS / CONTRAST_WORDS. English and Spanish are unchanged.
+CONTRAST_FRAMES: frozenset[str] = frozenset({"reason", "tier_first"})
+GREEK_LINKS: dict[str, tuple[str, ...]] = {
+    "concession": ("παρόλο που", "αν και", "μολονότι"),
+    "contrast": ("αλλά", "ωστόσο"),
+}
 
 def _digest(text: str) -> bytes:
     return hashlib.sha256(text.encode("utf-8")).digest()
@@ -139,7 +147,8 @@ def frame_for(bundle: MomentBundle, slot: int | None = None) -> str:
 
 def variation(bundle: MomentBundle, drivers: list[Driver], slot: int | None = None) -> dict[str, Any]:
     """A stable nudge for one moment: its frame (frame_for), how many drivers to mention, the outcome phrase per
-    language and, for the "reason" and "concession" frames, the opening per language.
+    language, the Greek link word (GREEK_LINKS: a contrast word in the reason frames, a concession marker in the
+    others, rotating by slot) and, for the "reason" and "concession" frames, the opening per language.
 
     With a slot the outcome rotates through OUTCOMES[kind] by slot (neighbouring moments never share one) and the
     opening alternates by slot (a frame comes back every len(FRAMES) slots, an odd number, so its openings
@@ -161,6 +170,8 @@ def variation(bundle: MomentBundle, drivers: list[Driver], slot: int | None = No
     outcome = outcomes[turn % len(outcomes)]
     nudge: dict[str, Any] = {"frame": frame, "situation_facts": min(facts, len(usable)),
                              "outcome": {"en": outcome, **OUTCOME_WORDS[outcome]}}
+    links = GREEK_LINKS["contrast" if frame in CONTRAST_FRAMES else "concession"]
+    nudge["link"] = {"el": links[(digest[4] if slot is None else slot) % len(links)]}
     if frame in OPENING_FRAMES:
         opening = OPENINGS[(digest[3] if slot is None else slot) % len(OPENINGS)]
         nudge["opening"] = {lang: text.format(p=m.player_name or "the player") for lang, text in opening.items()}

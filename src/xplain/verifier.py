@@ -35,7 +35,7 @@ Checks (every failing check adds a reason; all reasons are collected, not just t
   * one_role_per_clause: no clause (text between commas, semicolons, colons or dashes) holds both a concession
                 marker and a causal marker ("even though it was very easy because it came from deep")
   * tier_first_contrast: a line that opens with its difficulty word ("Easy because ...") has a contrast word
-                before the outcome (CONTRAST_WORDS: yet / but, pero, αλλά)
+                before the outcome (CONTRAST_WORDS: yet / but, pero, αλλά / ωστόσο)
   * rating_tense: no present-tense rating: a present copula (PRESENT_COPULA: is/are, es/son, είναι), an optional
                 intensifier, then a difficulty word ("is easy"); the rating is in the past ("was easy")
   * double_contrast: a line holds a contrast word (CONTRAST_WORDS) or a concession marker (CONCESSION_MARKERS),
@@ -192,7 +192,7 @@ _NUMBER_WORDS_RE = _compile(NUMBER_WORDS)
 _FAMILY_RE = {"easy": _compile(EASY_WORDS), "hard": _compile(HARD_WORDS)}
 # A line that opens with its difficulty word (the tier_first frame) needs one of these before the outcome.
 CONTRAST_WORDS: dict[str, tuple[str, ...]] = {
-    "en": (r"\byet\b", r"\bbut\b"), "es": (r"\bpero\b",), "el": (r"\bαλλά\b",),
+    "en": (r"\byet\b", r"\bbut\b"), "es": (r"\bpero\b",), "el": (r"\bαλλά\b", r"\bωστόσο\b"),
 }
 # Intensifiers that may come before an opening difficulty word ("Very easy because ...").
 OPENING_INTENSIFIERS: dict[str, str] = {
@@ -553,7 +553,7 @@ def check_rating_tense(out: NarratorOut) -> list[str]:
 
 
 def check_double_contrast(out: NarratorOut) -> list[str]:
-    """One contrast per line: not both a contrast word (CONTRAST_WORDS: but / yet, pero, αλλά) and a concession
+    """One contrast per line: not both a contrast word (CONTRAST_WORDS: but / yet, pero, αλλά / ωστόσο) and a concession
     marker (CONCESSION_MARKERS: even though, aunque, παρόλο που ...)."""
     reasons = []
     for lang, line in _lines(out).items():

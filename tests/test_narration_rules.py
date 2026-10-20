@@ -362,6 +362,25 @@ def test_outcomes_and_openings_rotate_by_slot():
     assert greek == {"Η πάσα του Weso Wendez", "Η μπαλιά του Weso Wendez"}
 
 
+def test_greek_link_words_rotate_and_the_verifier_knows_them():
+    import re
+
+    from xplain.narrator import CONTRAST_FRAMES, GREEK_LINKS
+    from xplain.verifier import CONCESSION_MARKERS, CONTRAST_WORDS
+    base = make_bundle()
+    nudges = [variation(_moment(base, f"moment:m1-{i:05d}"), narrated(base.explanation.drivers), i)
+              for i in range(30)]
+    for n in nudges:
+        kind = "contrast" if n["frame"] in CONTRAST_FRAMES else "concession"
+        assert set(n["link"]) == {"el"} and n["link"]["el"] in GREEK_LINKS[kind]
+    # every word is used, and each one is a marker the Verifier recognises in its role
+    used = {n["link"]["el"] for n in nudges}
+    assert used == set(GREEK_LINKS["contrast"]) | set(GREEK_LINKS["concession"])
+    for kind, table in (("contrast", CONTRAST_WORDS), ("concession", CONCESSION_MARKERS)):
+        for word in GREEK_LINKS[kind]:
+            assert any(re.search(p, f"x {word} y", re.IGNORECASE) for p in table["el"]), word
+
+
 def test_the_slot_reaches_the_facts():
     base = make_bundle()
     for slot in range(6):

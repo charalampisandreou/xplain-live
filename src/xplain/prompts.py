@@ -122,7 +122,9 @@ DRIVERS_FACT: dict[str, str] = {
   how many drivers to mention; 0 means no driver fits, so say only the difficulty and the outcome, in
   the frame's order. outcome: what happens to the pass, per language; use these words. opening (the
   "reason" and "concession" frames only): how the line starts, per language; the difficulty word may
-  go before the noun ("The easy pass from ...", "El pase fácil de ...", "Η εύκολη μπαλιά του ...").""",
+  go before the noun ("The easy pass from ...", "El pase fácil de ...", "Η εύκολη μπαλιά του ..."). link:
+  the Greek word for the line's contrast ("αλλά", "ωστόσο") or concession ("παρόλο που", "αν και",
+  "μολονότι"); use it in the Greek line when the line has that clause.""",
     "hints": """\
 - drivers: why the model rated the pass easy or hard, strongest first (lowest rank). direction
   "raises" means this made the pass easier in the model's eyes, "lowers" means harder. label is a
@@ -134,7 +136,9 @@ DRIVERS_FACT: dict[str, str] = {
   how many drivers to mention; 0 means no driver fits, so say only the difficulty and the outcome, in
   the frame's order. outcome: what happens to the pass, per language; use these words. opening (the
   "reason" and "concession" frames only): how the line starts, per language; the difficulty word may
-  go before the noun ("The easy pass from ...", "El pase fácil de ...", "Η εύκολη μπαλιά του ...").""",
+  go before the noun ("The easy pass from ...", "El pase fácil de ...", "Η εύκολη μπαλιά του ..."). link:
+  the Greek word for the line's contrast ("αλλά", "ωστόσο") or concession ("παρόλο που", "αν και",
+  "μολονότι"); use it in the Greek line when the line has that clause.""",
     "strict": """\
 - drivers: why the model rated the pass easy or hard, strongest first (lowest rank). direction
   "raises" means this made the pass easier in the model's eyes, "lowers" means harder. phrase is the
@@ -191,7 +195,7 @@ FRAME_SKETCHES: dict[str, str] = {
                      "never wording that blames the player (gives the ball away)"),
     "tier_first": ("open with the difficulty and its reason, then a contrast word, then the pass and its result: "
                    "\"Easy because it was played along the ground, yet Garus Dornic's pass goes astray.\" The "
-                   "contrast word before the result is required: yet or but, pero, αλλά"),
+                   "contrast word before the result is required: yet or but, pero, αλλά or ωστόσο"),
 }
 
 
