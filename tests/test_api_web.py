@@ -179,7 +179,7 @@ def test_health_and_score_routes_are_kept(client):
     assert any(getattr(r, "path", None) == "/score" for r in client.app.routes)
 
 
-# --- Players mode (src/xplain/web/player.js) ---
+# --- Player mode (src/xplain/web/player.js) ---
 
 def test_players_mode_is_on_the_page(client):
     html = client.get("/").text.replace("\r\n", "\n")
@@ -188,7 +188,7 @@ def test_players_mode_is_on_the_page(client):
     assert html.index("/static/player.js") < html.index("/static/app.js")   # app.js mounts it
     modes = html.split('id="mode"')[1].split("</div>")[0]
     assert '<button type="button" data-mode="studio" class="on" aria-pressed="true">Studio</button>' in modes
-    assert '<button type="button" data-mode="player" aria-pressed="false">Players</button>' in modes
+    assert '<button type="button" data-mode="player" aria-pressed="false">Player</button>' in modes
     assert '<button type="button" data-mode="analyst" aria-pressed="false">Analyst</button>' in modes
     assert 'id="player-pick" aria-haspopup="listbox" aria-expanded="false" aria-controls="player-picker"' in html
     assert 'id="player-picker" role="listbox" aria-label="Players" hidden' in html
@@ -197,7 +197,7 @@ def test_players_mode_is_on_the_page(client):
                  'id="pv-rows"', 'aria-label="Pass map key"'):
         assert node in view
     assert '<div class="pv-label">Expected</div>' in view   # the recap's word: a count, not mean xP
-    assert "recap" not in view.lower()   # Players mode has no recap
+    assert "recap" not in view.lower()   # Player mode has no recap
 
 
 def test_players_mode_draws_the_passers_frame_and_keeps_studio_rules(client):
@@ -212,7 +212,7 @@ def test_players_mode_draws_the_passers_frame_and_keeps_studio_rules(client):
     # the plate shows the player's own narrated moments, or says there are none yet
     assert "'No commentated moment for ' + (who ? who.name : 'this player') + ' yet.'" in app
     assert "XplainPlayer.narratedFor(state.bundle.moments, state.player, state.now, null)" in app
-    # Players mode keeps only space and the plate's [ ] as keys: nothing steps or replays
+    # Player mode keeps only space and the plate's [ ] as keys: nothing steps or replays
     assert "state.mode === 'player' && ![' ', '[', ']'].includes(e.key)" in app
 
 
@@ -291,7 +291,7 @@ def test_producer_mode_is_on_the_page(client):
     assert "Coming soon" not in modes and "disabled" not in modes   # every mode is built
     log = html.split('<section class="producer-log" id="producer-log"')[1].split("</section>")[0]
     assert '<h2>Log</h2><div class="tsub">newest first</div>' in log and 'id="pr-rows"' in log
-    assert '<div class="empty" id="pr-empty" hidden>No agent trace in this match bundle.</div>' in log
+    assert '<div class="empty" id="pr-empty" hidden>This match was built without a record of the AI steps.</div>' in log
     assert 'id="pr-detail"' in html
 
 
@@ -356,7 +356,7 @@ def test_a_recap_crossed_in_producer_or_players_opens_on_switching_to_studio(cli
 
 
 def test_leaving_studio_keeps_the_recap_and_its_switch(client):
-    # bug 2026-10-19: the half-time recap's 10 s auto-resume kept running in Players (the star's row opens it)
+    # bug 2026-10-19: the half-time recap's 10 s auto-resume kept running in Player (the star's row opens it)
     # and Producer; play resumed unseen, closed the recap, and back in Studio the Recap / Map switch was gone
     app = client.get("/static/app.js").text.replace("\r\n", "\n")
     mode = app.split("function setMode(mode) {")[1].split("\n  }\n")[0]
@@ -383,7 +383,7 @@ def test_empty_states_end_with_a_full_stop(client):
     assert "emptyText = 'No commentated moment yet.'" in app
     assert "'No surprises yet.'" in js
     producer = client.get("/static/producer.js").text
-    for text in ("No agent trace in this match bundle.", "Checks not recorded in this bundle.", "No line went on air.",
+    for text in ("This match was built without a record of the AI steps.", "Checks not recorded in this bundle.", "No line went on air.",
                  "No commentated moment yet.", "Pick a line in the log.", "No steps stored for this line."):
         assert "'" + text + "'" in producer
 
@@ -423,13 +423,13 @@ def test_recap_opens_only_on_live_playback_and_by_link(client):
     app = client.get("/static/app.js").text
     assert "const RECAP_KEYS = { ht: 'half_time', ft: 'full_time' };" in app
     assert "if (at === undefined || !(prevNow < at && state.now >= at) || !isLive()) continue;" in app
-    assert "if (state.mode !== 'studio') {" in app   # Producer / Players: reached-unseen (unseenRecap), not opened
+    assert "if (state.mode !== 'studio') {" in app   # Producer / Player: reached-unseen (unseenRecap), not opened
     assert "openRecap(scope, scope === 'half_time' ? ts + RECAP_PAUSE_MS : null);" in app   # FT stays paused
     assert "const RECAP_PAUSE_MS = 10000;" in app
     link = app.split("const rs = RECAP_KEYS[params.get('recap')];")[1].split("requestAnimationFrame(frame);")[0]
     assert "openRecap(rs, null);" in link   # ?recap: static, no auto-resume
     assert "if (state.recap) { closeRecap(); e.preventDefault(); }" in app   # Esc closes
-    # Players mode shows no recap but keeps it open: back in Studio it is there again
+    # Player mode shows no recap but keeps it open: back in Studio it is there again
     mode = app.split("function setMode(mode) {")[1].split("history.replaceState")[0]
     assert "closeRecap" not in mode
     render = app.split("function renderRecap() {")[1].split("function renderRecapPlate()")[0]
@@ -505,13 +505,13 @@ def test_recap_header_star_link_and_shirt_numbers(client):
     assert "decimal('rc-n', t.expected_xp ?? t.expected, false)" in app
     assert "decimal('st-val', s.vs_expected_xp ?? s.pva, true)" in app
     assert "const text = XplainPlayer.fixed2(x, signed);" in app
-    # the star row opens the star in Players; from a recap Players opens on the star until a player is picked
+    # the star row opens the star in Player; from a recap Player opens on the star until a player is picked
     assert '<button type="button" class="st" id="rc-star"></button>' in html
     assert "$('rc-star').addEventListener('click', openStar);" in app
     mode = app.split("function setMode(mode) {")[1].split("history.replaceState")[0]
     assert "if (mode === 'player' && state.recap && !state.playerPicked) {" in mode
     assert "state.playerPicked = true; setMode('player');" in app
-    # shirt numbers: the plate's name tab, the Players title, the picker
+    # shirt numbers: the plate's name tab, the Player title, the picker
     assert '<span class="tab-num" id="lower-num"></span>' in html
     assert "$('lower-num').textContent = shirt(m.player_id);" in app
     assert ".tab-num:empty, .tab-num:empty + .tab-div { display: none; }" in css
@@ -573,14 +573,14 @@ def test_analyst_mode_is_wired_and_shares_studio_state(client):
     assert "else if (e.key === '[' || e.key === ']') { narrStep(e.key === '[' ? -1 : 1); e.preventDefault(); }" in app
     # a pick only moves the ring: the dots are rebuilt only when a surprise is added, so a click always lands
     assert "markShown();" in js and "if (String(found.length) !== view.dotSig) {" in js
-    assert "key t" not in js   # By difficulty has no colour keys (they belong to Players' band bar)
+    assert "key t" not in js   # By difficulty has no colour keys (they belong to Player's band bar)
     # Replay in Studio leaves Analyst for Studio's replay of that moment
     assert "replay: (id) => { if (idx.markOf.has(id)) { setMode('studio'); enterReplay(id); } }" in app
     # no spoilers: only surprises and passes at or before the clock
     assert "return m.t <= limit &&" in js and "m.t <= limit && (period === null" in js
     assert "s.goal && s.t <= ctx.now" in js
     # SHAP in its own unit, never as points of xP; the values as stored
-    assert "(log-odds, not points of xP)" in js and "x.drivers.map(" in js and "x.rest" in js
+    assert "(model scale, not %)" in js and "x.drivers.map(" in js and "x.rest" in js
     assert "fetch(" not in js and "XMLHttpRequest" not in js
 
 
@@ -602,4 +602,4 @@ def test_analyst_empty_states_end_with_a_full_stop(client):
         assert "'" + text + "'" in js
     assert "const NO_PICK = 'No surprise yet. " in js and "as it did.';" in js
     assert "'No surprise yet.'" in app
-    assert "const NOT_COMMENTATED = 'Not commentated: it did not reach the commentary gate when it happened.';" in app
+    assert "const NOT_COMMENTATED = \"Not commentated: when it happened, it was not among the half's top 3 surprises of its kind.\";" in app

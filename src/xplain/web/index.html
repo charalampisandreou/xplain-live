@@ -30,7 +30,7 @@
     <div class="seg" role="group" aria-label="Mode" id="mode">
       <button type="button" data-mode="studio" class="on" aria-pressed="true">Studio</button>
       <button type="button" data-mode="analyst" aria-pressed="false">Analyst</button>
-      <button type="button" data-mode="player" aria-pressed="false">Players</button>
+      <button type="button" data-mode="player" aria-pressed="false">Player</button>
       <button type="button" data-mode="producer" aria-pressed="false">Producer</button>
     </div>
   </div>
@@ -88,13 +88,13 @@
         <div id="rc-goal-rows"></div>
       </div>
       <div class="rc-passing">
-        <div class="thead"><h2>Passing</h2></div>
+        <div class="thead"><h2>Passing Stats</h2></div>
         <div class="rc-row rc-colhead" aria-hidden="true"><span class="rc-team"></span><span class="rc-n">Completed</span><span class="rc-n">Expected</span><span class="rc-n">vs expected</span></div>
         <div id="rc-team-rows"></div>
       </div>
     </div>
     <div class="rc-starblock" id="rc-starblock">
-      <div class="thead"><h2>Star player</h2><div class="tsub">most completions above expected</div></div>
+      <div class="thead"><h2>Star player</h2><div class="tsub">most passes completed above expected</div></div>
       <button type="button" class="st" id="rc-star"></button>
     </div>
     <p class="rc-text" id="rc-text"></p>
@@ -124,7 +124,7 @@
       <div class="thead"><h2 id="t-succ">Surprise successes</h2><div class="tsub">hard passes completed</div></div>
       <div class="rows" id="rows-surprise_success"></div>
     </section>
-    <div class="footnote">PVA: the result minus the chance the pass had (<span class="xp">xP</span>), in points. Longer bar, bigger surprise.</div>
+    <div class="footnote"><span class="xp">xP</span>: the chance the pass had of being completed.<br>PVA (pass value added): the result against <span class="xp">xP</span>. Longer bar, bigger surprise.</div>
   </div>
 
   <!-- lower third: name tab on top of a dark body; the narration nav sits on the name tab's row -->
@@ -200,7 +200,7 @@
       <div class="pv-value"><span id="pv-expected">–</span><span class="pv-sub" id="pv-expected-pct"></span></div>
       <div class="pv-value" id="pv-vs">–</div>
     </div>
-    <div class="thead"><h2>Completed passes' difficulty</h2><div class="tsub">as in the narration</div></div>
+    <div class="thead"><h2>Completed passes' difficulty</h2><div class="tsub">by <span class="xp">xP</span>, in the narration's words</div></div>
     <div class="pv-bandbar" id="pv-bandbar" aria-hidden="true"></div>
     <div class="pv-bands">
       <span><span class="key t0" aria-hidden="true"></span>Very easy <b id="pv-tier-0">0</b></span>
@@ -218,7 +218,7 @@
         <span><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="4.5" fill="none" stroke="#3FD0FF" stroke-width="1.8"></circle></svg>Surprise</span>
         <span><svg width="22" height="10" viewBox="0 0 22 10" aria-hidden="true"><line x1="5" y1="5" x2="21" y2="5" stroke="#D6E2F0" stroke-opacity="0.45" stroke-width="2"></line><circle cx="5" cy="5" r="3.5" fill="#FFFFFF"></circle></svg>Latest pass</span>
       </div>
-      <div class="footnote">vs expected: completed passes minus the completions <span class="xp">xP</span> expected. PVA: the result minus the chance the pass had, in points.</div>
+      <div class="footnote">vs expected: passes completed minus passes expected (the sum of their <span class="xp">xP</span>).<br>PVA (pass value added): each pass's result against its <span class="xp">xP</span>.<br>Difficulty: the narration's word for the pass's <span class="xp">xP</span>.</div>
     </div>
   </section>
 
@@ -230,7 +230,7 @@
   <section class="producer-log" id="producer-log" aria-label="Line log">
     <div class="thead"><h2>Log</h2><div class="tsub">newest first</div></div>
     <div class="pr-rows" id="pr-rows"></div>
-    <div class="empty" id="pr-empty" hidden>No agent trace in this match bundle.</div>
+    <div class="empty" id="pr-empty" hidden>This match was built without a record of the AI steps.</div>
   </section>
   <section class="producer-detail" id="pr-detail" aria-label="Selected line" aria-live="polite"></section>
 
@@ -259,11 +259,11 @@
       <div id="an-team-rows"></div>
     </div>
     <div class="an-tiers">
-      <div class="thead"><h2>By difficulty</h2><div class="tsub">completed of passes · vs expected</div></div>
+      <div class="thead"><h2>By difficulty</h2><div class="tsub">completed/passes · vs expected</div></div>
       <div class="rc-row rc-colhead an-tier" aria-hidden="true"><span class="rc-team"></span><span class="an-cell" id="an-tier-home"></span><span class="an-cell" id="an-tier-away"></span></div>
       <div id="an-tier-rows"></div>
     </div>
-    <div class="footnote">vs expected: completed passes minus the completions <span class="xp">xP</span> expected. Difficulty in the narration's words.</div>
+    <div class="footnote">vs expected: passes completed minus passes expected (the sum of their <span class="xp">xP</span>).<br>Difficulty: the narration's word for the pass's <span class="xp">xP</span>.</div>
   </section>
 
   <div class="status" id="status" role="status" hidden></div>

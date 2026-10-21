@@ -17,7 +17,7 @@
 
   // --- pure functions (no DOM; also loaded by node in the parity test) ---------------------------
 
-  // the narration's difficulty tiers (narration.pass_tier), easiest first, as in Players
+  // the narration's difficulty tiers (narration.pass_tier), easiest first, as in Player
   const TIERS = ['very easy', 'easy', 'tricky', 'difficult', 'very difficult'];
 
   // The team's passes with t <= now (all when now is null) and in the period (any when null), in seq order.
@@ -416,9 +416,8 @@
     key.append(div('an-shap-words'), halves, span('an-shap-val'));
     key.setAttribute('aria-hidden', 'true');
     box.appendChild(key);
-    $('an-shap-foot').textContent = 'Model start ' + view.api.fixed2(x.baseline, false) + ' → raw score '
-      + view.api.fixed2(x.raw_score, false) + ' (log-odds, not points of xP) · xP after calibration '
-      + view.api.percent(m.xp) + '%';
+    $('an-shap-foot').textContent = 'Typical pass ' + view.api.fixed2(x.baseline, false) + ' → this pass '
+      + view.api.fixed2(x.raw_score, false) + ' (model scale, not %) · xP ' + view.api.percent(m.xp) + '%';
   }
 
   const api = { TIERS, teamPasses, teamSwing, teamTiers, surprises, mount, invalidate, render };

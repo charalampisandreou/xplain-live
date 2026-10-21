@@ -25,7 +25,7 @@ overlay cards that a graphics system can render alongside the match.
 > workflow that runs them end to end (Analyst -> Explainer -> Narrator -> Verifier), a per-match JSON
 > bundle, the Studio web page that plays the bundle on the match clock (goal flash, stepping through
 > narrated moments, an in-plate narration language switch, half-time and full-time recap cards), the
-> Recap Editor (the recap texts, with every number filled in by code), Players mode, the player-focus
+> Recap Editor (the recap texts, with every number filled in by code), Player mode, the player-focus
 > personalization mode (one player's pass map, numbers and moments up to the match clock; from a recap it
 > opens on the star player), Analyst mode (both teams' running vs expected as a match swing, their passing
 > per difficulty tier, and the model's SHAP reasons for each surprise), the Producer view (the control room:
@@ -36,8 +36,8 @@ overlay cards that a graphics system can render alongside the match.
 > generated with Foundry (gpt-6.1-sol) and checked by the Verifier when the bundle was built.
 > The model files and the demo bundle are published in the open-licence release
 > [data-v1](https://github.com/charalampisandreou/xplain-live/releases/tag/data-v1) (model files MIT,
-> bundle CC BY 4.0). The bundle there was replaced after the 2026-10-20 rebuild (Greek link words); its SHA-256 is
-> `8d251454121739086483d31ab39e5b01f643d5b2bc8b45595040229bb69a1bff`.
+> bundle CC BY 4.0). The bundle there was replaced after the 2026-10-21 relabel ("in the attacking third"); its
+> SHA-256 is `a66b7f2c82467fd03247a1f3d710688921d929e1ad5505eb2a24f1a96282b59f`.
 >
 > Not built yet: the other personalization modes (analyst, casual fan, favourite club or player), and live mode (the deployed app
 > narrating a whole match with Foundry itself; so far a one-call live check, `/api/live/health`, and the Producer's Live
@@ -221,6 +221,11 @@ same. Each recap text is then filled again from the model's raw text (with its p
 card's two-decimal values and checked again by the recap verifier; a change is recorded as a
 `recap_filler` step in the trace. It prints the new SHA-256.
 
+`python scripts/refresh_position_labels.py data/bundle_seed3001.json` takes every position driver's label (what
+Analyst's "Why the model rated it" shows) again from `explainer.POSITION_LABELS`, with no model call: only those
+labels and their evidence copies change, and every line is checked again by the final Verifier. It prints how
+many labels changed and the new SHA-256.
+
 ## Run the web page
 
 The Studio screen (`src/xplain/web/`: plain HTML, CSS and JS, no build step) is served by the same
@@ -250,7 +255,7 @@ bottom-right Back to live, L or Esc return to the live pass. `?replay=MOMENT_ID`
 `?replay=moment:m42-00817`) opens in replay; if the moment is later than the start time, the
 clock starts at it.
 
-The page only formats: every number, minute and ranking comes from the bundle (Players and Analyst modes'
+The page only formats: every number, minute and ranking comes from the bundle (Player and Analyst modes'
 numbers so far are the one exception, see below). The title reads "Live pass map" ("Half Time" or "Full Time"
 while a recap is shown, "Match analysis" in Analyst, "Control room" in Producer). The tables and the
 plate show PVA (pass value added, the bundle's `delta` = outcome - xP: 1 - xP when completed, -xP
@@ -278,16 +283,16 @@ Also in the Studio:
 - **Half-time and full-time recaps.** When live playback reaches half time (the last first-half pass) or
   full time, the recap card takes the pitch's place: the result, the goals, each team's passing
   (completed, expected and vs expected, the last two to two decimals), the star player (their row opens
-  them in Players) and the recap text in the narration language, whose numbers are the card's, to two
+  them in Player) and the recap text in the narration language, whose numbers are the card's, to two
   decimals too ("19.45" in English, "19,45" in Spanish and Greek). The score bug reads HT or FT. A Recap /
   Map switch shows the card or the pitch; the plate's chevrons step from the recap into the narrated
   moments and back, and stepping or replaying keeps the recap. Half time resumes by itself after 10
   seconds unless you step away; full time stays. `?recap=ht` or `?recap=ft` opens one, paused. A recap
-  that live playback passes while you are in Producer or Players (neither pauses or shows it) is kept as
+  that live playback passes while you are in Producer or Player (neither pauses or shows it) is kept as
   reached and unseen: switching to Studio while live opens the full-time one, and the half-time one only if
   no second-half pass has been played yet.
 
-**Players mode** (the player-focus personalization mode: the Players button in the header, or
+**Player mode** (the player-focus personalization mode: the Player button in the header, or
 `?mode=player&player=PLAYER_ID`, e.g.
 `?mode=player&player=dsk-p10`) follows one player's match on the same clock, score and narration
 language as the Studio:
@@ -303,7 +308,7 @@ language as the Studio:
 - **Narration plate** with only this player's narrated moments (the latest; chevrons or `[` `]` page
   back), or "No commentated moment for NAME yet."
 - **Change player** opens both teams side by side: shirt number, name, position and passes so far
-  (arrows, Enter, Esc). From a recap, Players opens on its star player; the star's row on the recap
+  (arrows, Enter, Esc). From a recap, Player opens on its star player; the star's row on the recap
   card opens the star directly.
 
 **Analyst mode** (the Analyst button, or `?mode=analyst`, with `&moment=MOMENT_ID` to pick a surprise) puts
@@ -316,12 +321,12 @@ both teams against the model on the same clock, score and plate:
   lines end on the card's values (seed 3001: DUS +19.45, MAR −19.11).
 - **Why the model rated it.** For the picked dot (by default the latest surprise): the pass's SHAP drivers
   and the rest as stored by the Explainer, as bars each way from the centre (green raises the model's score,
-  red lowers it), with the model's start value, the raw score and the calibrated xP. The values are log-odds
-  of the raw score, never points of xP, and the panel says so. "Replay in Studio" opens a commentated
+  red lowers it), with the model's score for a typical pass, its score for this pass and the calibrated xP ("Typical pass 1.32 →
+  this pass 3.19 (model scale, not %) · xP 97%"). The values are log-odds of the raw score, never points of xP. "Replay in Studio" opens a commentated
   surprise in the Studio's replay. The plate shows the picked surprise: its line, or a note that it was
   not commentated.
 - **Passing and By difficulty.** Each team's passes, completed, expected and vs expected so far, and the
-  same per difficulty tier (the narration's five words): completed of passes and vs expected.
+  same per difficulty tier (the narration's five words): completed/passes and vs expected.
 
 These numbers are the one place the page computes anything (the browser computation exception): sums,
 counts, means and rates over the bundle's marks at the clock, shown to two decimals with `toFixed(2)`,
@@ -352,7 +357,7 @@ there.
   `trace.check_labels`, from the registries `verifier.CHECKS` and `recap_verifier.RECAP_CHECKS` that the
   verifiers loop over): a check listed is a check that ran. A bundle built before checks were recorded says
   "Checks not recorded in this bundle." on those steps (the demo bundle until its next rebuild); a bundle
-  without a trace shows "No agent trace in this match bundle." Every value shown is a bundle field; the only
+  without a trace shows "This match was built without a record of the AI steps." Every value shown is a bundle field; the only
   count is the length of a step's stored check list ("18 checks passed").
 - **Live retake** (a moment line, on a server with `XPLAIN_LIVE=1`): the button at the right of the Steps heading
   narrates that moment again, live, on Foundry and checks it with the Verifier on the server

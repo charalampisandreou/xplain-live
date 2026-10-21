@@ -676,3 +676,36 @@ def test_recaps_need_the_model(tmp_path, monkeypatch, seed42_events, tiny_scorer
     monkeypatch.setattr(bundle_mod, "_load_scorer", lambda: tiny_scorer)
     with pytest.raises(SystemExit):
         main(["--file", str(path), "--out", str(tmp_path / "b.json"), "--no-llm", "--recaps", "full_time"])
+
+
+def test_refresh_position_labels_changes_the_position_labels_only(tmp_path, monkeypatch, capsys, online):
+    from xplain.bundle import refresh_position_labels
+    from xplain.explainer import POSITION_LABELS
+    assert POSITION_LABELS[("attacking_third", "out_wide")] == "in the attacking third, out wide"
+    assert refresh_position_labels(online) == online   # labels already current: nothing changes
+    # a bundle written with older wording: every position label and its evidence copy differ
+    data = online.model_dump(mode="json")
+    n = 0
+    for m in data["moments"]:
+        x = m["bundle"]["explanation"]
+        for d in x["drivers"]:
+            if d["feature"] == "position":
+                d["label"] = "old wording, " + d["label"]
+                x["evidence"][f"{x['event_id']}:driver{d['rank']}_label"] = d["label"]
+                n += 1
+    assert n > 0
+    old = MatchBundle.model_validate(data)
+    assert refresh_position_labels(old) == online   # the lines, the trace and everything else untouched
+    # the script: in place, then the count and the SHA-256 of the written file
+    import hashlib
+    import runpy
+    import sys
+    from pathlib import Path
+    path = tmp_path / "bundle_old.json"
+    path.write_text(to_json(old), encoding="utf-8")
+    script = Path(__file__).resolve().parents[1] / "scripts" / "refresh_position_labels.py"
+    monkeypatch.setattr(sys, "argv", ["refresh_position_labels.py", str(path)])
+    runpy.run_path(str(script), run_name="__main__")
+    assert MatchBundle.model_validate_json(path.read_text(encoding="utf-8")) == online
+    out = capsys.readouterr().out
+    assert f"{n} position label(s) changed" in out and hashlib.sha256(path.read_bytes()).hexdigest() in out

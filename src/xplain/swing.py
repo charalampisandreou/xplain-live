@@ -21,7 +21,7 @@ from .contracts import PassMark
 if TYPE_CHECKING:
     from .bundle import BundleMark
 
-# the narration's difficulty tiers (narration.pass_tier), easiest first; Players counts by the same words
+# the narration's difficulty tiers (narration.pass_tier), easiest first; Player counts by the same words
 TIERS: tuple[str, ...] = ("very easy", "easy", "tricky", "difficult", "very difficult")
 
 

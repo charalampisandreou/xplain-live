@@ -60,7 +60,7 @@
     };
   }
 
-  // Two decimals for Expected and vs expected, in Studio and Players: toFixed(2) rounds the exact float, halves
+  // Two decimals for Expected and vs expected, in Studio and Player: toFixed(2) rounds the exact float, halves
   // away from zero (recap.round2 is the Python twin; the card's values are already rounded so). signed: "+5.48",
   // "−19.11" with the Studio's minus sign, and "0.00" with no sign.
   function fixed2(x, signed) {

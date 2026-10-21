@@ -182,7 +182,7 @@ def star_player(marks: Sequence[PassMark], scope: str) -> StarPlayer | None:
         return None
     ps = max(by_player.values(),
              key=lambda ps: (sum(m.completed for m in ps) - xp_sum(ps), len(ps), -ps[0].seq))
-    completed, xp = sum(m.completed for m in ps), xp_sum(ps)   # ps in seq order, as Players adds them
+    completed, xp = sum(m.completed for m in ps), xp_sum(ps)   # ps in seq order, as Player adds them
     expected, shown = half_up(xp), round2(completed - xp)
     if shown < STAR_MIN_PVA:   # gated on the value the card and the text show
         return None
