@@ -12,7 +12,8 @@ imported, it would pull the build pipeline into the container) of the accepted l
 phrase mode. Nothing is stored: the bundle and what Studio puts on air stay as they are.
 
 Model: XPLAIN_LIVE_DEPLOYMENT (live.deployment(), default gpt-4.1-mini), at XPLAIN_FOUNDRY_ENDPOINT. Auth as in
-live.py: the managed identity (async DefaultAzureCredential, AZURE_CLIENT_ID) in Azure, az login locally; the token is
+live.py: the managed identity (live.make_credential: DefaultAzureCredential, AZURE_CLIENT_ID, its get_token in a
+thread) in Azure, az login locally; the token is
 fetched first, on its own ("token" stage), and sent as the bearer (never a key). The client connects over IPv4 only
 (live.ipv4_async_http_client); its lookup retries are reported as network_retries.
 
@@ -30,7 +31,6 @@ from __future__ import annotations
 import asyncio
 import datetime as dt
 import json
-import os
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -71,12 +71,6 @@ def find_moment(bundle: dict, moment_id: str) -> tuple[MomentBundle, int]:
     raise RetakeRefused(404, "moment", f"No commentated moment {moment_id!r} in this match.")
 
 
-def make_credential() -> Any:
-    """The async twin of live.make_credential: the managed identity in Azure, az login locally."""
-    from azure.identity.aio import DefaultAzureCredential
-    return DefaultAzureCredential(managed_identity_client_id=os.environ.get("AZURE_CLIENT_ID"))
-
-
 def make_agent(token: str, model: str, mode: str, backend: live.AsyncIPv4Backend) -> NarratorAgent:
     """The Narrator agent on an AsyncOpenAI client at the Foundry /openai/v1/ route, over IPv4 only; api_key is the
     Entra ID access token (sent as the bearer), never a key."""
@@ -95,7 +89,7 @@ class Retake:
     """The guarded retake. credential_factory, agent_factory, the clocks and the bundle loader are injectable for
     tests."""
 
-    def __init__(self, credential_factory: Callable[[], Any] = make_credential,
+    def __init__(self, credential_factory: Callable[[], Any] = live.make_credential,
                  agent_factory: Callable[[str, str, str, live.AsyncIPv4Backend], NarratorAgent] = make_agent,
                  clock: Callable[[], float] = time.monotonic,
                  today: Callable[[], dt.date] = lambda: dt.datetime.now(dt.UTC).date(),
@@ -144,7 +138,8 @@ class Retake:
     async def _token(self) -> str:
         if self._credential is None:
             self._credential = self._credential_factory()
-        return (await self._credential.get_token(live.COGNITIVE_SCOPE)).token
+        # the sync credential in a thread: azure.identity.aio's managed identity needs aiohttp, not in the image
+        return (await asyncio.to_thread(self._credential.get_token, live.COGNITIVE_SCOPE)).token
 
     async def _run(self, bundle: dict, moment: MomentBundle, slot: int) -> dict:
         model = live.deployment()

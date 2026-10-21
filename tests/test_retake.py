@@ -46,7 +46,7 @@ class FakeCredential:
     def __init__(self, error: Exception | None = None):
         self.error, self.calls = error, 0
 
-    async def get_token(self, *scopes):
+    def get_token(self, *scopes):   # sync, like azure.identity's DefaultAzureCredential (run in a thread)
         self.calls += 1
         if self.error:
             raise self.error
@@ -255,3 +255,9 @@ def test_the_retake_never_imports_the_build_pipeline():
     env = {**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1] / "src")}
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True, env=env)
     assert out.stdout.strip() == "False"
+
+
+def test_the_credential_is_the_sync_one_from_live_never_azure_identity_aio():
+    """azure.identity.aio's managed identity needs aiohttp, which the image does not install (found on the local
+    image build: ImportError at the token stage)."""
+    assert Retake()._credential_factory is live.make_credential
