@@ -1,4 +1,5 @@
-# What the container needs to serve the Studio page, /api/bundle, /health, /score and /api/live/health.
+# What the container needs to serve the Studio page, /api/bundle, /health, /score, /api/live/health and
+# /api/live/retake.
 # Every pin must equal the one in requirements.txt (tests/test_requirements_runtime.py checks it).
 # Python 3.13.
 xgboost==3.3.0
@@ -10,6 +11,9 @@ numpy==2.3.4
 fastapi==0.143.0
 uvicorn==0.54.0
 pydantic==2.14.0
-# live spike (src/xplain/live.py): one model call with the app's managed identity; no Agent Framework yet
+# live (src/xplain/live.py, retake.py): model calls with the app's managed identity; the Live retake runs the
+# Narrator, an Agent Framework agent (only these two packages, never "agent-framework")
 openai==3.26.1
 azure-identity==1.26.0
+agent-framework-core==1.21.0
+agent-framework-openai==1.16.0
