@@ -12,6 +12,8 @@ The bundle dir is create_app(bundle_dir=...), else XPLAIN_BUNDLE_DIR, else confi
 
 GET /api/live/health (live spike, live.py) is 404 unless XPLAIN_LIVE=1: one tiny model call with the app's managed
 identity, at most once per 60 s server-wide (cached in between; Cache-Control: no-store).
+POST /api/live/retake (retake.py), also 404 unless XPLAIN_LIVE=1: {"match", "moment_id"} -> one commentated moment
+narrated again live and checked by the Verifier (nothing stored); 429 when busy, cooling down or over the day's cap.
 """
 from __future__ import annotations
 
@@ -22,11 +24,11 @@ from typing import Annotated
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi import Path as PathParam
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from . import analytics, live
+from . import analytics, live, retake
 from .analytics import Band, Outlier
 from .config import BUNDLE_DIR
 from .features import FEATURE_ORDER
@@ -52,6 +54,11 @@ class ScoreResponse(BaseModel):
     model_version: str
 
 
+class RetakeRequest(BaseModel):
+    match: Annotated[str, Field(pattern=BUNDLE_NAME, max_length=64)]
+    moment_id: Annotated[str, Field(max_length=128)]
+
+
 class HealthResponse(BaseModel):
     status: str
     model_version: str
@@ -64,10 +71,12 @@ def bundle_dir() -> Path:
 
 
 def create_app(scorer: Scorer | None = None, bundles: Path | None = None,
-               live_check: live.LiveCheck | None = None) -> FastAPI:
+               live_check: live.LiveCheck | None = None, live_retake: retake.Retake | None = None) -> FastAPI:
     """Build the app. Without an injected scorer, the xPass model is loaded once at startup. live_check: the
-    /api/live/health call (default live.LiveCheck(): no client is built until the first call)."""
+    /api/live/health call (default live.LiveCheck(): no client is built until the first call). live_retake: the
+    /api/live/retake runner (default retake.Retake(), likewise)."""
     checker = live_check if live_check is not None else live.LiveCheck()
+    retaker = live_retake if live_retake is not None else retake.Retake()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -108,6 +117,19 @@ def create_app(scorer: Scorer | None = None, bundles: Path | None = None,
             raise HTTPException(status_code=404, detail="Not Found")
         response.headers["Cache-Control"] = "no-store"   # the server's cache is the only cache (age_s says how old)
         return checker.run()
+
+    @app.post("/api/live/retake", include_in_schema=False)
+    async def live_retake_moment(body: RetakeRequest) -> JSONResponse:
+        if not live.enabled():
+            raise HTTPException(status_code=404, detail="Not Found")
+        headers = {"Cache-Control": "no-store"}
+        try:
+            out = await retaker.run((bundles or bundle_dir()) / f"bundle_{body.match}.json", body.moment_id)
+        except retake.RetakeRefused as refused:
+            if refused.retry_after_s is not None:
+                headers["Retry-After"] = str(max(1, round(refused.retry_after_s)))
+            return JSONResponse(refused.body(), status_code=refused.status, headers=headers)
+        return JSONResponse(out, headers=headers)
 
     @app.get("/", include_in_schema=False)
     def index() -> FileResponse:
