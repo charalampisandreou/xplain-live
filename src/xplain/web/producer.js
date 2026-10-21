@@ -36,6 +36,7 @@
   const RETAKE_UNREACHABLE = 'Could not reach the server.';
   const NOT_ON_AIR = 'Not on air: the stored line stays.';
   const FROM_MATCH = 'from the match';
+  const CHECKED_AGAIN = 'checked again before air';
 
   // --- pure functions (no DOM; also loaded by node in the test) -----------------------------------
 
@@ -100,6 +101,24 @@
     if ('star_name' in slot) parts.push('Star ' + slot.star_name + ('star_pva' in slot ? ', ' + slot.star_pva : ''));
     const again = fillers.length < 2 ? '' : last.notes.includes(REFILL_NOTE) ? REFILLED : FILLED_AGAIN;
     return { text: parts.length ? parts.join(' · ') : 'No numbers in this text.', again };
+  }
+
+  // The final check folded into the Verifier step before it when both say the same (same result, same checks, no
+  // reasons): one row, its check line saying CHECKED_AGAIN (again: true). Two rows whenever they differ, or when no
+  // Verifier step precedes the final check (a reused line). The steps are not changed; a new list comes back.
+  function foldFinal(steps) {
+    const out = [];
+    for (const s of steps) {
+      const prev = out[out.length - 1];
+      if (s.agent === 'verifier' && s.final && prev && prev.agent === 'verifier' && !prev.final &&
+          prev.ok === s.ok && s.reasons.length === 0 && prev.reasons.length === 0 &&
+          JSON.stringify(prev.checks) === JSON.stringify(s.checks)) {
+        out[out.length - 1] = Object.assign({}, prev, { again: true });
+        continue;
+      }
+      out.push(s);
+    }
+    return out;
   }
 
   // A retake's steps: the stored Analyst and Explainer steps (fromMatch: not run again), then the server's steps.
@@ -288,7 +307,7 @@
     }
     const mine = item.type === 'moment' && retake.id === item.id ? retake : null;
     const stored = stepsOf(bundle, item);
-    const steps = mine && mine.state === 'done' ? retakeSteps(stored, mine.result) : stored;
+    const steps = foldFinal(mine && mine.state === 'done' ? retakeSteps(stored, mine.result) : stored);
     const labels = (bundle.trace && bundle.trace.check_labels) || {};
     const head = node('div', 'thead');
     head.append(node('h2', '', mine && mine.state === 'done' ? 'Live retake' : 'Steps'),
@@ -381,7 +400,8 @@
     const open = openChecks.has(key);
     const line = node('div', 'pr-sum');
     const n = s.checks.length;
-    line.append(node('span', '', s.ok ? n + (n === 1 ? ' check passed' : ' checks passed') : n + (n === 1 ? ' check ran' : ' checks ran')));
+    line.append(node('span', '', (s.ok ? n + (n === 1 ? ' check passed' : ' checks passed') : n + (n === 1 ? ' check ran' : ' checks ran')) +
+      (s.again ? ', ' + CHECKED_AGAIN : '')));
     const b = node('button', 'pr-toggle', open ? 'Hide checks' : 'Show checks');
     b.type = 'button';
     b.dataset.checks = key;
@@ -436,7 +456,7 @@
     return wrap;
   }
 
-  const api = { hasTrace, items, stepsOf, splitReason, fillerSummary, retakeSteps, retakeSummary, retakeOutcome, mount,
+  const api = { hasTrace, items, stepsOf, splitReason, fillerSummary, foldFinal, retakeSteps, retakeSummary, retakeOutcome, mount,
     render, invalidate, EMPTY, NOT_RECORDED, REFILLED, NOT_ON_AIR, FROM_MATCH };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.XplainProducer = api;

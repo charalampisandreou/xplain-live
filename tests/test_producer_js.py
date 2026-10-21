@@ -192,3 +192,36 @@ def test_a_live_retake_is_shown_as_the_server_sent_it(tmp_path):
     assert f["steps"] == [["analyst", True, False], ["explainer", True, False]]
     assert f["outcome"] == {"text": None, "note": "Retake failed at the token stage.", "reasons": ["no identity"]}
     assert f["summary"] == "gpt-4.1-mini · 0.2 s"
+
+
+FOLD_HARNESS = r"""
+const fs = require('fs');
+const P = require(process.argv[1]);
+const d = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+process.stdout.write(JSON.stringify(d.map((steps) => P.foldFinal(steps).map((s) => [s.agent, Boolean(s.final), Boolean(s.again)]))));
+"""
+
+
+def test_the_final_check_folds_into_the_verifier_row_only_when_both_agree(tmp_path):
+    def v(ok=True, final=False, checks=("a", "b"), reasons=()):
+        return {"agent": "verifier", "kind": "code", "ok": ok, "final": final, "checks": list(checks),
+                "reasons": list(reasons)}
+    nar = {"agent": "narrator", "kind": "llm", "ok": True, "reasons": []}
+    cases = [
+        [nar, v(), v(final=True)],                                         # the usual: one row
+        [nar, v(ok=False, reasons=["x"]), nar, v(), v(final=True)],         # a retry: the accepted attempt folds
+        [nar, v(), v(ok=False, final=True, reasons=["y"])],                 # the final check disagrees: two rows
+        [nar, v(), v(final=True, checks=("a",))],                           # different checks ran: two rows
+        [nar, v(final=True)],                                               # a reused line: the final check alone
+    ]
+    path = tmp_path / "fold.json"
+    path.write_text(json.dumps(cases), encoding="utf-8")
+    out = subprocess.run([NODE, "-e", FOLD_HARNESS, str(PRODUCER_JS), str(path)], capture_output=True, text=True,
+                         encoding="utf-8", check=True)
+    one, retry, differ, checks, reused = json.loads(out.stdout)
+    assert one == [["narrator", False, False], ["verifier", False, True]]
+    assert retry == [["narrator", False, False], ["verifier", False, False], ["narrator", False, False],
+                     ["verifier", False, True]]
+    assert differ == [["narrator", False, False], ["verifier", False, False], ["verifier", True, False]]
+    assert checks == differ
+    assert reused == [["narrator", False, False], ["verifier", True, False]]
