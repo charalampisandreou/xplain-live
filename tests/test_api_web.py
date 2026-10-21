@@ -237,12 +237,12 @@ def test_players_mode_layout_and_contrast(client):
     assert "top: 196px" in view and "height: 520px" in view   # the pitch's top and bottom lines
     picker = css.split("\n.player-picker {")[1].split("}")[0]
     assert "top: 196px" in picker and "height: 520px" in picker
-    # the tier colours: brighter as the tier gets harder; each at 3:1 or more on --bg, or (the very dark purples)
+    # the tier colours: darker as the tier gets harder; each at 3:1 or more on --bg, or (the two hardest, very dark purples)
     # drawn with the light --tier-edge, which is 3:1 or more on --bg itself
     bg = css.split("--bg: ")[1].split(";")[0]
     colours = [css.split(f"--tier-{i}: ")[1].split(";")[0] for i in range(5)]
     lums = [luminance(c) for c in colours]
-    assert lums == sorted(lums) and len(set(colours)) == 5
+    assert lums == sorted(lums, reverse=True) and len(set(colours)) == 5
     edge = css.split("--tier-edge: inset 0 0 0 1px rgba(255, 255, 255, ")[1].split(")")[0]
     bg_rgb = [int(bg[i:i + 2], 16) for i in (1, 3, 5)]
     edge_hex = "#" + "".join(f"{round(c + float(edge) * (255 - c)):02X}" for c in bg_rgb)   # the edge over --bg

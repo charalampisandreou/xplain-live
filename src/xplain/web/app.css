@@ -411,18 +411,18 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .pv-value.neg { color: var(--failed-text); }
 .pv-stats { margin-bottom: 22px; }
 .player-view .thead + .pv-bandbar { margin-top: 14px; }
-/* the five narration tiers (very easy .. very difficult), brighter is harder: a very dark purple up to white,
+/* the five narration tiers (very easy .. very difficult), darker is harder: white down to a very dark purple,
    used nowhere else in the app (clear of the accent cyan, DUS magenta, the team colours and the outcome green /
-   red). The two darkest are under 3:1 on --bg, so they carry a light 1px edge (--tier-edge). */
-:root { --tier-0: #3A1463; --tier-1: #6B3BAA; --tier-2: #9A76D4; --tier-3: #CBBAEB; --tier-4: #FFFFFF;
+   red). The two darkest (hardest) are under 3:1 on --bg, so they carry a light 1px edge (--tier-edge). */
+:root { --tier-0: #FFFFFF; --tier-1: #CBBAEB; --tier-2: #9A76D4; --tier-3: #6B3BAA; --tier-4: #3A1463;
   --tier-edge: inset 0 0 0 1px rgba(255, 255, 255, 0.45); }
 .pv-bandbar { display: flex; gap: 3px; height: 14px; border-radius: 2px; background: rgba(255, 255, 255, 0.08); }
 .pv-bandbar .band { min-width: 4px; border-radius: 2px; }
-.band.t0, .key.t0 { background: var(--tier-0); box-shadow: var(--tier-edge); }
-.band.t1, .key.t1 { background: var(--tier-1); box-shadow: var(--tier-edge); }
+.band.t0, .key.t0 { background: var(--tier-0); }
+.band.t1, .key.t1 { background: var(--tier-1); }
 .band.t2, .key.t2 { background: var(--tier-2); }
-.band.t3, .key.t3 { background: var(--tier-3); }
-.band.t4, .key.t4 { background: var(--tier-4); }
+.band.t3, .key.t3 { background: var(--tier-3); box-shadow: var(--tier-edge); }
+.band.t4, .key.t4 { background: var(--tier-4); box-shadow: var(--tier-edge); }
 .pv-bands { display: flex; justify-content: space-between; margin: 10px 0 26px; font-size: 14px; font-weight: 500; color: var(--muted); white-space: nowrap; }
 .pv-bands b { margin-left: 4px; font-weight: 800; color: var(--text); }
 .pv-bands .key { display: inline-block; width: 10px; height: 10px; margin-right: 6px; border-radius: 2px; }
@@ -555,11 +555,11 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .an-shap-track { position: relative; flex: none; width: 220px; height: 12px; border-radius: 2px; background: rgba(255, 255, 255, 0.06); }
 .an-shap-mid { position: absolute; left: 50%; top: -3px; bottom: -3px; width: 1px; background: rgba(255, 255, 255, 0.40); }
 .an-shap-bar { position: absolute; top: 0; bottom: 0; border-radius: 2px; }
-/* the bars say which way a factor moved the model's odds, not the outcome: the Player tier purple (brighter is
+/* the bars say which way a factor moved the model's odds, not the outcome: the Player tier purple (darker is
    harder), no green / red, no team colour */
 .an-shap { --easier: var(--tier-0); --harder: var(--tier-4); }
-.an-shap-bar.up { left: 50%; background: var(--easier); box-shadow: var(--tier-edge); }
-.an-shap-bar.down { right: 50%; background: var(--harder); }
+.an-shap-bar.up { left: 50%; background: var(--easier); }
+.an-shap-bar.down { right: 50%; background: var(--harder); box-shadow: var(--tier-edge); }
 .an-shap-row.rest .an-shap-bar { opacity: 0.5; }
 .an-shap-val { flex: none; width: 64px; text-align: right; font-size: 17px; font-weight: 800; font-variant-numeric: tabular-nums; }
 /* the key takes the room of 4px off each row and 4px off the gap above, so the footer stays where it was */
@@ -569,8 +569,8 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .an-shap-keyside.down { justify-content: flex-end; padding-right: 6px; }
 .an-shap-keyside.up { padding-left: 6px; }
 .an-shap-swatch { flex: none; width: 10px; height: 10px; border-radius: 2px; }
-.an-shap-swatch.up { background: var(--easier); box-shadow: var(--tier-edge); }
-.an-shap-swatch.down { background: var(--harder); }
+.an-shap-swatch.up { background: var(--easier); }
+.an-shap-swatch.down { background: var(--harder); box-shadow: var(--tier-edge); }
 .an-shap-footrow { margin-top: auto; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .an-shap-foot { min-width: 0; font-size: 13px; color: var(--muted); line-height: 1.35; }
 .an-replay { flex: none; height: 30px; padding: 0 12px; display: flex; align-items: center; gap: 8px;
