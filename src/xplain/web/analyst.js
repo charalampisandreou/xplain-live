@@ -17,7 +17,7 @@
 
   // --- pure functions (no DOM; also loaded by node in the parity test) ---------------------------
 
-  // the narration's difficulty tiers (narration.pass_tier), easiest first, as in Players
+  // the narration's difficulty tiers (narration.pass_tier), easiest first, as in Player
   const TIERS = ['very easy', 'easy', 'tricky', 'difficult', 'very difficult'];
 
   // The team's passes with t <= now (all when now is null) and in the period (any when null), in seq order.

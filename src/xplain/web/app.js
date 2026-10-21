@@ -60,9 +60,9 @@
     goal: null,        // while the plate shows a goal: { score index, restartT, minUntil, nextPulse }
     recap: null,       // while a recap is open: { scope, resumeAt, view } (resumeAt null: no auto-resume;
                        // view 'recap': the card in the pitch's slot, 'map': the pitch and the narration)
-    playerPicked: false,   // a player was picked since the recap opened (else Players opens on its star)
+    playerPicked: false,   // a player was picked since the recap opened (else Player opens on its star)
     pendingRecap: null,   // a recap crossed while the goal plate still holds: shown when it ends
-    unseenRecap: null,    // a recap crossed by live playback in Producer or Players: reached, not yet seen
+    unseenRecap: null,    // a recap crossed by live playback in Producer or Player: reached, not yet seen
                           // (showUnseenRecap on switching to Studio)
     fit: new Map(),    // "moment_id/lang" -> a smaller font size for a line that needs it (fitLines)
     fades: new Map(),  // element -> { anim, at }: its running cross-fade and when it started
@@ -215,7 +215,7 @@
       const after = lastAtOrBefore(idx.scoreT, state.now);
       if (after > before && idx.score[after].goal) goalFlash(after, ts);
       // a recap opens the same way: only when live playback crosses its time. In Studio it opens (paused); in
-      // Producer or Players nothing pauses or shows, it is marked reached-unseen (showUnseenRecap)
+      // Producer or Player nothing pauses or shows, it is marked reached-unseen (showUnseenRecap)
       for (const scope of ['half_time', 'full_time']) {
         const at = idx.recapT[scope];
         if (at === undefined || !(prevNow < at && state.now >= at) || !isLive()) continue;
@@ -247,7 +247,7 @@
 
   function isLive() { return state.follow && !state.replay; }
 
-  // A recap crossed live in Producer or Players, on switching to Studio: while live, full time opens; half time
+  // A recap crossed live in Producer or Player, on switching to Studio: while live, full time opens; half time
   // opens only if no pass after its time has been played yet; otherwise it is dropped. Opening marks it seen (it
   // opens through pendingRecap, paused, half time resuming by itself as when crossed in Studio).
   function showUnseenRecap() {
@@ -315,9 +315,9 @@
   // ?mode and ?player for demo links, the way it drops ?replay on leaving replay.
   function setMode(mode) {
     state.mode = mode;
-    // Players and Producer show no recap, but an open one stays open: back in Studio it is there again. Leaving
+    // Player and Producer show no recap, but an open one stays open: back in Studio it is there again. Leaving
     // Studio turns the half-time auto-resume off (as Map does), else play resumed unseen and closed the recap,
-    // taking the Recap / Map switch with it. From a recap, Players opens on its star until a player is picked.
+    // taking the Recap / Map switch with it. From a recap, Player opens on its star until a player is picked.
     if (mode !== 'studio' && state.recap) state.recap.resumeAt = null;
     if (mode === 'player' && state.recap && !state.playerPicked) {
       const star = state.bundle.recaps[state.recap.scope].card.star;
@@ -785,7 +785,7 @@
     meta.appendChild(span('st-team', s.team_name));
     const scored = c.goals.filter((g) => g.player_name === s.name).map((g) => g.minute_label + "'");
     if (scored.length) meta.appendChild(span('st-goal', (scored.length > 1 ? 'Goals ' : 'Goal ') + scored.join(', ')));
-    // the name with a chevron: the row is a button that opens the star in Players
+    // the name with a chevron: the row is a button that opens the star in Player
     const name = span('st-name', '');
     const go = el('svg', { class: 'st-go', width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor',
       'stroke-width': 2.6, 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': 'true' });
@@ -797,7 +797,7 @@
     for (const label of ['Passes', 'Completed', 'Expected', 'vs expected']) stats.appendChild(span('pv-label', label));
     stats.append(span('st-val', String(s.passes)), span('st-val', String(s.completed)),
       decimal('st-val', s.expected_xp ?? s.expected, false), decimal('st-val', s.vs_expected_xp ?? s.pva, true));
-    row.title = 'Open ' + s.name + ' in Players';
+    row.title = 'Open ' + s.name + ' in Player';
     row.append(num, ident, stats);
   }
 
@@ -825,7 +825,7 @@
     state.recap.resumeAt = null;
   }
 
-  // The star's row opens the star in Players
+  // The star's row opens the star in Player
   function openStar() {
     const star = state.recap && state.bundle.recaps[state.recap.scope].card.star;
     if (!star) return;

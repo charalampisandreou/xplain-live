@@ -25,7 +25,7 @@ overlay cards that a graphics system can render alongside the match.
 > workflow that runs them end to end (Analyst -> Explainer -> Narrator -> Verifier), a per-match JSON
 > bundle, the Studio web page that plays the bundle on the match clock (goal flash, stepping through
 > narrated moments, an in-plate narration language switch, half-time and full-time recap cards), the
-> Recap Editor (the recap texts, with every number filled in by code), Players mode, the player-focus
+> Recap Editor (the recap texts, with every number filled in by code), Player mode, the player-focus
 > personalization mode (one player's pass map, numbers and moments up to the match clock; from a recap it
 > opens on the star player), Analyst mode (both teams' running vs expected as a match swing, their passing
 > per difficulty tier, and the model's SHAP reasons for each surprise), the Producer view (the control room:
@@ -249,7 +249,7 @@ bottom-right Back to live, L or Esc return to the live pass. `?replay=MOMENT_ID`
 `?replay=moment:m42-00817`) opens in replay; if the moment is later than the start time, the
 clock starts at it.
 
-The page only formats: every number, minute and ranking comes from the bundle (Players and Analyst modes'
+The page only formats: every number, minute and ranking comes from the bundle (Player and Analyst modes'
 numbers so far are the one exception, see below). The title reads "Live pass map" ("Half Time" or "Full Time"
 while a recap is shown, "Match analysis" in Analyst, "Control room" in Producer). The tables and the
 plate show PVA (pass value added, the bundle's `delta` = outcome - xP: 1 - xP when completed, -xP
@@ -277,16 +277,16 @@ Also in the Studio:
 - **Half-time and full-time recaps.** When live playback reaches half time (the last first-half pass) or
   full time, the recap card takes the pitch's place: the result, the goals, each team's passing
   (completed, expected and vs expected, the last two to two decimals), the star player (their row opens
-  them in Players) and the recap text in the narration language, whose numbers are the card's, to two
+  them in Player) and the recap text in the narration language, whose numbers are the card's, to two
   decimals too ("19.45" in English, "19,45" in Spanish and Greek). The score bug reads HT or FT. A Recap /
   Map switch shows the card or the pitch; the plate's chevrons step from the recap into the narrated
   moments and back, and stepping or replaying keeps the recap. Half time resumes by itself after 10
   seconds unless you step away; full time stays. `?recap=ht` or `?recap=ft` opens one, paused. A recap
-  that live playback passes while you are in Producer or Players (neither pauses or shows it) is kept as
+  that live playback passes while you are in Producer or Player (neither pauses or shows it) is kept as
   reached and unseen: switching to Studio while live opens the full-time one, and the half-time one only if
   no second-half pass has been played yet.
 
-**Players mode** (the player-focus personalization mode: the Players button in the header, or
+**Player mode** (the player-focus personalization mode: the Player button in the header, or
 `?mode=player&player=PLAYER_ID`, e.g.
 `?mode=player&player=dsk-p10`) follows one player's match on the same clock, score and narration
 language as the Studio:
@@ -302,7 +302,7 @@ language as the Studio:
 - **Narration plate** with only this player's narrated moments (the latest; chevrons or `[` `]` page
   back), or "No commentated moment for NAME yet."
 - **Change player** opens both teams side by side: shirt number, name, position and passes so far
-  (arrows, Enter, Esc). From a recap, Players opens on its star player; the star's row on the recap
+  (arrows, Enter, Esc). From a recap, Player opens on its star player; the star's row on the recap
   card opens the star directly.
 
 **Analyst mode** (the Analyst button, or `?mode=analyst`, with `&moment=MOMENT_ID` to pick a surprise) puts

@@ -185,7 +185,7 @@ def test_fixed2_is_toFixed_and_round2(tmp_path):
 @pytest.mark.skipif(not BUNDLE_3001.exists(), reason="data/ is git-ignored: the demo bundle is local only")
 @pytest.mark.parametrize("scope", ["half_time", "full_time"])
 def test_star_numbers_in_players_equal_the_recap_card(tmp_path, scope):
-    """The star's Players numbers where Studio opens the recap equal the card's star (data/bundle_seed3001.json)."""
+    """The star's Player numbers where Studio opens the recap equal the card's star (data/bundle_seed3001.json)."""
     b = json.loads(BUNDLE_3001.read_text(encoding="utf-8"))
     star = b["recaps"][scope]["card"]["star"]
     assert star is not None
