@@ -439,7 +439,9 @@ endpoint and the deployment. The Studio page still plays the precomputed bundle 
 
 **Live retake.** `POST /api/live/retake` with `{"match": "seed3001", "moment_id": "moment:m3001-00758"}`, also 404
 unless `XPLAIN_LIVE=1`, narrates one commentated moment of the served bundle again: the moment's facts as stored
-(the Analyst and the Explainer do not run again, no number is computed again), its slot as in the build, then the
+(the Analyst and the Explainer do not run again, no number is computed again), its slot as in the build plus n for
+the nth retake of that moment since the server started (so each retake gets the next variation nudge: another
+sentence frame, outcome wording and opening, not the line on air again), then the
 Narrator on `XPLAIN_RETAKE_DEPLOYMENT` (default `gpt-6.1-sol`, the model that wrote the bundle's lines; its
 parameters and 60 s per-call timeout from `models.MODEL_PARAMS`; up to three calls, each answer checked by the Verifier, a rejected one
 retried with the reasons) and the final check, in the bundle's phrase mode (`src/xplain/retake.py`). Same auth

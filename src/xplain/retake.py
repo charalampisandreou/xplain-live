@@ -5,7 +5,9 @@ checked by the Verifier, from the running app (the Producer's "Live retake" butt
 POST /api/live/retake (api.py), body {"match": name, "moment_id": id}; 404 unless XPLAIN_LIVE=1, like
 /api/live/health. The moment's facts come from the bundle as stored (MomentBundle: the moment and its SHAP drivers),
 so the Analyst and the Explainer are not run again and no number is computed again. Its slot is its index among the
-bundle's commentated moments in seq order, as in the build, so the Narrator gets the same frame. Then, as in the
+bundle's commentated moments in seq order, as in the build; the nth retake of a moment (counted per moment since the
+server started) narrates it at slot + n, so each retake gets the next variation nudge (frame, outcome wording,
+opening, Greek link word) and does not write the line on air again. Then, as in the
 workflow: narrator.Narrator (up to narrator.MAX_ATTEMPTS calls, each answer checked by the Verifier, a rejected one
 retried with the reasons) and the final Verifier check (final_step, the twin of workflow.final_step: workflow.py is not
 imported, it would pull the build pipeline into the container) of the accepted line, in the bundle's
@@ -111,6 +113,7 @@ class Retake:
         self._day: dt.date | None = None
         self._count = 0
         self._bundles: dict[Path, dict] = {}
+        self._takes: dict[str, int] = {}   # retakes run per moment_id: the nth narrates at slot + n
 
     def _bundle(self, path: Path) -> dict:
         if path not in self._bundles:
@@ -138,9 +141,10 @@ class Retake:
         bundle = self._bundle(bundle_path)
         moment, slot = find_moment(bundle, moment_id)
         self._admit()
+        take = self._takes[moment_id] = self._takes.get(moment_id, 0) + 1
         async with self._lock:
             try:
-                return await self._run(bundle, moment, slot)
+                return await self._run(bundle, moment, slot + take)
             finally:
                 self._last_end = self._clock()
 

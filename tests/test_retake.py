@@ -146,6 +146,24 @@ def test_secrets_never_come_back(served):
     assert jwt not in json.dumps(out)
 
 
+def test_each_retake_asks_for_the_next_variation_not_the_line_on_air(served, monkeypatch):
+    slots = []
+    narrate = retake.Narrator.narrate
+
+    async def spy(self, bundle, slot=None):
+        slots.append(slot)
+        return await narrate(self, bundle, slot)
+    monkeypatch.setattr(retake.Narrator, "narrate", spy)
+    clock = Clock()
+    r = runner(make_out(), make_out(), make_out(), clock=clock)
+    for _ in range(2):
+        assert run(r, served)["ok"] is True
+        clock.t += retake.COOLDOWN_S
+    other = "moment:m1-00000"   # another moment counts its own retakes
+    assert run(r, served, other)["ok"] is True
+    assert slots == [3, 4, 1]   # MOMENT_ID's slot is 2 (+1, +2); the other's is 0 (+1)
+
+
 def test_nothing_is_stored_in_the_bundle(served):
     before = (served / "bundle_m1.json").read_text(encoding="utf-8")
     run(runner(make_out()), served)
