@@ -40,7 +40,8 @@ overlay cards that a graphics system can render alongside the match.
 > `8d251454121739086483d31ab39e5b01f643d5b2bc8b45595040229bb69a1bff`.
 >
 > Not built yet: the other personalization modes (analyst, casual fan, favourite club or player), and live mode (the deployed app
-> narrating with Foundry itself; so far only a one-call live check, `/api/live/health`, see "Deploy to Azure").
+> narrating a whole match with Foundry itself; so far a one-call live check, `/api/live/health`, and the Producer's Live
+> retake of one line, `/api/live/retake`, see "Deploy to Azure").
 > Results and demo sections are filled in as they are measured.
 
 ## What it does
@@ -353,10 +354,18 @@ there.
   "Checks not recorded in this bundle." on those steps (the demo bundle until its next rebuild); a bundle
   without a trace shows "No agent trace in this match bundle." Every value shown is a bundle field; the only
   count is the length of a step's stored check list ("18 checks passed").
+- **Live retake** (a moment line, on a server with `XPLAIN_LIVE=1`): the button at the right of the Steps heading
+  narrates that moment again, live, on Foundry and checks it with the Verifier on the server
+  (`POST /api/live/retake`, see "Deploy to Azure"). The steps then show the stored Analyst and Explainer steps
+  ("from the match": not run again) and the server's Narrator, Verifier and final check steps; under them the new
+  line in the NARRATION language, marked "Not on air: the stored line stays.", with the server's model, latency,
+  attempts and network retries (if any). A line the Verifier rejected three times says so with the reasons; a
+  failure names its stage. Stored line goes back. Nothing is saved.
 
 ## Docker
 
-The image serves the Studio page, `/api/bundle`, `/score` and (with `XPLAIN_LIVE=1`) `/api/live/health`. It needs the trained model
+The image serves the Studio page, `/api/bundle`, `/score` and (with `XPLAIN_LIVE=1`) `/api/live/health` and
+`/api/live/retake`. It needs the trained model
 (`models/xpass_v2/`, git-ignored: train it first) and the demo bundle `data/bundle_seed3001.json`;
 no Azure or OpenAI settings are needed to serve. Build and run from this folder:
 
@@ -422,6 +431,20 @@ cause / context chain, each `{error, message}`: the openai client reports any fa
 "Connection error."), all with anything token- or key-like removed; the same chain is logged as a warning.
 The template sets `AZURE_CLIENT_ID` from the identity itself (`reference(...).clientId`), `XPLAIN_LIVE=1`, the
 endpoint and the deployment. The Studio page still plays the precomputed bundle and makes no model calls.
+
+**Live retake.** `POST /api/live/retake` with `{"match": "seed3001", "moment_id": "moment:m3001-00758"}`, also 404
+unless `XPLAIN_LIVE=1`, narrates one commentated moment of the served bundle again: the moment's facts as stored
+(the Analyst and the Explainer do not run again, no number is computed again), its slot as in the build, then the
+Narrator on `XPLAIN_LIVE_DEPLOYMENT` (up to three calls, each answer checked by the Verifier, a rejected one
+retried with the reasons) and the final check, in the bundle's phrase mode (`src/xplain/retake.py`). Same auth
+as the live check (the token first, then the request), over IPv4 only; a failed IPv4 lookup is retried after
+0.5 s and 1 s and counted as `network_retries`. It answers `status` (accepted, retried, rejected, failed), the
+`line` (en, es, el) or null, `attempts`, `reasons`, `model`, `latency_s` (the server's wall time) and the trace
+`steps`; a failure adds `stage`, `error` and a scrubbed `message`. Nothing is stored. One retake at a time, 10 s
+between two, at most 200 a UTC day (429 with a reason otherwise). On `gpt-4.1-mini` a retake costs about $0.0016
+(about 3.5k tokens in, 0.1k out; `reports/model_compare/report.md`). The image installs
+`agent-framework-core` and `agent-framework-openai` for the Narrator agent; the retake never imports the build
+workflow.
 
 ## Phrase modes
 
