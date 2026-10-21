@@ -363,9 +363,13 @@ there.
   narrates that moment again, live, on Foundry and checks it with the Verifier on the server
   (`POST /api/live/retake`, see "Deploy to Azure"). The steps then show the stored Analyst and Explainer steps
   ("from the match": not run again) and the server's Narrator, Verifier and final check steps; under them the new
-  line in the NARRATION language, marked "Not on air: the stored line stays.", with the server's model, latency,
-  attempts and network retries (if any). A line the Verifier rejected three times says so with the reasons; a
-  failure names its stage. Stored line goes back. Nothing is saved.
+  line in the NARRATION language, with the server's model, latency, attempts and network retries (if any), and the
+  producer's choice: **Put on air** (the plate shows the new line for that moment in every tab and all three
+  languages, the log row reads "On air · retake", and On air shows it with its steps and **Back to stored line**)
+  or **Keep stored line**. The choice lives in that browser tab until the page reloads: nothing is sent or saved,
+  so the bundle, other viewers and the deployed site keep the stored line. A line the Verifier rejected three times
+  says so with the reasons and has no Put on air; a failure names its stage. Stored line goes back.
+- **Show checks** marks with ✕ the checks a failed Verifier step names in its reasons; the others keep ✓.
 
 ## Docker
 
