@@ -36,8 +36,8 @@ overlay cards that a graphics system can render alongside the match.
 > generated with Foundry (gpt-6.1-sol) and checked by the Verifier when the bundle was built.
 > The model files and the demo bundle are published in the open-licence release
 > [data-v1](https://github.com/charalampisandreou/xplain-live/releases/tag/data-v1) (model files MIT,
-> bundle CC BY 4.0). The bundle there was replaced after the 2026-10-20 rebuild (Greek link words); its SHA-256 is
-> `8d251454121739086483d31ab39e5b01f643d5b2bc8b45595040229bb69a1bff`.
+> bundle CC BY 4.0). The bundle there was replaced after the 2026-10-21 relabel ("in the attacking third"); its
+> SHA-256 is `a66b7f2c82467fd03247a1f3d710688921d929e1ad5505eb2a24f1a96282b59f`.
 >
 > Not built yet: the other personalization modes (analyst, casual fan, favourite club or player), and live mode (the deployed app
 > narrating with Foundry itself; so far only a one-call live check, `/api/live/health`, see "Deploy to Azure").
@@ -219,6 +219,11 @@ bundle's own passes and with no model call. Every field the card already had mus
 same. Each recap text is then filled again from the model's raw text (with its placeholders) with the
 card's two-decimal values and checked again by the recap verifier; a change is recorded as a
 `recap_filler` step in the trace. It prints the new SHA-256.
+
+`python scripts/refresh_position_labels.py data/bundle_seed3001.json` takes every position driver's label (what
+Analyst's "Why the model rated it" shows) again from `explainer.POSITION_LABELS`, with no model call: only those
+labels and their evidence copies change, and every line is checked again by the final Verifier. It prints how
+many labels changed and the new SHA-256.
 
 ## Run the web page
 

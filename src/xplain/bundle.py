@@ -58,6 +58,7 @@ from .analyst import select_highlights
 from .analytics import Outlier
 from .config import PHRASE_MODES, AnalyticsConfig, phrase_mode
 from .contracts import MomentBundle, PassGeometry, PassMark, PlayerSummary
+from .explainer import POSITION_LABELS
 from .narration import NarratorOut, difficulty_tier, pass_tier
 from .narrator import NarrationResult, Narrator
 from .pipeline import analyse_match, ensure_match_file, load_events, player_summary, reports
@@ -656,6 +657,28 @@ def refill_recap_text(entry: RecapEntry, players: Sequence[str]) -> tuple[RecapE
     step = code_step("recap_filler", attempt=entry.attempts, text=text,
                      notes=notes + [f"{{{k}}} = {v}" for k, v in slots.items()])
     return entry.model_copy(update={"text": verdict.filled, "slots": slots}), step
+
+
+def refresh_position_labels(bundle: MatchBundle) -> MatchBundle:
+    """The bundle with every position driver's label, and its copy in the explanation evidence, taken again from
+    explainer.POSITION_LABELS, with no model call. Nothing else changes: the labels are what the card shows, the
+    lines use the narration phrases (phrases.DEPTH_PHRASES). Each line is checked again by the final Verifier in the
+    bundle's phrase mode and must still pass (raises ValueError otherwise)."""
+    moments = []
+    for entry in bundle.moments:
+        x = entry.bundle.explanation
+        drivers = [d.model_copy(update={"label": POSITION_LABELS[tuple(str(d.value).split("|"))]})
+                   if d.feature == "position" else d for d in x.drivers]
+        evidence = {**x.evidence, **{f"{x.event_id}:driver{d.rank}_label": d.label for d in drivers}}
+        new = entry.bundle.model_copy(update={"explanation": x.model_copy(update={"drivers": drivers,
+                                                                                   "evidence": evidence})})
+        if entry.line is not None:
+            verdict = verify(entry.line, new, bundle.meta.phrase_mode)
+            if not verdict.ok:
+                raise ValueError(f"{new.moment.moment_id}: the line fails the Verifier with the new labels: "
+                                 f"{verdict.reasons}")
+        moments.append(entry.model_copy(update={"bundle": new}))
+    return bundle.model_copy(update={"moments": moments})
 
 
 def summary_line(bundle: MatchBundle, size_bytes: int) -> str:

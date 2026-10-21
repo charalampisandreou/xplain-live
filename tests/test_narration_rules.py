@@ -173,7 +173,7 @@ GROUND = ("height", "pass height", "Ground Pass", "along the ground")
 LOW = ("height", "pass height", "Low Pass", "played low")
 HANDS = ("body_part", "body part", "Keeper Arm", "from the goalkeeper's hands")
 PRESSED = ("under_pressure", "pressure", 1.0, "under pressure")
-WIDE = ("position", "pitch position", "attacking_third|out_wide", "from the attacking third, out wide")
+WIDE = ("position", "pitch position", "attacking_third|out_wide", "in the attacking third, out wide")
 
 
 def test_the_initial_incompatible_pairs():
