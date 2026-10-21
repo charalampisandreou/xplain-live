@@ -546,3 +546,112 @@ def test_a_real_request_over_the_ipv4_transport_keeps_the_hostname():
 def test_the_body_says_ipv4_on_success_and_failure(fake):
     assert checker(fake).run()["ip_family"] == "ipv4"
     assert checker(FakeCompletions(error=ConnectionError("refused"))).run()["ip_family"] == "ipv4"
+
+
+# --- the async twin, for the Live retake (Agent Framework's AsyncOpenAI client) ---
+
+def test_the_async_backend_asks_only_for_ipv4_and_connects_to_that_ip(monkeypatch):
+    import asyncio
+    import httpcore2 as httpcore
+    connected = []
+
+    async def connect(self, host, port, **kw):
+        connected.append((host, port, kw))
+        return "stream"
+    monkeypatch.setattr(httpcore.AnyIOBackend, "connect_tcp", connect)
+    backend = live.AsyncIPv4Backend(lambda host, port: "192.0.2.7")
+    assert asyncio.run(backend.connect_tcp("x.openai.azure.com", 443, timeout=5.0)) == "stream"
+    assert connected == [("192.0.2.7", 443, {"timeout": 5.0, "local_address": None, "socket_options": None})]
+    assert backend.retries == 0
+
+
+def test_the_async_backend_retries_a_failed_lookup_and_counts_it(monkeypatch):
+    import asyncio
+    import socket
+    import httpcore2 as httpcore
+    answers = [socket.gaierror(-3, "Temporary failure in name resolution"), "192.0.2.9"]
+    waits = []
+
+    def resolve(host, port):
+        a = answers.pop(0)
+        if isinstance(a, Exception):
+            raise a
+        return a
+
+    async def sleep(s):
+        waits.append(s)
+
+    async def connect(self, host, port, **kw):
+        return host
+    monkeypatch.setattr(httpcore.AnyIOBackend, "connect_tcp", connect)
+    backend = live.AsyncIPv4Backend(resolve, sleep=sleep)
+    assert asyncio.run(backend.connect_tcp("x.example", 443)) == "192.0.2.9"
+    assert backend.retries == 1 and waits == [live.RETRY_BACKOFF_S[0]]
+
+
+def test_the_async_backend_gives_up_after_the_backoff_as_a_connect_error():
+    import asyncio
+    import socket
+    import httpcore2 as httpcore
+
+    def resolve(host, port):
+        raise socket.gaierror(-3, "Temporary failure in name resolution")
+
+    async def sleep(s):
+        pass
+    backend = live.AsyncIPv4Backend(resolve, sleep=sleep)
+    with pytest.raises(httpcore.ConnectError) as caught:
+        asyncio.run(backend.connect_tcp("x.example", 443))
+    assert live.is_name_resolution(caught.value)
+    assert backend.retries == len(live.RETRY_BACKOFF_S)
+
+
+def test_the_async_backend_never_retries_other_errors():
+    import asyncio
+    import httpcore2 as httpcore
+
+    def resolve(host, port):
+        raise ConnectionRefusedError("refused")
+    backend = live.AsyncIPv4Backend(resolve)
+    with pytest.raises(httpcore.ConnectError):
+        asyncio.run(backend.connect_tcp("x.example", 443))
+    assert backend.retries == 0
+
+
+def test_the_async_client_uses_the_given_backend():
+    backend = live.AsyncIPv4Backend()
+    client = live.ipv4_async_http_client(backend)
+    transport = client._transport
+    assert isinstance(transport, live.AsyncIPv4Transport)
+    assert transport._pool._network_backend is backend   # the one private httpx2 attribute used
+    assert client.timeout.connect == live.TIMEOUT_S
+
+
+def test_a_real_async_request_over_the_ipv4_transport_keeps_the_hostname():
+    import asyncio
+    import http.server
+    import threading
+    import httpx2 as httpx
+    seen = {}
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            seen["host"] = self.headers["Host"]
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"ok")
+
+        def log_message(self, *a):
+            pass
+    server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.handle_request, daemon=True).start()
+    port = server.server_address[1]
+
+    async def get():
+        async with httpx.AsyncClient(transport=live.AsyncIPv4Transport()) as c:
+            return await c.get(f"http://localhost:{port}/", timeout=5)
+    try:
+        r = asyncio.run(get())
+    finally:
+        server.server_close()
+    assert r.status_code == 200 and r.text == "ok" and seen["host"] == f"localhost:{port}"

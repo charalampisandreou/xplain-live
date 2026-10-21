@@ -21,7 +21,9 @@ IPv4 only: in the container Azure DNS answers the Foundry names' IPv4 (A) questi
 one with EAI_AGAIN (measured 2026-10-19: 8/8 vs 0/8), and glibc then often fails the whole getaddrinfo. So the client
 connects through ipv4_http_client(): IPv4Backend looks the host up with AF_INET only and connects to that IP; TLS still
 uses the hostname (SNI and the certificate check come from the request URL, not the socket address) and so does the
-Host header. The body says "ip_family": "ipv4". The narration in the container can reuse ipv4_http_client().
+Host header. The body says "ip_family": "ipv4". The Live retake (retake.py) uses the async twin,
+ipv4_async_http_client(): AsyncIPv4Backend retries the IPv4 lookup itself on a gaierror (RETRY_BACKOFF_S) and counts
+the retries.
 
 Retry: the request stage is retried ONLY when its exception chain holds a socket.gaierror (name resolution, which is
 intermittent for the Foundry hosts in the container): at most len(RETRY_BACKOFF_S) retries, waiting 0.5 s then 1 s,
@@ -42,6 +44,7 @@ options lines of /etc/resolv.conf (null where there is none, e.g. Windows); "pro
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import re
@@ -141,6 +144,55 @@ def ipv4_http_client(timeout: float = TIMEOUT_S) -> httpx.Client:
     """The http client for Foundry calls from the container: openai's defaults, connecting over IPv4 only."""
     from openai import DefaultHttpxClient
     return DefaultHttpxClient(transport=IPv4Transport(), timeout=timeout)
+
+
+class AsyncIPv4Backend(httpcore.AnyIOBackend):
+    """The async twin of IPv4Backend, for the Agent Framework's AsyncOpenAI client (the Live retake). The IPv4 lookup
+    itself is retried on a socket.gaierror (intermittent for the Foundry hosts in the container), waiting backoff_s
+    in turn; retries counts them over the backend's life (one backend per retake)."""
+
+    def __init__(self, resolve: Callable[[str, int], str] = ipv4_address,
+                 backoff_s: tuple[float, ...] = RETRY_BACKOFF_S,
+                 sleep: Callable[[float], Any] = asyncio.sleep):
+        self._resolve, self._backoff_s, self._sleep = resolve, backoff_s, sleep
+        self.retries = 0
+
+    async def connect_tcp(self, host: str, port: int, timeout: float | None = None,
+                          local_address: str | None = None,
+                          socket_options: Iterable[Any] | None = None) -> httpcore.AsyncNetworkStream:
+        tries = 0
+        while True:
+            try:
+                ip = await asyncio.to_thread(self._resolve, host, port)
+                break
+            except socket.gaierror as exc:
+                if tries >= len(self._backoff_s):
+                    raise httpcore.ConnectError(f"{type(exc).__name__}: {exc}") from exc
+                wait = self._backoff_s[tries]
+                log.warning("live retake: name resolution failed (try %d), retrying in %g s", tries + 1, wait)
+                await self._sleep(wait)
+                tries += 1
+                self.retries += 1
+            except OSError as exc:
+                raise httpcore.ConnectError(f"{type(exc).__name__}: {exc}") from exc
+        return await super().connect_tcp(ip, port, timeout=timeout, local_address=local_address,
+                                         socket_options=socket_options)
+
+
+class AsyncIPv4Transport(httpx.AsyncHTTPTransport):
+    """httpx2's async transport with AsyncIPv4Backend."""
+
+    def __init__(self, backend: AsyncIPv4Backend | None = None, **kwargs: Any):
+        super().__init__(**kwargs)
+        self.backend = backend or AsyncIPv4Backend()
+        self._pool._network_backend = self.backend
+
+
+def ipv4_async_http_client(backend: AsyncIPv4Backend | None = None,
+                           timeout: float = TIMEOUT_S) -> httpx.AsyncClient:
+    """The async http client for Foundry calls from the container: openai's defaults, IPv4 only."""
+    from openai import DefaultAsyncHttpxClient
+    return DefaultAsyncHttpxClient(transport=AsyncIPv4Transport(backend), timeout=timeout)
 
 
 def make_client(token: str) -> Any:
