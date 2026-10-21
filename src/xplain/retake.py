@@ -68,7 +68,7 @@ def find_moment(bundle: dict, moment_id: str) -> tuple[MomentBundle, int]:
     for slot, b in enumerate(live_moments):
         if b["moment"]["moment_id"] == moment_id:
             return MomentBundle.model_validate(b), slot
-    raise RetakeRefused(404, "moment", f"no commentated moment {moment_id!r} in this match")
+    raise RetakeRefused(404, "moment", f"No commentated moment {moment_id!r} in this match.")
 
 
 def make_credential() -> Any:
@@ -112,7 +112,7 @@ class Retake:
     def _bundle(self, path: Path) -> dict:
         if path not in self._bundles:
             if not path.is_file():
-                raise RetakeRefused(404, "match", "no such match")
+                raise RetakeRefused(404, "match", "No such match.")
             with path.open(encoding="utf-8") as f:
                 self._bundles[path] = json.load(f)
         return self._bundles[path]
@@ -120,15 +120,15 @@ class Retake:
     def _admit(self) -> None:
         """Refuses a retake over the guards; counts an admitted one."""
         if self._lock.locked():
-            raise RetakeRefused(429, "busy", "a retake is already running")
+            raise RetakeRefused(429, "busy", "A retake is already running.")
         now = self._clock()
         if self._last_end is not None and now - self._last_end < self._cooldown_s:
             wait = round(self._cooldown_s - (now - self._last_end), 1)
-            raise RetakeRefused(429, "cooldown", f"ready again in {wait:g} s", retry_after_s=wait)
+            raise RetakeRefused(429, "cooldown", f"Ready again in {wait:g} s.", retry_after_s=wait)
         if self._day != (day := self._today()):
             self._day, self._count = day, 0
         if self._count >= self._cap:
-            raise RetakeRefused(429, "cap", f"the day's {self._cap} retakes are used up")
+            raise RetakeRefused(429, "cap", f"The day's {self._cap} retakes are used up.")
         self._count += 1
 
     async def run(self, bundle_path: Path, moment_id: str) -> dict:
