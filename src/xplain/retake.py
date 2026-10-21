@@ -7,7 +7,8 @@ POST /api/live/retake (api.py), body {"match": name, "moment_id": id}; 404 unles
 so the Analyst and the Explainer are not run again and no number is computed again. Its slot is its index among the
 bundle's commentated moments in seq order, as in the build, so the Narrator gets the same frame. Then, as in the
 workflow: narrator.Narrator (up to narrator.MAX_ATTEMPTS calls, each answer checked by the Verifier, a rejected one
-retried with the reasons) and the final Verifier check (workflow.final_step) of the accepted line, in the bundle's
+retried with the reasons) and the final Verifier check (final_step, the twin of workflow.final_step: workflow.py is not
+imported, it would pull the build pipeline into the container) of the accepted line, in the bundle's
 phrase mode. Nothing is stored: the bundle and what Studio puts on air stay as they are.
 
 Model: XPLAIN_LIVE_DEPLOYMENT (live.deployment(), default gpt-4.1-mini), at XPLAIN_FOUNDRY_ENDPOINT. Auth as in
@@ -39,9 +40,8 @@ from . import live
 from .config import phrase_mode
 from .contracts import MomentBundle
 from .narrator import Narrator, NarratorAgent
-from .trace import TraceStep
-from .verifier import verify
-from .workflow import final_step
+from .trace import TraceStep, code_step
+from .verifier import VerifierResult, verify
 
 COOLDOWN_S = 10.0
 DAILY_CAP = 200
@@ -191,3 +191,9 @@ def _scrubbed(step: TraceStep) -> dict:
     d = step.model_dump(mode="json")
     d["reasons"] = [live.scrub(r) for r in d["reasons"]]
     return d
+
+
+def final_step(verdict: VerifierResult, attempt: int) -> TraceStep:
+    """The trace step of the final Verifier check, as workflow.final_step makes it (a test keeps them equal)."""
+    return code_step("verifier", ok=verdict.ok, attempt=max(attempt, 1), reasons=list(verdict.reasons),
+                     notes=list(verdict.notes), final=True, checks=list(verdict.checks))

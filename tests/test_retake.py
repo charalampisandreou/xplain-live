@@ -235,3 +235,23 @@ def test_the_real_agent_talks_to_foundry_over_ipv4_with_the_token_as_bearer(monk
     assert str(openai_client.base_url) == "https://example.openai.azure.com/openai/v1/"
     assert openai_client.api_key == "entra-access-token" and openai_client.max_retries == 0
     assert openai_client._client._transport._pool._network_backend is backend
+
+
+def test_the_final_step_is_the_workflows():
+    from xplain import workflow
+    from xplain.verifier import verify
+    verdict = verify(make_out(), make_bundle(), "hints")
+    assert retake.final_step(verdict, 2) == workflow.final_step(verdict, 2)
+    assert retake.final_step(verdict, 0) == workflow.final_step(verdict, 0)
+
+
+def test_the_retake_never_imports_the_build_pipeline():
+    """The container imports retake.py; workflow.py would pull in the pipeline, SHAP explainer and recap editor."""
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+    code = "import sys, xplain.api; print(any(m in sys.modules for m in ('xplain.workflow', 'xplain.pipeline')))"
+    env = {**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1] / "src")}
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True, env=env)
+    assert out.stdout.strip() == "False"
