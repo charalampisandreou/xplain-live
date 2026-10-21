@@ -9,6 +9,11 @@
 //
 // The checks a Verifier step lists are the ones it recorded when the bundle was built (step.checks, labels in
 // trace.check_labels); a step without them says so and never guesses.
+//
+// Live retake (a moment line only): POST /api/live/retake narrates the moment again on Foundry and checks it with the
+// Verifier on the server (src/xplain/retake.py). The steps then show the stored Analyst and Explainer steps ("from
+// the match": not run again) and the server's Narrator and Verifier steps; the box under them shows the new line,
+// never on air. Model, latency, attempts and network retries are the server's, shown as sent.
 (function (root) {
   'use strict';
 
@@ -27,6 +32,10 @@
   const REFILL_NOTE = "filled again by refresh_recap_cards with the card's two-decimal values";
   const REFILLED = "First filled with whole numbers; refilled with the card's two-decimal values.";
   const FILLED_AGAIN = 'Filled again; the last fill is shown.';
+  const RETAKE_OFF = 'Live retake is off on this server.';
+  const RETAKE_UNREACHABLE = 'Could not reach the server.';
+  const NOT_ON_AIR = 'Not on air: the stored line stays.';
+  const FROM_MATCH = 'from the match';
 
   // --- pure functions (no DOM; also loaded by node in the test) -----------------------------------
 
@@ -93,6 +102,37 @@
     return { text: parts.length ? parts.join(' · ') : 'No numbers in this text.', again };
   }
 
+  // A retake's steps: the stored Analyst and Explainer steps (fromMatch: not run again), then the server's steps.
+  function retakeSteps(stored, result) {
+    const before = stored.filter((s) => s.agent === 'analyst' || s.agent === 'explainer')
+      .map((s) => Object.assign({}, s, { fromMatch: true }));
+    return before.concat(result.steps || []);
+  }
+
+  // The retake's summary line, the server's values as sent: model, latency, attempts, network retries (when any).
+  function retakeSummary(result) {
+    const parts = [result.model];
+    if (result.latency_s !== null && result.latency_s !== undefined) parts.push(result.latency_s + ' s');
+    if (result.attempts) parts.push(result.attempts + (result.attempts === 1 ? ' attempt' : ' attempts'));
+    if (result.network_retries) {
+      parts.push(result.network_retries + (result.network_retries === 1 ? ' network retry' : ' network retries'));
+    }
+    return parts.filter(Boolean).join(' · ');
+  }
+
+  // What the retake box says: { text, note, reasons }; text is the new line in lang (null when there is none)
+  function retakeOutcome(result, lang) {
+    const code = LANGS.includes(lang) ? lang : 'en';
+    if (result.line) return { text: result.line[code], note: NOT_ON_AIR, reasons: [] };
+    if (result.status === 'rejected') {
+      const n = result.attempts;
+      return { text: null, note: 'Not aired: the Verifier rejected ' + (n === 1 ? 'the line.' : 'all ' + n + ' attempts.'),
+        reasons: result.reasons || [] };
+    }
+    return { text: null, note: 'Retake failed at the ' + (result.stage || 'request') + ' stage.',
+      reasons: result.message ? [result.message] : [] };
+  }
+
   // --- DOM ------------------------------------------------------------------------------------
 
   const $ = (id) => document.getElementById(id);
@@ -100,6 +140,33 @@
   let drawn = { list: '', detail: '' };
   let openChecks = new Set();   // the open check lists, by "item id/step index"; reset when the item changes
   let openFor = null;
+  // the Live retake of one moment: state idle | running | done | error; result (the server's answer) or error text
+  let retake = { id: null, state: 'idle', result: null, error: '' };
+
+  function matchName() {   // as app.js picks the bundle
+    const name = new URLSearchParams(location.search).get('match') || 'seed3001';
+    return /^[a-z0-9_]+$/.test(name) ? name : 'seed3001';
+  }
+
+  async function runRetake(id) {
+    retake = { id, state: 'running', result: null, error: '' };
+    drawn.detail = '';
+    ctx.redraw();
+    let next;
+    try {
+      const res = await fetch('/api/live/retake', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ match: matchName(), moment_id: id }) });
+      const body = await res.json().catch(() => ({}));
+      if (res.ok) next = { id, state: 'done', result: body, error: '' };
+      else if (res.status === 404 && !body.refused) next = { id, state: 'error', result: null, error: RETAKE_OFF };
+      else next = { id, state: 'error', result: null, error: body.detail || 'Retake refused (HTTP ' + res.status + ').' };
+    } catch (e) {
+      next = { id, state: 'error', result: null, error: RETAKE_UNREACHABLE };
+    }
+    if (retake.id === id) retake = next;   // a reset meanwhile wins
+    drawn.detail = '';
+    ctx.redraw();
+  }
 
   function node(tag, cls, text) {
     const n = document.createElement(tag);
@@ -121,6 +188,14 @@
       if (row && (e.key === 'Enter' || e.key === ' ')) { pick(row); e.preventDefault(); }
     });
     $('pr-detail').addEventListener('click', (e) => {
+      const r = e.target.closest('button[data-retake]');
+      if (r) {
+        if (r.dataset.retake === 'back') retake = { id: null, state: 'idle', result: null, error: '' };
+        else if (retake.state !== 'running') { runRetake(r.dataset.retake); return; }
+        drawn.detail = '';
+        ctx.redraw();
+        return;
+      }
       const b = e.target.closest('button[data-checks]');
       if (!b) return;
       const key = b.dataset.checks;
@@ -150,7 +225,8 @@
     }
     const item = sel && log.find((i) => i.type === sel.type && i.id === sel.id);
     if (selKey !== openFor) { openFor = selKey; openChecks = new Set(); }
-    const detailKey = (item ? selKey : '-') + '/' + args.lang + '/' + [...openChecks].join(',');
+    const detailKey = (item ? selKey : '-') + '/' + args.lang + '/' + [...openChecks].join(',') + '/' +
+      (retake.id || '') + ':' + retake.state;
     if (detailKey !== drawn.detail) {
       drawn.detail = detailKey;
       renderDetail(bundle, item || null, args.lang);
@@ -199,6 +275,7 @@
     if (s.agent === 'narrator' && s.ok && s.kind === 'llm') parts.push('line written');
     if (s.agent === 'recap_editor' && s.ok) parts.push('text written with slots');
     if (s.reused) parts.push('from an earlier build');
+    if (s.fromMatch) parts.push(FROM_MATCH);
     return parts.filter(Boolean).join(' · ');
   }
 
@@ -209,10 +286,14 @@
       box.appendChild(node('div', 'empty', 'Pick a line in the log.'));
       return;
     }
-    const steps = stepsOf(bundle, item);
+    const mine = item.type === 'moment' && retake.id === item.id ? retake : null;
+    const stored = stepsOf(bundle, item);
+    const steps = mine && mine.state === 'done' ? retakeSteps(stored, mine.result) : stored;
     const labels = (bundle.trace && bundle.trace.check_labels) || {};
     const head = node('div', 'thead');
-    head.append(node('h2', '', 'Steps'), node('div', 'tsub', item.type === 'recap' ? item.who : item.minute + "' · " + item.who));
+    head.append(node('h2', '', mine && mine.state === 'done' ? 'Live retake' : 'Steps'),
+      node('div', 'tsub', item.type === 'recap' ? item.who : item.minute + "' · " + item.who));
+    if (item.type === 'moment') head.appendChild(retakeButtons(item.id, mine));
     box.appendChild(head);
     const list = node('div', 'pr-steps');
     if (steps.length === 0) list.appendChild(node('div', 'empty', 'No steps stored for this line.'));
@@ -235,8 +316,57 @@
       }
       list.appendChild(row);
     });
+    if (mine && mine.state === 'running') {
+      const row = node('div', 'pr-step pending');
+      const top = node('div', 'pr-step-top');
+      top.append(node('span', 'pr-mark', '…'), node('span', 'pr-agent', 'Narrator and Verifier'),
+        node('span', 'pr-kind', 'LLM'), node('span', 'pr-info', 'writing and checking on Foundry'));
+      row.appendChild(top);
+      list.appendChild(row);
+    }
     box.appendChild(list);
-    box.appendChild(onAir(bundle, item, lang));
+    if (mine && mine.state === 'done') box.appendChild(retakeBox(mine.result, lang));
+    else {
+      if (mine && mine.state === 'error') box.appendChild(node('div', 'pr-note pr-retake-error', mine.error));
+      box.appendChild(onAir(bundle, item, lang));
+    }
+  }
+
+  // "Live retake" (again while a result is shown, disabled while one runs) and, with a result, "Stored line"
+  function retakeButtons(id, mine) {
+    const wrap = node('div', 'pr-retake-actions');
+    if (mine && mine.state === 'done') {
+      const back = node('button', 'pr-toggle', 'Stored line');
+      back.type = 'button';
+      back.dataset.retake = 'back';
+      wrap.appendChild(back);
+    }
+    const running = retake.state === 'running';
+    const b = node('button', 'pr-retake', running && retake.id === id ? 'Retaking…' : 'Live retake');
+    b.type = 'button';
+    b.dataset.retake = id;
+    b.disabled = running;
+    wrap.appendChild(b);
+    return wrap;
+  }
+
+  // the retake's line in the plate's NARRATION language (never on air), or why there is none
+  function retakeBox(result, lang) {
+    const wrap = node('div', 'pr-onair');
+    const code = LANGS.includes(lang) ? lang : 'en';
+    const head = node('div', 'thead');
+    head.append(node('h2', '', 'New line'), node('div', 'tsub', code.toUpperCase()));
+    wrap.appendChild(head);
+    wrap.appendChild(node('div', 'pr-note', retakeSummary(result)));
+    const o = retakeOutcome(result, lang);
+    if (o.text) {
+      const p = node('p', 'pr-text', o.text);
+      p.setAttribute('lang', code);
+      wrap.appendChild(p);
+    }
+    wrap.appendChild(node('div', 'pr-note', o.note));
+    if (o.reasons.length) wrap.appendChild(reasonsBlock(o.reasons, null));
+    return wrap;
   }
 
   // A Verifier step: its recorded checks (collapsed: "18 checks passed" and a button), or the note that they were
@@ -306,8 +436,8 @@
     return wrap;
   }
 
-  const api = { hasTrace, items, stepsOf, splitReason, fillerSummary, mount, render, invalidate, EMPTY, NOT_RECORDED,
-    REFILLED };
+  const api = { hasTrace, items, stepsOf, splitReason, fillerSummary, retakeSteps, retakeSummary, retakeOutcome, mount,
+    render, invalidate, EMPTY, NOT_RECORDED, REFILLED, NOT_ON_AIR, FROM_MATCH };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.XplainProducer = api;
 })(typeof window !== 'undefined' ? window : this);

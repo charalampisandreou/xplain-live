@@ -152,3 +152,43 @@ def test_no_spoilers_on_the_demo_bundle(tmp_path):
         "text": "DUS vs expected 19.45 · MAR vs expected 19.11 · Star Nevek Iversani, 5.48", "again": ""}
     for scope, steps in b["trace"]["recaps"].items():
         assert got["fillers"][scope] == filler_twin(steps, "DUS", "MAR")
+
+
+RETAKE_HARNESS = r"""
+const fs = require('fs');
+const P = require(process.argv[1]);
+const d = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+process.stdout.write(JSON.stringify(d.results.map((r) => ({
+  steps: P.retakeSteps(d.stored, r).map((s) => [s.agent, Boolean(s.fromMatch), Boolean(s.final)]),
+  summary: P.retakeSummary(r), outcome: P.retakeOutcome(r, d.lang) }))));
+"""
+
+
+def test_a_live_retake_is_shown_as_the_server_sent_it(tmp_path):
+    """The stored Analyst and Explainer steps (from the match), then the server's steps; numbers as sent."""
+    stored = [{"agent": a, "kind": k, "ok": True} for a, k in
+              (("analyst", "code"), ("explainer", "code"), ("narrator", "llm"), ("verifier", "code"))]
+    live_steps = [{"agent": "narrator", "kind": "llm", "ok": True}, {"agent": "verifier", "kind": "code", "ok": True},
+                  {"agent": "verifier", "kind": "code", "ok": True, "final": True}]
+    accepted = {"status": "accepted", "model": "gpt-4.1-mini", "latency_s": 1.42, "attempts": 1, "network_retries": 0,
+                "line": {"en": "E", "es": "S", "el": "Λ"}, "steps": live_steps}
+    retried = {**accepted, "status": "retried", "attempts": 2, "network_retries": 1}
+    rejected = {**accepted, "status": "rejected", "attempts": 3, "line": None, "reasons": ["attempt 1: no_numbers: x"]}
+    failed = {"status": "failed", "model": "gpt-4.1-mini", "latency_s": 0.2, "attempts": 0, "network_retries": 0,
+              "line": None, "steps": [], "stage": "token", "message": "no identity"}
+    path = tmp_path / "retake.json"
+    path.write_text(json.dumps({"stored": stored, "results": [accepted, retried, rejected, failed], "lang": "el"},
+                               ensure_ascii=False), encoding="utf-8")
+    out = subprocess.run([NODE, "-e", RETAKE_HARNESS, str(PRODUCER_JS), str(path)], capture_output=True, text=True,
+                         encoding="utf-8", check=True)
+    a, r, j, f = json.loads(out.stdout)
+    assert a["steps"] == [["analyst", True, False], ["explainer", True, False], ["narrator", False, False],
+                          ["verifier", False, False], ["verifier", False, True]]
+    assert a["summary"] == "gpt-4.1-mini · 1.42 s · 1 attempt"
+    assert a["outcome"] == {"text": "Λ", "note": "Not on air: the stored line stays.", "reasons": []}
+    assert r["summary"] == "gpt-4.1-mini · 1.42 s · 2 attempts · 1 network retry"
+    assert j["outcome"]["text"] is None and j["outcome"]["note"] == "Not aired: the Verifier rejected all 3 attempts."
+    assert j["outcome"]["reasons"] == ["attempt 1: no_numbers: x"]
+    assert f["steps"] == [["analyst", True, False], ["explainer", True, False]]
+    assert f["outcome"] == {"text": None, "note": "Retake failed at the token stage.", "reasons": ["no identity"]}
+    assert f["summary"] == "gpt-4.1-mini · 0.2 s"
