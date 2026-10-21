@@ -335,6 +335,26 @@ def test_producer_layout_keeps_studio_rules(client):
     assert re.findall(r"#[0-9A-Fa-f]{3,6}\b", block) == []   # tokens only
 
 
+def test_a_retake_goes_on_air_only_by_the_producers_choice_and_only_in_this_tab(client):
+    app = client.get("/static/app.js").text.replace("\r\n", "\n")
+    js = client.get("/static/producer.js").text.replace("\r\n", "\n")
+    css = client.get("/static/app.css").text.replace("\r\n", "\n")
+    # the choice: under a line that passed the Verifier only; "on", "keep" and "back" all close the retake
+    box = js.split("function retakeBox(id, result, lang) {")[1].split("\n  }\n")[0]
+    assert "if (o.text) wrap.appendChild(airButtons(id, [['on', 'Put on air', 'pr-retake'], ['keep', 'Keep stored line', 'pr-toggle']]));" in box
+    assert "if (a.dataset.air === 'on' && retake.id === id && retake.result && retake.result.line) {" in js
+    assert "else if (a.dataset.air === 'back') ctx.air(id, null);" in js
+    # app.js keeps it in memory (nothing is sent or stored) and the plate reads it for that moment, in every tab
+    assert "aired: new Map()," in app and "fetch(" not in app.split("air: (id, aired) => {")[1].split("},")[0]
+    assert "line.textContent = aired ? aired.line[state.lang] : (entry.line && entry.line['line_' + state.lang]) || '';" in app
+    assert "state.analystPick, state.airedRev].join('/');" in app   # an air or an undo redraws
+    # Show checks: a check a failed step names is marked with a cross
+    assert "node('li', failed.has(name) ? 'fail' : ''," in js
+    assert ".pr-checklist li.fail::before { content: '✕ '; color: var(--failed-text); }" in css
+    # the Log and Steps headings: one height, so their titles and rules line up
+    assert ".producer-log > .thead, .producer-detail > .thead { height: 40px; box-sizing: border-box; flex: none; }" in css
+
+
 def test_a_recap_crossed_in_producer_or_players_opens_on_switching_to_studio(client):
     app = client.get("/static/app.js").text.replace("\r\n", "\n")
     frame = app.split("function frame(ts) {")[1].split("\n  }\n")[0]

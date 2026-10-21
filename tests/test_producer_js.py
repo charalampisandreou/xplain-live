@@ -185,7 +185,7 @@ def test_a_live_retake_is_shown_as_the_server_sent_it(tmp_path):
     assert a["steps"] == [["analyst", True, False], ["explainer", True, False], ["narrator", False, False],
                           ["verifier", False, False], ["verifier", False, True]]
     assert a["summary"] == "gpt-4.1-mini · 1.42 s · 1 attempt"
-    assert a["outcome"] == {"text": "Λ", "note": "Not on air: the stored line stays.", "reasons": []}
+    assert a["outcome"] == {"text": "Λ", "note": "Not on air yet: put it on air, or keep the stored line.", "reasons": []}
     assert r["summary"] == "gpt-4.1-mini · 1.42 s · 2 attempts · 1 network retry"
     assert j["outcome"]["text"] is None and j["outcome"]["note"] == "Not aired: the Verifier rejected all 3 attempts."
     assert j["outcome"]["reasons"] == ["attempt 1: no_numbers: x"]
@@ -225,3 +225,27 @@ def test_the_final_check_folds_into_the_verifier_row_only_when_both_agree(tmp_pa
     assert differ == [["narrator", False, False], ["verifier", False, False], ["verifier", True, False]]
     assert checks == differ
     assert reused == [["narrator", False, False], ["verifier", True, False]]
+
+
+FAILED_HARNESS = r"""
+const fs = require('fs');
+const P = require(process.argv[1]);
+const d = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+process.stdout.write(JSON.stringify(d.map((s) => P.failedChecks(s))));
+"""
+
+
+def test_show_checks_marks_the_checks_a_failed_verifier_step_names(tmp_path):
+    """A check is marked failed (✕) when one of the step's reasons starts with its name; the others keep ✓."""
+    steps = [
+        {"ok": True, "checks": ["sentence", "length", "no_numbers"], "reasons": []},
+        {"ok": False, "checks": ["sentence", "length", "no_numbers"],
+         "reasons": ["no_numbers: line_en has '3'", "no_numbers: line_es has '3'", "length: line_el has 30 words, max 24"]},
+        {"ok": False, "checks": ["sentence"], "reasons": ["final check: something else", "unknown: not a check that ran"]},
+        {"ok": False, "reasons": ["no_numbers: x"]},   # checks not recorded: nothing to mark
+    ]
+    path = tmp_path / "steps.json"
+    path.write_text(json.dumps(steps), encoding="utf-8")
+    out = subprocess.run([NODE, "-e", FAILED_HARNESS, str(PRODUCER_JS), str(path)], capture_output=True, text=True,
+                         encoding="utf-8", check=True)
+    assert json.loads(out.stdout) == [[], ["no_numbers", "length"], [], []]

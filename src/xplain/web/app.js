@@ -65,6 +65,9 @@
     unseenRecap: null,    // a recap crossed by live playback in Producer or Player: reached, not yet seen
                           // (showUnseenRecap on switching to Studio)
     fit: new Map(),    // "moment_id/lang" -> a smaller font size for a line that needs it (fitLines)
+    aired: new Map(),  // moment_id -> a Live retake put on air in Producer ({ line: {en, es, el}, steps, summary}):
+                       // the plate shows it for that moment in every tab, in this browser tab only (nothing is stored)
+    airedRev: 0,
     fades: new Map(),  // element -> { anim, at }: its running cross-fade and when it started
   };
   let idx = null;      // lookups built once per bundle
@@ -167,6 +170,12 @@
       selectMoment: (id) => { if (idx.markOf.has(id)) enterReplay(id); },
       selectRecap: (scope) => { state.producerRecap = scope; },
       teamCode: (id) => teamCode(id, ''),
+      aired: (id) => state.aired.get(id) || null,
+      air: (id, aired) => {   // a retake on air (fitted like the stored lines), or null: back to the stored line
+        if (aired) { state.aired.set(id, aired); fitAired(id, aired.line); } else state.aired.delete(id);
+        state.airedRev++;
+        state.plateId = null;
+      },
       redraw: () => { state.renderedKey = ''; render(); } });
     // Analyst mode: a dot picks its surprise; Replay in Studio replays a commentated one there
     XplainAnalyst.mount({ fixed2: XplainPlayer.fixed2, percent, pva,
@@ -537,7 +546,7 @@
       narr.reached, narr.pos, goal, state.mode, state.player, state.playerNarr,
       state.recap ? state.recap.scope + (state.recap.resumeAt !== null) + state.recap.view : '-', state.playerPicked,
       state.producerRecap, state.mode === 'producer' ? XplainProducer.items(state.bundle, state.now, idx.recapT).length : '',
-      state.analystPick].join('/');
+      state.analystPick, state.airedRev].join('/');
     if (key === state.renderedKey) return;   // every DOM write below runs in this one animation frame
     state.renderedKey = key;
     if (state.mode === 'player') {   // Player mode: the score bug stays live; player.js draws the rest
@@ -1075,7 +1084,8 @@
   // Text is set in place on the existing nodes; nothing is written when the moment and language are
   // unchanged, so stepping through passes that keep the same moment never re-animates the plate.
   function renderPlate(entry, emptyText = 'No commentated moment yet.') {
-    const id = entry ? entry.bundle.moment.moment_id + '/' + state.lang : '-/' + emptyText;
+    const aired = entry ? state.aired.get(entry.bundle.moment.moment_id) : null;
+    const id = entry ? entry.bundle.moment.moment_id + '/' + state.lang + (aired ? '/retake' : '') : '-/' + emptyText;
     if (id === state.plateId) return;
     state.plateId = id;
     const lower = $('lower');
@@ -1103,7 +1113,7 @@
     $('lower-xp-val').textContent = percent(m.xp) + '%';   // " · xP 92%", xP in its own span
     $('lower-xp').hidden = false;
     // no stored line: the line row is empty and hidden (:empty), so no gap is left
-    line.textContent = (entry.line && entry.line['line_' + state.lang]) || '';
+    line.textContent = aired ? aired.line[state.lang] : (entry.line && entry.line['line_' + state.lang]) || '';
     line.setAttribute('lang', state.lang);
     line.style.fontSize = state.fit.get(id) || '';
     $('lower-pva').textContent = pva(m.delta);
@@ -1127,18 +1137,32 @@
         const text = m.line['line_' + lang];
         if (!text) continue;
         total++;
-        probe.textContent = text;
-        probe.setAttribute('lang', lang);
-        let size = LINE_PX;
-        probe.style.fontSize = size + 'px';
-        while (size > MIN_LINE_PX && probe.offsetHeight > TWO_LINES_PX) probe.style.fontSize = --size + 'px';
-        if (size < LINE_PX) { state.fit.set(m.bundle.moment.moment_id + '/' + lang, size + 'px'); shrunk++; }
+        if (fitOne(probe, m.bundle.moment.moment_id + '/' + lang, text, lang)) shrunk++;
       }
     }
     probe.remove();
     document.documentElement.dataset.lineFit = shrunk + '/' + total;
     if (state.fit.has(state.plateId)) $('lower-line').style.fontSize = state.fit.get(state.plateId);
     if (state.recap && !$('recap').hidden) fitRecapText();   // measured again with the web fonts in
+  }
+
+  // The font size one line needs in the plate (LINE_PX down to MIN_LINE_PX), stored under key when smaller; true then
+  function fitOne(probe, key, text, lang) {
+    probe.textContent = text;
+    probe.setAttribute('lang', lang);
+    let size = LINE_PX;
+    probe.style.fontSize = size + 'px';
+    while (size > MIN_LINE_PX && probe.offsetHeight > TWO_LINES_PX) probe.style.fontSize = --size + 'px';
+    if (size < LINE_PX) state.fit.set(key, size + 'px'); else state.fit.delete(key);
+    return size < LINE_PX;
+  }
+
+  // A retake put on air, fitted as the stored lines are (its plate id ends in "/retake")
+  function fitAired(id, line) {
+    const probe = div('line measure');
+    $('lower').querySelector('.left').appendChild(probe);
+    for (const lang of LANGS) if (line[lang]) fitOne(probe, id + '/' + lang + '/retake', line[lang], lang);
+    probe.remove();
   }
 
   // --- stage scaling -------------------------------------------------------------------------

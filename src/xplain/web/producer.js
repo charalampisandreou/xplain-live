@@ -12,8 +12,11 @@
 //
 // Live retake (a moment line only): POST /api/live/retake narrates the moment again on Foundry and checks it with the
 // Verifier on the server (src/xplain/retake.py). The steps then show the stored Analyst and Explainer steps ("from
-// the match": not run again) and the server's Narrator and Verifier steps; the box under them shows the new line,
-// never on air. Model, latency, attempts and network retries are the server's, shown as sent.
+// the match": not run again) and the server's Narrator and Verifier steps; the box under them shows the new line.
+// A line that passed the Verifier waits for the producer's choice: "Put on air" (ctx.air: app.js shows it in the
+// plate for that moment, in every tab, in this browser tab only, until the page reloads; nothing is stored) or "Keep
+// stored line". An aired retake shows in On air with its steps, and "Back to stored line" undoes it. Model, latency,
+// attempts and network retries are the server's, shown as sent.
 (function (root) {
   'use strict';
 
@@ -34,7 +37,8 @@
   const FILLED_AGAIN = 'Filled again; the last fill is shown.';
   const RETAKE_OFF = 'Live retake is off on this server.';
   const RETAKE_UNREACHABLE = 'Could not reach the server.';
-  const NOT_ON_AIR = 'Not on air: the stored line stays.';
+  const NOT_ON_AIR = 'Not on air yet: put it on air, or keep the stored line.';
+  const AIRED = 'Live retake, put on air in this browser tab; the match file keeps the stored line.';
   const FROM_MATCH = 'from the match';
   const CHECKED_AGAIN = 'checked again before air';
 
@@ -81,6 +85,17 @@
     const name = i > 0 ? reason.slice(0, i) : '';
     if (name && labels && labels[name]) return [labels[name], reason.slice(i + 2)];
     return [reason, ''];
+  }
+
+  // The checks of a Verifier step that failed: the names its reasons start with ("name: detail"), among its checks.
+  function failedChecks(step) {
+    const ran = new Set(step.checks || []);
+    const out = new Set();
+    for (const r of step.reasons || []) {
+      const i = r.indexOf(': ');
+      if (i > 0 && ran.has(r.slice(0, i))) out.add(r.slice(0, i));
+    }
+    return [...out];
   }
 
   // The recap's numbers in plain words, from its LAST recap_filler step (the text on air): each note
@@ -207,6 +222,17 @@
       if (row && (e.key === 'Enter' || e.key === ' ')) { pick(row); e.preventDefault(); }
     });
     $('pr-detail').addEventListener('click', (e) => {
+      const a = e.target.closest('button[data-air]');
+      if (a) {
+        const id = a.dataset.id;
+        if (a.dataset.air === 'on' && retake.id === id && retake.result && retake.result.line) {
+          ctx.air(id, { line: retake.result.line, steps: retake.result.steps || [], summary: retakeSummary(retake.result) });
+        } else if (a.dataset.air === 'back') ctx.air(id, null);
+        retake = { id: null, state: 'idle', result: null, error: '' };   // "on", "keep" and "back" all close the retake
+        drawn = { list: '', detail: '' };
+        ctx.redraw();
+        return;
+      }
       const r = e.target.closest('button[data-retake]');
       if (r) {
         if (r.dataset.retake === 'back') retake = { id: null, state: 'idle', result: null, error: '' };
@@ -237,7 +263,7 @@
     const log = items(bundle, args.now, args.recapT);
     const sel = args.selected;
     const selKey = sel ? sel.type + ':' + sel.id : '';
-    const listKey = log.map((i) => i.id).join('|') + '/' + selKey;
+    const listKey = log.map((i) => i.id + (ctx.aired(i.id) ? '*' : '')).join('|') + '/' + selKey;
     if (listKey !== drawn.list) {
       drawn.list = listKey;
       renderList(log, sel);
@@ -245,7 +271,7 @@
     const item = sel && log.find((i) => i.type === sel.type && i.id === sel.id);
     if (selKey !== openFor) { openFor = selKey; openChecks = new Set(); }
     const detailKey = (item ? selKey : '-') + '/' + args.lang + '/' + [...openChecks].join(',') + '/' +
-      (retake.id || '') + ':' + retake.state;
+      (retake.id || '') + ':' + retake.state + '/' + (item && ctx.aired(item.id) ? 'aired' : '');
     if (detailKey !== drawn.detail) {
       drawn.detail = detailKey;
       renderDetail(bundle, item || null, args.lang);
@@ -268,7 +294,9 @@
       const who = node('div', 'who');
       who.append(node('div', 'player', it.who));
       if (it.what) who.append(node('div', 'meta', it.what));
-      const status = node('span', 'pr-status' + (it.onAir ? ' on' : ''), it.onAir ? 'On air' : 'No line');
+      const aired = it.type === 'moment' && ctx.aired(it.id);
+      const status = node('span', 'pr-status' + (it.onAir || aired ? ' on' : ''),
+        aired ? 'On air · retake' : it.onAir ? 'On air' : 'No line');
       const tries = node('span', 'pr-tries', it.attempts ? it.attempts + (it.attempts === 1 ? ' attempt' : ' attempts') : '');
       const retry = node('span', 'pr-retry', it.attempts > 1 ? 'Retried' : '');
       row.append(node('span', 'pr-min', it.type === 'recap' ? it.minute : it.minute + "'"), who, status, tries, retry);
@@ -307,7 +335,9 @@
     }
     const mine = item.type === 'moment' && retake.id === item.id ? retake : null;
     const stored = stepsOf(bundle, item);
-    const steps = foldFinal(mine && mine.state === 'done' ? retakeSteps(stored, mine.result) : stored);
+    const aired = item.type === 'moment' ? ctx.aired(item.id) : null;
+    const shown = mine && mine.state === 'done' ? mine.result : aired;
+    const steps = foldFinal(shown ? retakeSteps(stored, shown) : stored);
     const labels = (bundle.trace && bundle.trace.check_labels) || {};
     const head = node('div', 'thead');
     head.append(node('h2', '', mine && mine.state === 'done' ? 'Live retake' : 'Steps'),
@@ -344,17 +374,18 @@
       list.appendChild(row);
     }
     box.appendChild(list);
-    if (mine && mine.state === 'done') box.appendChild(retakeBox(mine.result, lang));
+    if (mine && mine.state === 'done') box.appendChild(retakeBox(item.id, mine.result, lang));
     else {
       if (mine && mine.state === 'error') box.appendChild(node('div', 'pr-note pr-retake-error', mine.error));
       box.appendChild(onAir(bundle, item, lang));
     }
   }
 
-  // "Live retake" (again while a result is shown, disabled while one runs) and, with a result, "Stored line"
+  // "Live retake" (again while a result is shown, disabled while one runs) and, with a result that has no line,
+  // "Stored line"
   function retakeButtons(id, mine) {
     const wrap = node('div', 'pr-retake-actions');
-    if (mine && mine.state === 'done') {
+    if (mine && mine.state === 'done' && !mine.result.line) {   // with a new line, "Keep stored line" says it
       const back = node('button', 'pr-toggle', 'Stored line');
       back.type = 'button';
       back.dataset.retake = 'back';
@@ -370,7 +401,7 @@
   }
 
   // the retake's line in the plate's NARRATION language (never on air), or why there is none
-  function retakeBox(result, lang) {
+  function retakeBox(id, result, lang) {
     const wrap = node('div', 'pr-onair');
     const code = LANGS.includes(lang) ? lang : 'en';
     const head = node('div', 'thead');
@@ -385,7 +416,21 @@
     }
     wrap.appendChild(node('div', 'pr-note', o.note));
     if (o.reasons.length) wrap.appendChild(reasonsBlock(o.reasons, null));
+    if (o.text) wrap.appendChild(airButtons(id, [['on', 'Put on air', 'pr-retake'], ['keep', 'Keep stored line', 'pr-toggle']]));
     return wrap;
+  }
+
+  // the producer's choice under a line: buttons [action, words, class] with data-air and the moment's id
+  function airButtons(id, buttons) {
+    const row = node('div', 'pr-air');
+    for (const [action, words, cls] of buttons) {
+      const b = node('button', cls, words);
+      b.type = 'button';
+      b.dataset.air = action;
+      b.dataset.id = id;
+      row.appendChild(b);
+    }
+    return row;
   }
 
   // A Verifier step: its recorded checks (collapsed: "18 checks passed" and a button), or the note that they were
@@ -410,7 +455,8 @@
     wrap.appendChild(line);
     if (open) {
       const ul = node('ul', 'pr-checklist');
-      for (const name of s.checks) ul.appendChild(node('li', '', (labels && labels[name]) || name));
+      const failed = new Set(failedChecks(s));
+      for (const name of s.checks) ul.appendChild(node('li', failed.has(name) ? 'fail' : '', (labels && labels[name]) || name));
       wrap.appendChild(ul);
     }
     return wrap;
@@ -441,6 +487,14 @@
       if (e.text) text = e.text['text_' + code];
       reasons = e.reasons || [];
     } else {
+      const aired = ctx.aired(item.id);
+      if (aired) {
+        const p = node('p', 'pr-text', aired.line[code]);
+        p.setAttribute('lang', code);
+        wrap.append(node('div', 'pr-note', aired.summary), p, node('div', 'pr-note', AIRED),
+          airButtons(item.id, [['back', 'Back to stored line', 'pr-toggle']]));
+        return wrap;
+      }
       const m = bundle.moments.find((x) => x.bundle.moment.moment_id === item.id);
       if (m && m.line) text = m.line['line_' + code];
       reasons = (m && m.narration && m.narration.reasons) || [];
@@ -456,8 +510,8 @@
     return wrap;
   }
 
-  const api = { hasTrace, items, stepsOf, splitReason, fillerSummary, foldFinal, retakeSteps, retakeSummary, retakeOutcome, mount,
-    render, invalidate, EMPTY, NOT_RECORDED, REFILLED, NOT_ON_AIR, FROM_MATCH };
+  const api = { hasTrace, items, stepsOf, splitReason, fillerSummary, foldFinal, failedChecks, retakeSteps, retakeSummary,
+    retakeOutcome, mount, render, invalidate, EMPTY, NOT_RECORDED, REFILLED, NOT_ON_AIR, AIRED, FROM_MATCH };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.XplainProducer = api;
 })(typeof window !== 'undefined' ? window : this);
