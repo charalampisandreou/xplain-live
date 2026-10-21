@@ -315,12 +315,12 @@ both teams against the model on the same clock, score and plate:
   lines end on the card's values (seed 3001: DUS +19.45, MAR −19.11).
 - **Why the model rated it.** For the picked dot (by default the latest surprise): the pass's SHAP drivers
   and the rest as stored by the Explainer, as bars each way from the centre (green raises the model's score,
-  red lowers it), with the model's start value, the raw score and the calibrated xP. The values are log-odds
-  of the raw score, never points of xP, and the panel says so. "Replay in Studio" opens a commentated
+  red lowers it), with the model's score for a typical pass, its score for this pass and the calibrated xP ("Typical pass 1.32 →
+  this pass 3.19 (model scale, not %) · xP 97%"). The values are log-odds of the raw score, never points of xP. "Replay in Studio" opens a commentated
   surprise in the Studio's replay. The plate shows the picked surprise: its line, or a note that it was
   not commentated.
 - **Passing and By difficulty.** Each team's passes, completed, expected and vs expected so far, and the
-  same per difficulty tier (the narration's five words): completed of passes and vs expected.
+  same per difficulty tier (the narration's five words): completed/passes and vs expected.
 
 These numbers are the one place the page computes anything (the browser computation exception): sums,
 counts, means and rates over the bundle's marks at the clock, shown to two decimals with `toFixed(2)`,
@@ -351,7 +351,7 @@ there.
   `trace.check_labels`, from the registries `verifier.CHECKS` and `recap_verifier.RECAP_CHECKS` that the
   verifiers loop over): a check listed is a check that ran. A bundle built before checks were recorded says
   "Checks not recorded in this bundle." on those steps (the demo bundle until its next rebuild); a bundle
-  without a trace shows "No agent trace in this match bundle." Every value shown is a bundle field; the only
+  without a trace shows "This match was built without a record of the AI steps." Every value shown is a bundle field; the only
   count is the length of a step's stored check list ("18 checks passed").
 
 ## Docker

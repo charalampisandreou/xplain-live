@@ -12,7 +12,7 @@
     surprise_success: 'No surprise successes yet.',
   };
   const NOT_STARTED = 'Starts in the 2nd half.';
-  const NOT_COMMENTATED = 'Not commentated: it did not reach the commentary gate when it happened.';
+  const NOT_COMMENTATED = "Not commentated: when it happened, it was not among the half's top 3 surprises of its kind.";
   // recaps: the bundle's scope names, their ?recap values, and the plate's words in the recap state
   const RECAP_KEYS = { ht: 'half_time', ft: 'full_time' };
   const RECAP_TAB = { half_time: 'Half-time recap', full_time: 'Full-time recap' };

@@ -291,7 +291,7 @@ def test_producer_mode_is_on_the_page(client):
     assert "Coming soon" not in modes and "disabled" not in modes   # every mode is built
     log = html.split('<section class="producer-log" id="producer-log"')[1].split("</section>")[0]
     assert '<h2>Log</h2><div class="tsub">newest first</div>' in log and 'id="pr-rows"' in log
-    assert '<div class="empty" id="pr-empty" hidden>No agent trace in this match bundle.</div>' in log
+    assert '<div class="empty" id="pr-empty" hidden>This match was built without a record of the AI steps.</div>' in log
     assert 'id="pr-detail"' in html
 
 
@@ -383,7 +383,7 @@ def test_empty_states_end_with_a_full_stop(client):
     assert "emptyText = 'No commentated moment yet.'" in app
     assert "'No surprises yet.'" in js
     producer = client.get("/static/producer.js").text
-    for text in ("No agent trace in this match bundle.", "Checks not recorded in this bundle.", "No line went on air.",
+    for text in ("This match was built without a record of the AI steps.", "Checks not recorded in this bundle.", "No line went on air.",
                  "No commentated moment yet.", "Pick a line in the log.", "No steps stored for this line."):
         assert "'" + text + "'" in producer
 
@@ -580,7 +580,7 @@ def test_analyst_mode_is_wired_and_shares_studio_state(client):
     assert "return m.t <= limit &&" in js and "m.t <= limit && (period === null" in js
     assert "s.goal && s.t <= ctx.now" in js
     # SHAP in its own unit, never as points of xP; the values as stored
-    assert "(log-odds, not points of xP)" in js and "x.drivers.map(" in js and "x.rest" in js
+    assert "(model scale, not %)" in js and "x.drivers.map(" in js and "x.rest" in js
     assert "fetch(" not in js and "XMLHttpRequest" not in js
 
 
@@ -602,4 +602,4 @@ def test_analyst_empty_states_end_with_a_full_stop(client):
         assert "'" + text + "'" in js
     assert "const NO_PICK = 'No surprise yet. " in js and "as it did.';" in js
     assert "'No surprise yet.'" in app
-    assert "const NOT_COMMENTATED = 'Not commentated: it did not reach the commentary gate when it happened.';" in app
+    assert "const NOT_COMMENTATED = \"Not commentated: when it happened, it was not among the half's top 3 surprises of its kind.\";" in app

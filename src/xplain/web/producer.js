@@ -19,10 +19,10 @@
     analyst: 'Analyst', explainer: 'Explainer', narrator: 'Narrator', verifier: 'Verifier',
     recap_editor: 'Recap Editor', recap_verifier: 'Recap Verifier', recap_filler: 'Numbers filled by code',
   };
-  const GATE_WORDS = { ranking: 'in the running top of its half', threshold: 'past the commentary floor' };
+  const GATE_WORDS = { ranking: 'top 3 of its kind so far this half', threshold: 'rare enough to always get a line' };
   const ON_AIR = ['accepted', 'retried'];
   const LANGS = ['en', 'es', 'el'];
-  const EMPTY = 'No agent trace in this match bundle.';
+  const EMPTY = 'This match was built without a record of the AI steps.';
   const NOT_RECORDED = 'Checks not recorded in this bundle.';
   const REFILL_NOTE = "filled again by refresh_recap_cards with the card's two-decimal values";
   const REFILLED = "First filled with whole numbers; refilled with the card's two-decimal values.";
@@ -197,7 +197,7 @@
     if (s.agent === 'analyst' && s.ok) parts.push(s.notes.map((n) => GATE_WORDS[n] || n).join(', '));
     if (s.agent === 'explainer' && s.ok) parts.push('drivers computed');
     if (s.agent === 'narrator' && s.ok && s.kind === 'llm') parts.push('line written');
-    if (s.agent === 'recap_editor' && s.ok) parts.push('text written with slots');
+    if (s.agent === 'recap_editor' && s.ok) parts.push('text written with blanks for code to fill the numbers');
     if (s.reused) parts.push('from an earlier build');
     return parts.filter(Boolean).join(' · ');
   }
