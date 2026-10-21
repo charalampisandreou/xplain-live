@@ -411,13 +411,15 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .pv-value.neg { color: var(--failed-text); }
 .pv-stats { margin-bottom: 22px; }
 .player-view .thead + .pv-bandbar { margin-top: 14px; }
-/* the five narration tiers (very easy .. very difficult), brighter is harder: one purple, used nowhere else in
-   the app (clear of the accent cyan, the team colours and the outcome green / red); each at 3:1 or more on --bg */
-:root { --tier-0: #7F4DD6; --tier-1: #9B76EB; --tier-2: #B99FFA; --tier-3: #D5C6FF; --tier-4: #F0EAFF; }
+/* the five narration tiers (very easy .. very difficult), brighter is harder: a very dark purple up to white,
+   used nowhere else in the app (clear of the accent cyan, DUS magenta, the team colours and the outcome green /
+   red). The two darkest are under 3:1 on --bg, so they carry a light 1px edge (--tier-edge). */
+:root { --tier-0: #3A1463; --tier-1: #6B3BAA; --tier-2: #9A76D4; --tier-3: #CBBAEB; --tier-4: #FFFFFF;
+  --tier-edge: inset 0 0 0 1px rgba(255, 255, 255, 0.45); }
 .pv-bandbar { display: flex; gap: 3px; height: 14px; border-radius: 2px; background: rgba(255, 255, 255, 0.08); }
 .pv-bandbar .band { min-width: 4px; border-radius: 2px; }
-.band.t0, .key.t0 { background: var(--tier-0); }
-.band.t1, .key.t1 { background: var(--tier-1); }
+.band.t0, .key.t0 { background: var(--tier-0); box-shadow: var(--tier-edge); }
+.band.t1, .key.t1 { background: var(--tier-1); box-shadow: var(--tier-edge); }
 .band.t2, .key.t2 { background: var(--tier-2); }
 .band.t3, .key.t3 { background: var(--tier-3); }
 .band.t4, .key.t4 { background: var(--tier-4); }
@@ -548,13 +550,11 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .an-shap-bar { position: absolute; top: 0; bottom: 0; border-radius: 2px; }
 /* the bars say which way a factor moved the model's odds, not the outcome: the Player tier purple (brighter is
    harder), no green / red, no team colour */
-.an-shap { --easier: var(--tier-0); --harder: var(--tier-3); }
-.an-shap-bar.up { left: 50%; background: var(--easier); }
+.an-shap { --easier: var(--tier-0); --harder: var(--tier-4); }
+.an-shap-bar.up { left: 50%; background: var(--easier); box-shadow: var(--tier-edge); }
 .an-shap-bar.down { right: 50%; background: var(--harder); }
 .an-shap-row.rest .an-shap-bar { opacity: 0.5; }
 .an-shap-val { flex: none; width: 64px; text-align: right; font-size: 17px; font-weight: 800; font-variant-numeric: tabular-nums; }
-.an-shap-val.pos { color: var(--easier); }
-.an-shap-val.neg { color: var(--harder); }
 /* the key takes the room of 4px off each row and 4px off the gap above, so the footer stays where it was */
 .an-shap-row.an-shap-key { height: 20px; border-bottom: none; }
 .an-shap-keys { flex: none; width: 220px; display: flex; }
@@ -562,7 +562,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .an-shap-keyside.down { justify-content: flex-end; padding-right: 6px; }
 .an-shap-keyside.up { padding-left: 6px; }
 .an-shap-swatch { flex: none; width: 10px; height: 10px; border-radius: 2px; }
-.an-shap-swatch.up { background: var(--easier); }
+.an-shap-swatch.up { background: var(--easier); box-shadow: var(--tier-edge); }
 .an-shap-swatch.down { background: var(--harder); }
 .an-shap-footrow { margin-top: auto; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .an-shap-foot { min-width: 0; font-size: 13px; color: var(--muted); line-height: 1.35; }
