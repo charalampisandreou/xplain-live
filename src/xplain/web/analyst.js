@@ -405,6 +405,17 @@
         + view.api.fixed2(Math.abs(r.shap), false));
       box.appendChild(row);
     }
+    // the key under the tracks: left of the centre lowered the odds, right of it raised them (not the outcome)
+    const key = div('an-shap-row an-shap-key');
+    const halves = div('an-shap-keys');
+    const harder = div('an-shap-keyside down');
+    harder.append(span('an-shap-keytext', 'made it harder'), span('an-shap-swatch down'));
+    const easier = div('an-shap-keyside up');
+    easier.append(span('an-shap-swatch up'), span('an-shap-keytext', 'made it easier'));
+    halves.append(harder, easier);
+    key.append(div('an-shap-words'), halves, span('an-shap-val'));
+    key.setAttribute('aria-hidden', 'true');
+    box.appendChild(key);
     $('an-shap-foot').textContent = 'Model start ' + view.api.fixed2(x.baseline, false) + ' → raw score '
       + view.api.fixed2(x.raw_score, false) + ' (log-odds, not points of xP) · xP after calibration '
       + view.api.percent(m.xp) + '%';
