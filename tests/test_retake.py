@@ -94,22 +94,24 @@ def test_an_unknown_or_not_commentated_moment_is_refused():
 # --- outcomes -----------------------------------------------------------------------------------
 
 def test_an_accepted_line_comes_back_with_the_trace_and_the_final_check(served, monkeypatch):
-    monkeypatch.delenv("XPLAIN_LIVE_DEPLOYMENT", raising=False)
+    monkeypatch.delenv("XPLAIN_RETAKE_DEPLOYMENT", raising=False)
     seen = []
     out = run(runner(make_out(), seen=seen), served)
     assert out["ok"] is True and out["status"] == "accepted" and out["attempts"] == 1
     assert out["line"] == {"en": make_out().line_en, "es": make_out().line_es, "el": make_out().line_el}
     assert [s["agent"] for s in out["steps"]] == ["narrator", "verifier", "verifier"]
     assert out["steps"][-1]["final"] is True and out["steps"][-1]["checks"]
-    assert out["steps"][0]["model"] == live.DEFAULT_DEPLOYMENT == out["model"]
+    assert out["steps"][0]["model"] == "gpt-6.1-sol" == retake.DEFAULT_DEPLOYMENT == out["model"]
     assert out["mode"] == "hints" and out["network_retries"] == 0 and out["latency_s"] >= 0
     assert seen[0][0] == "entra-access-token" and isinstance(seen[0][3], live.AsyncIPv4Backend)
 
 
-def test_the_model_is_the_live_deployment(served, monkeypatch):
-    monkeypatch.setenv("XPLAIN_LIVE_DEPLOYMENT", "gpt-6.1-sol")
-    out = run(runner(make_out()), served)
-    assert out["model"] == "gpt-6.1-sol" == out["steps"][0]["model"]
+def test_the_model_is_the_retake_deployment_not_the_health_checks(served, monkeypatch):
+    monkeypatch.setenv("XPLAIN_LIVE_DEPLOYMENT", "gpt-4.1")
+    monkeypatch.setenv("XPLAIN_RETAKE_DEPLOYMENT", "gpt-4.1-mini")
+    seen = []
+    out = run(runner(make_out(), seen=seen), served)
+    assert out["model"] == "gpt-4.1-mini" == out["steps"][0]["model"] == seen[0][1]
 
 
 def test_a_rejected_answer_is_retried_with_the_reasons(served):
@@ -230,11 +232,12 @@ def test_the_endpoint_refusals(served, monkeypatch):
 def test_the_real_agent_talks_to_foundry_over_ipv4_with_the_token_as_bearer(monkeypatch):
     monkeypatch.setenv("XPLAIN_FOUNDRY_ENDPOINT", "https://example.openai.azure.com/openai/v1/")
     backend = live.AsyncIPv4Backend()
-    agent = retake.make_agent("entra-access-token", "gpt-4.1-mini", "hints", backend)
+    agent = retake.make_agent("entra-access-token", "gpt-6.1-sol", "hints", backend)
     openai_client = agent.client.client
     assert str(openai_client.base_url) == "https://example.openai.azure.com/openai/v1/"
     assert openai_client.api_key == "entra-access-token" and openai_client.max_retries == 0
     assert openai_client._client._transport._pool._network_backend is backend
+    assert openai_client._client.timeout.read == 60.0   # gpt-6.1-sol's per-call timeout (models.MODEL_PARAMS)
 
 
 def test_the_final_step_is_the_workflows():

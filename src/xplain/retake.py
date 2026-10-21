@@ -11,7 +11,9 @@ retried with the reasons) and the final Verifier check (final_step, the twin of 
 imported, it would pull the build pipeline into the container) of the accepted line, in the bundle's
 phrase mode. Nothing is stored: the bundle and what Studio puts on air stay as they are.
 
-Model: XPLAIN_LIVE_DEPLOYMENT (live.deployment(), default gpt-4.1-mini), at XPLAIN_FOUNDRY_ENDPOINT. Auth as in
+Model: XPLAIN_RETAKE_DEPLOYMENT (deployment(), default DEFAULT_DEPLOYMENT = gpt-6.1-sol, the model that wrote the
+bundle's lines; owner's pick 2026-10-21), at XPLAIN_FOUNDRY_ENDPOINT, with its request parameters and per-call
+timeout from models.MODEL_PARAMS (the health check keeps XPLAIN_LIVE_DEPLOYMENT). Auth as in
 live.py: the managed identity (live.make_credential: DefaultAzureCredential, AZURE_CLIENT_ID, its get_token in a
 thread) in Azure, az login locally; the token is
 fetched first, on its own ("token" stage), and sent as the bearer (never a key). The client connects over IPv4 only
@@ -31,6 +33,7 @@ from __future__ import annotations
 import asyncio
 import datetime as dt
 import json
+import os
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -39,10 +42,12 @@ from typing import Any
 from . import live
 from .config import phrase_mode
 from .contracts import MomentBundle
+from .models import params_for
 from .narrator import Narrator, NarratorAgent
 from .trace import TraceStep, code_step
 from .verifier import VerifierResult, verify
 
+DEFAULT_DEPLOYMENT = "gpt-6.1-sol"
 COOLDOWN_S = 10.0
 DAILY_CAP = 200
 
@@ -71,16 +76,20 @@ def find_moment(bundle: dict, moment_id: str) -> tuple[MomentBundle, int]:
     raise RetakeRefused(404, "moment", f"No commentated moment {moment_id!r} in this match.")
 
 
+def deployment() -> str:
+    return os.environ.get("XPLAIN_RETAKE_DEPLOYMENT") or DEFAULT_DEPLOYMENT
+
+
 def make_agent(token: str, model: str, mode: str, backend: live.AsyncIPv4Backend) -> NarratorAgent:
     """The Narrator agent on an AsyncOpenAI client at the Foundry /openai/v1/ route, over IPv4 only; api_key is the
-    Entra ID access token (sent as the bearer), never a key."""
+    Entra ID access token (sent as the bearer), never a key. The http timeout is the model's per-call timeout."""
     from agent_framework import Agent
     from agent_framework.openai import OpenAIChatCompletionClient
     from openai import AsyncOpenAI
 
     from .prompts import narrator_instructions
     client = AsyncOpenAI(base_url=live.endpoint(), api_key=token, max_retries=0,
-                         http_client=live.ipv4_async_http_client(backend))
+                         http_client=live.ipv4_async_http_client(backend, params_for(model).timeout_s))
     return Agent(OpenAIChatCompletionClient(model=model, async_client=client), narrator_instructions(mode),
                  name="Narrator")
 
@@ -142,7 +151,7 @@ class Retake:
         return (await asyncio.to_thread(self._credential.get_token, live.COGNITIVE_SCOPE)).token
 
     async def _run(self, bundle: dict, moment: MomentBundle, slot: int) -> dict:
-        model = live.deployment()
+        model = deployment()
         mode = bundle.get("meta", {}).get("phrase_mode") or phrase_mode()
         backend = live.AsyncIPv4Backend()
         start = time.perf_counter()

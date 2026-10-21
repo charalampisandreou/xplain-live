@@ -435,14 +435,17 @@ endpoint and the deployment. The Studio page still plays the precomputed bundle 
 **Live retake.** `POST /api/live/retake` with `{"match": "seed3001", "moment_id": "moment:m3001-00758"}`, also 404
 unless `XPLAIN_LIVE=1`, narrates one commentated moment of the served bundle again: the moment's facts as stored
 (the Analyst and the Explainer do not run again, no number is computed again), its slot as in the build, then the
-Narrator on `XPLAIN_LIVE_DEPLOYMENT` (up to three calls, each answer checked by the Verifier, a rejected one
+Narrator on `XPLAIN_RETAKE_DEPLOYMENT` (default `gpt-6.1-sol`, the model that wrote the bundle's lines; its
+parameters and 60 s per-call timeout from `models.MODEL_PARAMS`; up to three calls, each answer checked by the Verifier, a rejected one
 retried with the reasons) and the final check, in the bundle's phrase mode (`src/xplain/retake.py`). Same auth
 as the live check (the token first, then the request), over IPv4 only; a failed IPv4 lookup is retried after
 0.5 s and 1 s and counted as `network_retries`. It answers `status` (accepted, retried, rejected, failed), the
 `line` (en, es, el) or null, `attempts`, `reasons`, `model`, `latency_s` (the server's wall time) and the trace
 `steps`; a failure adds `stage`, `error` and a scrubbed `message`. Nothing is stored. One retake at a time, 10 s
-between two, at most 200 a UTC day (429 with a reason otherwise). On `gpt-4.1-mini` a retake costs about $0.0016
-(about 3.5k tokens in, 0.1k out; `reports/model_compare/report.md`). The image installs
+between two, at most 200 a UTC day (429 with a reason otherwise). A retake on `gpt-6.1-sol` costs about $0.009
+(about 3.5k tokens in, 0.15k out, about 5.5x `gpt-4.1-mini`'s $0.0016; `reports/model_compare/report.md`) and took
+6.2 to 7.2 s locally (2026-10-21, four takes, all accepted first time); `gpt-4.1-mini` took about 3 s but often
+needed a retry on the concession frame (two contrasts in one line). The image installs
 `agent-framework-core` and `agent-framework-openai` for the Narrator agent; the retake never imports the build
 workflow.
 
