@@ -47,6 +47,9 @@ do not fail a line, e.g. "difficulty: line_en has no difficulty word".
 CHECKS is the one list of these checks: verify() runs exactly the entries of its phrase mode, in order, and
 returns their names (VerifierResult.checks; the trace records them per Verifier step). Each entry carries the
 plain-words label the Producer view shows.
+
+A line a producer edited or wrote runs line_check.HUMAN_CHECKS instead: facts only, through these same functions
+where they exist (banned with BANNED_FACTS only); CHECKS and verify() are not changed by them.
 """
 from __future__ import annotations
 
@@ -106,13 +109,32 @@ HARD_WORDS: dict[str, tuple[str, ...]] = {
 # ("throw"; none for Spanish, where "lanza un pase" is normal commentary), and the wording of the two vague
 # driver labels (phrases.NOT_NARRATED), which must never reach a line. Within a family the longer patterns
 # come first, so a reason quotes the longest match.
-BANNED: dict[str, tuple[str, ...]] = {
+# BANNED_FACTS holds the claim families (box/penalty area, line-breaking, defender counts, left/right): the only ones
+# a human line is checked for (line_check.HUMAN_CHECKS). Every BANNED list starts with them.
+BANNED_FACTS: dict[str, tuple[str, ...]] = {
     "en": (
         r"\binside the (penalty )?box\b", r"\bin the box\b", r"\bpenalty (area|box)\b",
         r"\bthe box\b", r"\bthe area\b",
         r"\bline[- ]?break\w*", r"\bbreaks? (the|their) lines?\b",
         r"\b(\d+|two|three|four|five|six|several) (defenders|opponents)\b",
         r"\bleft\b", r"\bright\b",
+    ),
+    "es": (
+        r"\bdentro del [aá]rea\b", r"\ben el [aá]rea\b", r"\bcerca del [aá]rea\b", r"\bdel [aá]rea\b",
+        r"\b[aá]reas?\b",
+        r"\brompe(n)? (la|las) l[ií]neas?\b", r"\brompel[ií]neas\b",
+        r"\b(\d+|dos|tres|cuatro|cinco|seis|varios) (defensas|defensores|rivales)\b",
+        r"\bizquierd[ao]s?\b", r"\bderech[ao]s?\b",
+    ),
+    "el": (
+        r"μέσα στην περιοχή", r"στη μεγάλη περιοχή", r"\bπεριοχ\w*",
+        r"σπάει τ(η|ις) γραμμ(ή|ές)",
+        r"(\d+|δύο|τρεις|τέσσερις|πέντε|έξι|πολλούς) (αμυντικούς|αντιπάλους)",
+        r"αριστερ\w*", r"δεξι\w*",
+    ),
+}
+BANNED: dict[str, tuple[str, ...]] = {
+    "en": BANNED_FACTS["en"] + (
         r"\bshap\b", r"\bbaseline\b", r"\braw score\b", r"\bexpected pass value\b",
         r"\bthrow(?!-ins?\b)\w*",  # "throw-in" is a play pattern, not a throw
         r"\bsuccess\w*",           # the brief forbids "success"; the card shows the outcome
@@ -121,12 +143,7 @@ BANNED: dict[str, tuple[str, ...]] = {
         r"\btr(y|ies|ied|ying)\b", r"\battempt(s|ed|ing)?\b", r"\bpull(s|ed|ing)? off\b",
         r"\bthread(s|ed|ing)?\b", r"\bmanag(e|es|ed|ing) to\b",
     ),
-    "es": (
-        r"\bdentro del [aá]rea\b", r"\ben el [aá]rea\b", r"\bcerca del [aá]rea\b", r"\bdel [aá]rea\b",
-        r"\b[aá]reas?\b",
-        r"\brompe(n)? (la|las) l[ií]neas?\b", r"\brompel[ií]neas\b",
-        r"\b(\d+|dos|tres|cuatro|cinco|seis|varios) (defensas|defensores|rivales)\b",
-        r"\bizquierd[ao]s?\b", r"\bderech[ao]s?\b",
+    "es": BANNED_FACTS["es"] + (
         r"\bshap\b", r"\bl[ií]nea base\b", r"\bpuntuaci[oó]n bruta\b", r"\bvalor esperado del? pase\b",
         r"\botra parte del cuerpo\b", r"\botro tipo de jugada\b",
         r"\bcon [eé]xito\b", r"\b[eé]xit\w*",
@@ -134,11 +151,7 @@ BANNED: dict[str, tuple[str, ...]] = {
         r"\bintent(a|an|ó|aba|ando|ar)\b", r"(?<!\bse )\btrat(a|an|ó|aba|ando|ar) de\b",
         r"\blogr(a|an|ó|aba|ando|ar)\b",
     ),
-    "el": (
-        r"μέσα στην περιοχή", r"στη μεγάλη περιοχή", r"\bπεριοχ\w*",
-        r"σπάει τ(η|ις) γραμμ(ή|ές)",
-        r"(\d+|δύο|τρεις|τέσσερις|πέντε|έξι|πολλούς) (αμυντικούς|αντιπάλους)",
-        r"αριστερ\w*", r"δεξι\w*",
+    "el": BANNED_FACTS["el"] + (
         r"\bshap\b", r"γραμμή βάσης", r"ακατέργαστ\w* βαθμολογ\w*", r"αναμενόμεν\w* αξία",
         r"ρίχν\w*", r"πετάει",
         r"\bάλλο μέρος του σώματος\b", r"\bάλλο είδος φάσης\b",
@@ -297,11 +310,12 @@ def check_difficulty(out: NarratorOut, bundle: MomentBundle) -> tuple[list[str],
     return reasons, notes
 
 
-def check_banned(out: NarratorOut) -> list[str]:
+def check_banned(out: NarratorOut, table: dict[str, list[re.Pattern[str]]] | None = None) -> list[str]:
+    """The BANNED patterns of each language (or those of another compiled table: a human line uses BANNED_FACTS)."""
     reasons = []
     for lang, line in _lines(out).items():
         spans: list[tuple[int, int]] = []
-        for pattern in _BANNED_RE[lang]:
+        for pattern in (table or _BANNED_RE)[lang]:
             match = pattern.search(line)
             if match and not any(a <= match.start() and match.end() <= b for a, b in spans):
                 spans.append(match.span())
@@ -633,3 +647,4 @@ def verify(out: NarratorOut, bundle: MomentBundle, mode: str | None = None) -> V
         notes += n
         ran.append(check.name)
     return VerifierResult(ok=not reasons, reasons=reasons, notes=notes, checks=ran)
+

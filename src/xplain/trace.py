@@ -16,6 +16,9 @@ A line reused from an earlier bundle (bundle.stored_lines, also with --no-llm) k
 reused=True: they ran in an earlier build, not this one, so they carry no latency (attempt is the attempt number
 of that earlier build). A reused line with no stored steps gets one reused narrator step saying so. Only the
 final check runs again.
+
+A line a producer edited or wrote in the Producer view (line_check.py, never stored in a bundle) has a producer step
+(kind "human") and its final Verifier check.
 """
 from __future__ import annotations
 
@@ -23,8 +26,9 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-Agent = Literal["analyst", "explainer", "narrator", "verifier", "recap_editor", "recap_verifier", "recap_filler"]
-StepKind = Literal["code", "llm"]
+Agent = Literal["analyst", "explainer", "narrator", "verifier", "recap_editor", "recap_verifier", "recap_filler",
+                "producer"]
+StepKind = Literal["code", "llm", "human"]
 
 
 class TraceStep(BaseModel):
@@ -46,8 +50,8 @@ class TraceStep(BaseModel):
 
     @model_validator(mode="after")
     def _check(self) -> TraceStep:
-        if self.kind == "code" and (self.model is not None or self.latency_s is not None):
-            raise ValueError("a code step has no model and no latency")
+        if self.kind != "llm" and (self.model is not None or self.latency_s is not None):
+            raise ValueError("a code or human step has no model and no latency")
         if self.reused and (self.latency_s is not None or self.final):
             raise ValueError("a reused step has no latency and is never the final check")
         if self.checks is not None and self.agent not in ("verifier", "recap_verifier"):

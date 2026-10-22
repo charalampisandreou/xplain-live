@@ -14,9 +14,13 @@ GET /api/live/health (live spike, live.py) is 404 unless XPLAIN_LIVE=1: one tiny
 identity, at most once per 60 s server-wide (cached in between; Cache-Control: no-store).
 POST /api/live/retake (retake.py), also 404 unless XPLAIN_LIVE=1: {"match", "moment_id"} -> one commentated moment
 narrated again live and checked by the Verifier (nothing stored); 429 when busy, cooling down or over the day's cap.
+POST /api/line/check (line_check.py), always on (no model call): {"match", "moment_id", "line": {"en", "es", "el"}}
+-> a producer's edited or written line checked by the Verifier's fact checks (nothing stored); each line at most
+line_check.MAX_CHARS characters.
 """
 from __future__ import annotations
 
+import json
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -26,9 +30,9 @@ from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi import Path as PathParam
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
-from . import analytics, live, retake
+from . import analytics, line_check, live, retake
 from .analytics import Band, Outlier
 from .config import BUNDLE_DIR
 from .features import FEATURE_ORDER
@@ -57,6 +61,25 @@ class ScoreResponse(BaseModel):
 class RetakeRequest(BaseModel):
     match: Annotated[str, Field(pattern=BUNDLE_NAME, max_length=64)]
     moment_id: Annotated[str, Field(max_length=128)]
+
+
+LineText = Annotated[str, Field(max_length=line_check.MAX_CHARS)]
+
+
+class LineTexts(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    en: LineText = ""
+    es: LineText = ""
+    el: LineText = ""
+
+
+class LineCheckRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    match: Annotated[str, Field(pattern=BUNDLE_NAME, max_length=64)]
+    moment_id: Annotated[str, Field(max_length=128)]
+    line: LineTexts
 
 
 class HealthResponse(BaseModel):
@@ -128,6 +151,25 @@ def create_app(scorer: Scorer | None = None, bundles: Path | None = None,
         except retake.RetakeRefused as refused:
             if refused.retry_after_s is not None:
                 headers["Retry-After"] = str(max(1, round(refused.retry_after_s)))
+            return JSONResponse(refused.body(), status_code=refused.status, headers=headers)
+        return JSONResponse(out, headers=headers)
+
+    loaded: dict[Path, tuple[float, dict]] = {}   # bundle path -> (mtime, bundle) for the line check
+
+    @app.post("/api/line/check", include_in_schema=False)
+    def check_line(body: LineCheckRequest) -> JSONResponse:
+        headers = {"Cache-Control": "no-store"}
+        path = (bundles or bundle_dir()) / f"bundle_{body.match}.json"
+        if not path.is_file():
+            return JSONResponse({"ok": False, "refused": "match", "detail": "No such match."}, status_code=404,
+                                headers=headers)
+        mtime = path.stat().st_mtime
+        if path not in loaded or loaded[path][0] != mtime:
+            with path.open(encoding="utf-8") as f:
+                loaded[path] = (mtime, json.load(f))
+        try:
+            out = line_check.check_line(loaded[path][1], body.moment_id, body.line.model_dump())
+        except retake.RetakeRefused as refused:
             return JSONResponse(refused.body(), status_code=refused.status, headers=headers)
         return JSONResponse(out, headers=headers)
 
