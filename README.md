@@ -261,6 +261,11 @@ remembered, so every plain load shows it. `?tour=0` (recordings) and any deep li
 `?replay`, `?recap`, `?moment`, `?player`) skip it. Its texts live in `index.html`, its screens in
 `intro.js` and its screenshots in `src/xplain/web/intro/`.
 
+A match opened at kick-off (no `?t`, `?replay` or `?recap`) plays at 12x. Until its first narrated moment
+the plate reads "Waiting for the first surprise. Pick 60× to get there faster." with the 60x button ringed
+in the accent; picked, 60x runs (the plate reads "Rating every pass. Watching for surprises.") until one
+match minute before that moment and then drops back to 12x.
+
 The page only formats: every number, minute and ranking comes from the bundle (Player and Analyst modes'
 numbers so far are the one exception, see below). The title reads "Live pass map" ("Half Time" or "Full Time"
 while a recap is shown, "Passing Analysis" in Analyst, "Control room" in Producer). The tables and the
@@ -277,7 +282,7 @@ with the commentator's line in the chosen language, the tier and xP, and PVA on 
 
 Also in the Studio:
 
-- **Goal flash.** The score bug pulses and the plate shows "GOAL · team · minute" (minute from the score
+- **Goal flash.** The score bug pulses, the digit the goal changes shows in the accent, and the plate shows "GOAL · team · minute" (minute from the score
   track) until play restarts, for at least four seconds of real time at any speed.
 - **Stepping through narrated moments.** Chevrons with a counter, or the `[` and `]` keys, move to the
   previous or next narrated moment; only moments the match has already reached are offered, so nothing
@@ -327,8 +332,8 @@ both teams against the model on the same clock, score and plate:
   All / 1st / 2nd pick the span; the lines grow with the clock, so nothing is spoiled. At full time the
   lines end on the card's values (seed 3001: DUS +19.45, MAR −19.11).
 - **How the model rated it.** For the picked dot (by default the latest surprise): the pass's SHAP drivers
-  and the rest as stored by the Explainer, as bars each way from the centre (green raises the model's score,
-  red lowers it), with the model's score for a typical pass, its score for this pass and the calibrated xP ("Typical pass 1.32 →
+  and the rest as stored by the Explainer, as bars each way from the centre (white raises the model's score,
+  dark purple lowers it), with the model's score for a typical pass, its score for this pass and the calibrated xP ("Typical pass 1.32 →
   this pass 3.19 (model scale, not %) · xP 97%"). The values are log-odds of the raw score, never points of xP. "Replay in Studio" opens a commentated
   surprise in the Studio's replay. The plate shows the picked surprise: its line, or a note that it was
   not commentated.
