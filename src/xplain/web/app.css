@@ -518,6 +518,28 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .pr-text { margin: 0; padding: 8px 4px 0; font-size: 20px; line-height: 1.4; color: var(--text-soft); }
 /* the producer's choice under a new line (Put on air / Keep stored line), or Back to stored line under an aired one */
 .pr-air { display: flex; align-items: center; gap: 18px; padding: 12px 4px 0; }
+/* Edit line: a box per language on the inset navy, a cyan focus ring; the verdict in the accent (passed) or the failed
+   red with ✕ per failing check, as Show checks marks them */
+.pr-edit-row { display: flex; align-items: center; gap: 10px; padding: 8px 4px 0; }
+.pr-edit-lang { width: 24px; flex: none; font-size: 13px; font-weight: 800; letter-spacing: 1px; color: var(--muted); }
+.pr-edit-input { flex: 1; min-width: 0; height: 34px; box-sizing: border-box; padding: 0 10px; font: inherit; font-size: 15px;
+  color: var(--text); background: var(--inset); border: 1px solid var(--switch-border); border-radius: 5px; }
+.pr-edit-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px rgba(63, 208, 255, 0.35); }
+.pr-edit-input:disabled { opacity: 0.6; }
+.pr-edit-count { width: 48px; flex: none; text-align: right; font-size: 13px; font-weight: 600; color: var(--muted);
+  font-variant-numeric: tabular-nums; }
+.pr-edit-count.over { color: var(--text); font-weight: 800; }
+.pr-edit-result { padding: 12px 4px 0; }
+.pr-edit-verdict { font-size: 16px; font-weight: 800; }
+.pr-edit-verdict.pass { color: var(--accent); }
+.pr-edit-verdict.pass::before { content: '✓ '; }
+.pr-edit-verdict.blocked { color: var(--failed-text); }
+.pr-edit-fails { margin: 6px 0 0; padding: 0; list-style: none; font-size: 14px; line-height: 1.35; }
+.pr-edit-fails li { padding-top: 4px; }
+.pr-edit-fails b { color: var(--failed-text); font-weight: 700; }
+.pr-edit-fails b::before { content: '✕ '; }
+.pr-edit-detail { padding-left: 17px; color: var(--text-soft); overflow-wrap: anywhere; }
+.pr-edit-result > .pr-air { padding-left: 0; }
 
 /* --- Analyst mode (analyst.js): both teams against the model. The match swing and the model's reasons for the
    shown surprise in the pitch's slot; the teams' passing and their passes per tier in the tables' slot. Studio's

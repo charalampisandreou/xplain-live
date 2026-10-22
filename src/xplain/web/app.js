@@ -66,7 +66,8 @@
     unseenRecap: null,    // a recap crossed by live playback in Producer or Player: reached, not yet seen
                           // (showUnseenRecap on switching to Studio)
     fit: new Map(),    // "moment_id/lang" -> a smaller font size for a line that needs it (fitLines)
-    aired: new Map(),  // moment_id -> a Live retake put on air in Producer ({ line: {en, es, el}, steps, summary}):
+    aired: new Map(),  // moment_id -> a Live retake or a checked edit put on air in Producer ({ line: {en, es, el}, steps,
+                       // summary, edited: true for an edit (the log says "On air · edited") }):
                        // the plate shows it for that moment in every tab, in this browser tab only (nothing is stored)
     airedRev: 0,
     fades: new Map(),  // element -> { anim, at }: its running cross-fade and when it started

@@ -21,6 +21,13 @@
 // stored line" ("Keep it off air" for an uncommentated moment). An aired retake shows in On air with its steps, and
 // "Back to stored line" ("Take off air") undoes it. Model, latency,
 // attempts and network retries are the server's, shown as sent.
+//
+// Edit line ("Write line" on a moment with no line): the producer edits the line on screen (the stored line, a
+// retake's new line or a line already put on air) in EN / ES / EL, and Check sends it to POST /api/line/check, the
+// Verifier's fact checks on the server (src/xplain/line_check.py; code only, no model). A blocked line shows its
+// failing checks and stays off air; a line that passes waits for "Put on air" (ctx.air, as a retake, with edited:
+// true: "On air · edited" in the log, a Producer step before its final Verifier step) or "Keep current line". Edit and
+// Live retake close each other. The word count beside each box counts the text typed; it is not match data.
 (function (root) {
   'use strict';
 
@@ -30,7 +37,9 @@
   const AGENT_WORDS = {
     analyst: 'Analyst', explainer: 'Explainer', narrator: 'Narrator', verifier: 'Verifier',
     recap_editor: 'Recap Editor', recap_verifier: 'Recap Verifier', recap_filler: 'Numbers filled by code',
+    producer: 'Producer',
   };
+  const KIND_LABELS = { llm: 'LLM', code: 'Code', human: 'Human' };
   const GATE_WORDS = { ranking: 'top 3 of its kind so far this half', threshold: 'rare enough to always get a line' };
   const ON_AIR = ['accepted', 'retried'];
   const LANGS = ['en', 'es', 'el'];
@@ -49,6 +58,13 @@
   const NO_STEPS_NC = 'No agent records: no line was written when it happened.';
   const FROM_MATCH = 'from the match';
   const CHECKED_AGAIN = 'checked again before air';
+  const WORD_LIMIT = 24;   // verifier.WORD_LIMIT: past it the line may not fit the plate (a warning, never a block)
+  const PASSED = 'Facts checked: all correct';
+  const BLOCKED = 'Blocked: not aired';
+  const NO_CHANGE = 'The same as the line on screen: nothing new to put on air.';
+  const AIRED_EDIT = 'Edited line, put on air in this browser tab; the match file keeps the stored line.';
+  const AIRED_EDIT_NC = 'Written line, put on air in this browser tab; the match file has no line for this moment.';
+  const LANG_NAMES = { en: 'English', es: 'Spanish', el: 'Greek' };
 
   // --- pure functions (no DOM; also loaded by node in the test) -----------------------------------
 
@@ -177,6 +193,55 @@
       reasons: result.message ? [result.message] : [] };
   }
 
+  // The number of words in a box, as the Verifier counts them (Python's str.split(): runs of whitespace).
+  function wordCount(text) {
+    const t = (text || '').trim();
+    return t ? t.split(/\s+/).length : 0;
+  }
+
+  const squash = (text) => (text || '').trim().split(/\s+/).join(' ');
+
+  // The languages whose line differs from the one on screen (base, or null when there was none), whitespace aside.
+  function changedLangs(base, lines) {
+    return LANGS.filter((l) => squash(base ? base[l] : '') !== squash(lines[l]));
+  }
+
+  // The steps of an aired edit: the steps on screen when the edit began without their final check, then the server's
+  // Producer step (with the edited languages) and its final Verifier step (with the labels of the checks it ran).
+  function editSteps(base, result, edited, written) {
+    const out = base.filter((s) => !(s.agent === 'verifier' && s.final));
+    for (const s of result.steps || []) {
+      if (s.agent === 'producer') out.push(Object.assign({}, s, { edited, written: Boolean(written) }));
+      else if (s.agent === 'verifier') out.push(Object.assign({}, s, { labels: result.labels || {} }));
+      else out.push(s);
+    }
+    return out;
+  }
+
+  // The aired edit's summary line: who wrote which languages.
+  function editSummary(edited, written) {
+    return (written ? 'Written by the producer' : 'Edited by the producer') +
+      (edited.length ? ': ' + edited.map((l) => l.toUpperCase()).join(', ') : '') + ' · facts checked by code';
+  }
+
+  // What the edit box says after Check: { ok, title, fails: [{ name, label, details }], warnings }. The failing
+  // checks in the order they ran, each with its reasons' details; warnings are the length notes (never a block).
+  function editOutcome(result) {
+    const labels = result.labels || {};
+    const fails = [];
+    for (const r of result.reasons || []) {
+      const i = r.indexOf(': ');
+      const name = i > 0 ? r.slice(0, i) : '';
+      let f = fails.find((x) => x.name === name);
+      if (!f) { f = { name, label: labels[name] || name || r, details: [] }; fails.push(f); }
+      if (name) f.details.push(r.slice(i + 2));
+    }
+    const order = result.checks || [];
+    fails.sort((a, b) => order.indexOf(a.name) - order.indexOf(b.name));
+    const warnings = (result.notes || []).filter((n) => n.startsWith('length: ')).map((n) => n.slice(8));
+    return { ok: Boolean(result.ok), title: result.ok ? PASSED : BLOCKED, fails, warnings };
+  }
+
   // --- DOM ------------------------------------------------------------------------------------
 
   const $ = (id) => document.getElementById(id);
@@ -186,6 +251,11 @@
   let openFor = null;
   // the Live retake of one moment: state idle | running | done | error; result (the server's answer) or error text
   let retake = { id: null, state: 'idle', result: null, error: '' };
+  // the Edit line of one moment: state idle | editing | checking | done | error; lines (the boxes), base (the line on
+  // screen when it began, or null), baseSteps (the steps then), written (no line before), result (the server's answer)
+  const NO_EDIT = { id: null, state: 'idle', lines: null, base: null, baseSteps: [], written: false, result: null, error: '' };
+  let edit = NO_EDIT;
+  let lastBundle = null;
 
   function matchName() {   // as app.js picks the bundle
     const name = new URLSearchParams(location.search).get('match') || 'seed3001';
@@ -212,6 +282,54 @@
     ctx.redraw();
   }
 
+  // The line on screen for a moment: an aired line, else a retake's new line, else the stored line; null when none.
+  function currentLine(bundle, id) {
+    const aired = ctx.aired(id);
+    if (aired) return aired.line;
+    if (retake.id === id && retake.state === 'done' && retake.result.line) return retake.result.line;
+    const m = bundle.moments.find((x) => x.bundle.moment.moment_id === id);
+    if (m && m.line) return { en: m.line.line_en, es: m.line.line_es, el: m.line.line_el };
+    return null;
+  }
+
+  // The steps on screen for a moment, as renderDetail shows them (before folding).
+  function currentSteps(bundle, item) {
+    const stored = stepsOf(bundle, item);
+    const aired = ctx.aired(item.id);
+    if (aired && aired.edited) return aired.steps;
+    if (aired) return retakeSteps(stored, aired);
+    if (retake.id === item.id && retake.state === 'done' && retake.result.line) return retakeSteps(stored, retake.result);
+    return stored;
+  }
+
+  function openEdit(id) {
+    const base = currentLine(lastBundle, id);
+    edit = { id, state: 'editing', lines: base ? Object.assign({}, base) : { en: '', es: '', el: '' }, base,
+      baseSteps: currentSteps(lastBundle, { type: 'moment', id }), written: !base, result: null, error: '' };
+    retake = { id: null, state: 'idle', result: null, error: '' };   // Edit closes a retake
+  }
+
+  async function runCheck() {
+    const id = edit.id;
+    edit = Object.assign({}, edit, { state: 'checking', result: null, error: '' });
+    drawn.detail = '';
+    ctx.redraw();
+    let next;
+    try {
+      const res = await fetch('/api/line/check', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ match: matchName(), moment_id: id, line: edit.lines }) });
+      const body = await res.json().catch(() => ({}));
+      if (res.ok) next = { state: 'done', result: body, error: '' };
+      else if (res.status === 422) next = { state: 'error', result: null, error: 'Each line holds at most 400 characters.' };
+      else next = { state: 'error', result: null, error: body.detail || 'Check refused (HTTP ' + res.status + ').' };
+    } catch (e) {
+      next = { state: 'error', result: null, error: RETAKE_UNREACHABLE };
+    }
+    if (edit.id === id && edit.state === 'checking') edit = Object.assign({}, edit, next);   // a cancel meanwhile wins
+    drawn.detail = '';
+    ctx.redraw();
+  }
+
   function node(tag, cls, text) {
     const n = document.createElement(tag);
     if (cls) n.className = cls;
@@ -233,6 +351,18 @@
     });
     $('pr-detail').addEventListener('click', (e) => {
       const a = e.target.closest('button[data-air]');
+      if (a && a.dataset.air.startsWith('edit-')) {
+        const id = a.dataset.id;
+        if (a.dataset.air === 'edit-on' && edit.id === id && edit.result && edit.result.ok) {
+          const edited = changedLangs(edit.base, edit.result.line);
+          ctx.air(id, { line: edit.result.line, steps: editSteps(edit.baseSteps, edit.result, edited, edit.written),
+            summary: editSummary(edited, edit.written), edited: true });
+        }
+        edit = NO_EDIT;   // "Put on air" and "Keep current line" both close the edit
+        drawn = { list: '', detail: '' };
+        ctx.redraw();
+        return;
+      }
       if (a) {
         const id = a.dataset.id;
         if (a.dataset.air === 'on' && retake.id === id && retake.result && retake.result.line) {
@@ -243,10 +373,24 @@
         ctx.redraw();
         return;
       }
+      const ed = e.target.closest('button[data-edit]');
+      if (ed) {
+        const what = ed.dataset.edit;
+        if (what === 'check') { if (edit.state !== 'checking') runCheck(); return; }
+        if (what === 'cancel') edit = NO_EDIT;
+        else if (retake.state !== 'running' && edit.state !== 'checking') openEdit(what);
+        drawn.detail = '';
+        ctx.redraw();
+        return;
+      }
       const r = e.target.closest('button[data-retake]');
       if (r) {
         if (r.dataset.retake === 'back') retake = { id: null, state: 'idle', result: null, error: '' };
-        else if (retake.state !== 'running') { runRetake(r.dataset.retake); return; }
+        else if (retake.state !== 'running' && edit.state !== 'checking') {
+          edit = NO_EDIT;   // Live retake closes an edit
+          runRetake(r.dataset.retake);
+          return;
+        }
         drawn.detail = '';
         ctx.redraw();
         return;
@@ -258,6 +402,32 @@
       drawn.detail = '';
       ctx.redraw();
     });
+    // typing in an edit box: no redraw (the box keeps its focus); the count updates, and a result shown is dropped
+    $('pr-detail').addEventListener('input', (e) => {
+      const box = e.target.closest('input[data-lang]');
+      if (!box || !edit.lines) return;
+      edit.lines[box.dataset.lang] = box.value;
+      const count = box.parentNode.querySelector('.pr-edit-count');
+      if (count) setCount(count, box.value);
+      if (edit.state === 'done' || edit.state === 'error') {
+        edit = Object.assign({}, edit, { state: 'editing', result: null, error: '' });
+        const shown = $('pr-detail').querySelector('.pr-edit-result');
+        if (shown) shown.remove();
+        drawn.detail = detailKey(drawn.at);   // the panel on screen already matches this state
+      }
+    });
+    $('pr-detail').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && e.target.closest('input[data-lang]') && edit.state !== 'checking') {
+        e.preventDefault();
+        runCheck();
+      }
+    });
+  }
+
+  function setCount(el, text) {
+    const n = wordCount(text);
+    el.textContent = n + ' / ' + WORD_LIMIT;
+    el.classList.toggle('over', n > WORD_LIMIT);
   }
 
   function invalidate() { drawn = { list: '', detail: '' }; }
@@ -265,6 +435,7 @@
   // args: { bundle, now, recapT, lang (the plate's NARRATION language), selected: { type, id } | null }
   function render(args) {
     const { bundle } = args;
+    lastBundle = bundle;
     const empty = !hasTrace(bundle);
     $('pr-empty').hidden = !empty;
     $('pr-rows').hidden = empty;
@@ -273,19 +444,32 @@
     const log = items(bundle, args.now, args.recapT);
     const sel = args.selected;
     const selKey = sel ? sel.type + ':' + sel.id : '';
-    const listKey = log.map((i) => i.id + (ctx.aired(i.id) ? '*' : '')).join('|') + '/' + selKey;
+    const listKey = log.map((i) => i.id + airedMark(i.id)).join('|') + '/' + selKey;
     if (listKey !== drawn.list) {
       drawn.list = listKey;
       renderList(log, sel);
     }
     const item = sel && log.find((i) => i.type === sel.type && i.id === sel.id);
     if (selKey !== openFor) { openFor = selKey; openChecks = new Set(); }
-    const detailKey = (item ? selKey : '-') + '/' + args.lang + '/' + [...openChecks].join(',') + '/' +
-      (retake.id || '') + ':' + retake.state + '/' + (item && ctx.aired(item.id) ? 'aired' : '');
-    if (detailKey !== drawn.detail) {
-      drawn.detail = detailKey;
+    const at = { selKey: item ? selKey : '-', lang: args.lang, id: item ? item.id : null };
+    const key = detailKey(at);
+    if (key !== drawn.detail) {
+      drawn.detail = key;
+      drawn.at = at;
       renderDetail(bundle, item || null, args.lang);
     }
+  }
+
+  function airedMark(id) {
+    const a = ctx.aired(id);
+    return a ? (a.edited ? '*e' : '*') : '';
+  }
+
+  // what the detail panel shows: the item, the language, the open check lists, the retake, the edit, an aired line
+  function detailKey(at) {
+    if (!at) return '';
+    return at.selKey + '/' + at.lang + '/' + [...openChecks].join(',') + '/' + (retake.id || '') + ':' + retake.state +
+      '/' + (edit.id || '') + ':' + edit.state + '/' + (at.id ? airedMark(at.id) : '');
   }
 
   function renderList(log, sel) {
@@ -306,7 +490,7 @@
       if (it.what) who.append(node('div', 'meta', it.what));
       const aired = it.type === 'moment' && ctx.aired(it.id);
       const status = node('span', 'pr-status' + (it.onAir || aired ? ' on' : it.commentated ? '' : ' nc'),
-        aired ? 'On air · retake' : it.onAir ? 'On air' : it.commentated ? 'No line' : 'Not commentated');
+        aired ? (aired.edited ? 'On air · edited' : 'On air · retake') : it.onAir ? 'On air' : it.commentated ? 'No line' : 'Not commentated');
       const tries = node('span', 'pr-tries', it.attempts ? it.attempts + (it.attempts === 1 ? ' attempt' : ' attempts') : '');
       const retry = node('span', 'pr-retry', it.attempts > 1 ? 'Retried' : '');
       row.append(node('span', 'pr-min', it.type === 'recap' ? it.minute : it.minute + "'"), who, status, tries, retry);
@@ -331,6 +515,9 @@
     if (s.agent === 'explainer' && s.ok) parts.push('drivers computed');
     if (s.agent === 'narrator' && s.ok && s.kind === 'llm') parts.push('line written');
     if (s.agent === 'recap_editor' && s.ok) parts.push('text written with blanks for code to fill the numbers');
+    if (s.agent === 'producer' && s.edited) {
+      parts.push((s.written ? 'wrote ' : 'edited ') + s.edited.map((l) => l.toUpperCase()).join(', '));
+    }
     if (s.reused) parts.push('from an earlier build');
     if (s.fromMatch) parts.push(FROM_MATCH);
     return parts.filter(Boolean).join(' · ');
@@ -344,15 +531,20 @@
       return;
     }
     const mine = item.type === 'moment' && retake.id === item.id ? retake : null;
+    const editing = item.type === 'moment' && edit.id === item.id && edit.state !== 'idle' ? edit : null;
     const stored = stepsOf(bundle, item);
     const aired = item.type === 'moment' ? ctx.aired(item.id) : null;
     const shown = mine && mine.state === 'done' ? mine.result : aired;
-    const steps = foldFinal(shown ? retakeSteps(stored, shown) : stored);
+    // while editing: the steps on screen when the edit began; an aired edit: its own steps (the retake's included)
+    const steps = foldFinal(editing ? editing.baseSteps : shown && shown === aired && aired.edited ? aired.steps
+      : shown ? retakeSteps(stored, shown) : stored);
     const labels = (bundle.trace && bundle.trace.check_labels) || {};
     const head = node('div', 'thead');
     head.append(node('h2', '', mine && mine.state === 'done' ? 'Live retake' : 'Agents'),
       node('div', 'tsub', item.type === 'recap' ? item.who : item.minute + "' · " + item.who));
-    if (item.type === 'moment') head.appendChild(retakeButtons(item.id, mine, item.commentated));
+    if (item.type === 'moment') {
+      head.appendChild(retakeButtons(item.id, mine, item.commentated, Boolean(currentLine(bundle, item.id)), editing));
+    }
     box.appendChild(head);
     const list = node('div', 'pr-steps');
     if (steps.length === 0) {
@@ -364,9 +556,11 @@
       const row = node('div', 'pr-step' + (s.ok ? '' : ' fail'));
       const top = node('div', 'pr-step-top');
       top.append(node('span', 'pr-mark', s.ok ? '✓' : '✕'), node('span', 'pr-agent', stepName(s)),
-        node('span', 'pr-kind', s.kind === 'llm' ? 'LLM' : 'Code'), node('span', 'pr-info', stepInfo(s, item.attempts)));
+        node('span', 'pr-kind', KIND_LABELS[s.kind] || s.kind), node('span', 'pr-info', stepInfo(s, item.attempts)));
       row.appendChild(top);
-      if (s.agent === 'verifier' || s.agent === 'recap_verifier') row.appendChild(checksBlock(s, labels[s.agent], item.id + '/' + i));
+      if (s.agent === 'verifier' || s.agent === 'recap_verifier') {
+        row.appendChild(checksBlock(s, s.labels || labels[s.agent], item.id + '/' + i));   // an edit's carry their own
+      }
       else if (!s.ok && s.reasons.length) row.appendChild(reasonsBlock(s.reasons, null));
       else if (s.agent === 'recap_filler') {
         const f = fillerSummary(steps, ctx.teamCode(bundle.meta.home.team_id), ctx.teamCode(bundle.meta.away.team_id));
@@ -386,17 +580,29 @@
       list.appendChild(row);
     }
     box.appendChild(list);
-    if (mine && mine.state === 'done') box.appendChild(retakeBox(item.id, mine.result, lang, item.commentated));
+    if (editing) {
+      box.appendChild(editBox(item.id, editing));
+      const said = box.querySelector('.pr-edit-result');   // the verdict scrolls into the slot, under the steps
+      if (said) said.scrollIntoView({ block: 'nearest' });
+    } else if (mine && mine.state === 'done') box.appendChild(retakeBox(item.id, mine.result, lang, item.commentated));
     else {
       if (mine && mine.state === 'error') box.appendChild(node('div', 'pr-note pr-retake-error', mine.error));
       box.appendChild(onAir(bundle, item, lang));
     }
   }
 
-  // "Live retake" (again while a result is shown, disabled while one runs) and, with a result that has no line,
-  // "Stored line" ("Close" for an uncommentated moment)
-  function retakeButtons(id, mine, commentated) {
+  // "Edit line" ("Write line" with no line on screen; hidden while editing), "Live retake" (again while a result is
+  // shown, disabled while one runs or a check runs) and, with a result that has no line, "Stored line" ("Close" for
+  // an uncommentated moment)
+  function retakeButtons(id, mine, commentated, hasLine, editing) {
     const wrap = node('div', 'pr-retake-actions');
+    if (!editing) {
+      const e = node('button', 'pr-retake', hasLine ? 'Edit line' : 'Write line');
+      e.type = 'button';
+      e.dataset.edit = id;
+      e.disabled = retake.state === 'running';
+      wrap.appendChild(e);
+    }
     if (mine && mine.state === 'done' && !mine.result.line) {   // with a new line, "Keep stored line" says it
       const back = node('button', 'pr-toggle', commentated ? 'Stored line' : 'Close');
       back.type = 'button';
@@ -407,7 +613,7 @@
     const b = node('button', 'pr-retake', running && retake.id === id ? 'Retaking…' : 'Live retake');
     b.type = 'button';
     b.dataset.retake = id;
-    b.disabled = running;
+    b.disabled = running || edit.state === 'checking';
     wrap.appendChild(b);
     return wrap;
   }
@@ -431,6 +637,69 @@
     if (o.text) {
       wrap.appendChild(airButtons(id, [['on', 'Put on air', 'pr-retake'],
         ['keep', commentated ? 'Keep stored line' : 'Keep it off air', 'pr-toggle']]));
+    }
+    return wrap;
+  }
+
+  // The edit panel: a box per language (prefilled with the line on screen) with its word count, Check / Cancel, and
+  // after a check what the Verifier said: the failing checks (blocked) or Put on air / Keep current line (passed).
+  function editBox(id, ed) {
+    const wrap = node('div', 'pr-onair pr-edit');
+    const head = node('div', 'thead');
+    head.append(node('h2', '', ed.written ? 'Write line' : 'Edit line'), node('div', 'tsub', 'Checked by code before air'));
+    wrap.appendChild(head);
+    for (const lang of LANGS) {
+      const row = node('label', 'pr-edit-row');
+      const input = node('input', 'pr-edit-input');
+      input.type = 'text';
+      input.value = ed.lines[lang] || '';
+      input.maxLength = 400;
+      input.spellcheck = false;
+      input.dataset.lang = lang;
+      input.setAttribute('lang', lang);
+      input.setAttribute('aria-label', 'Line in ' + LANG_NAMES[lang]);
+      input.disabled = ed.state === 'checking';
+      const count = node('span', 'pr-edit-count');
+      setCount(count, input.value);
+      row.append(node('span', 'pr-edit-lang', lang.toUpperCase()), input, count);
+      wrap.appendChild(row);
+    }
+    const actions = node('div', 'pr-air');
+    const check = node('button', 'pr-retake', ed.state === 'checking' ? 'Checking…' : 'Check');
+    check.type = 'button';
+    check.dataset.edit = 'check';
+    check.disabled = ed.state === 'checking';
+    const cancel = node('button', 'pr-toggle', 'Cancel');
+    cancel.type = 'button';
+    cancel.dataset.edit = 'cancel';
+    actions.append(check, cancel);
+    wrap.appendChild(actions);
+    if (ed.state === 'error') wrap.appendChild(node('div', 'pr-note pr-retake-error pr-edit-result', ed.error));
+    if (ed.state === 'done') wrap.appendChild(editResult(id, ed));
+    return wrap;
+  }
+
+  function editResult(id, ed) {
+    const o = editOutcome(ed.result);
+    const wrap = node('div', 'pr-edit-result');
+    wrap.appendChild(node('div', 'pr-edit-verdict ' + (o.ok ? 'pass' : 'blocked'), o.title));
+    if (o.fails.length) {
+      const ul = node('ul', 'pr-edit-fails');
+      for (const f of o.fails) {
+        const li = node('li', '');
+        li.appendChild(node('b', '', f.label));
+        for (const d of f.details) li.appendChild(node('div', 'pr-edit-detail', d));
+        ul.appendChild(li);
+      }
+      wrap.appendChild(ul);
+    }
+    for (const w of o.warnings) wrap.appendChild(node('div', 'pr-note', 'Warning: ' + w));
+    if (o.ok) {
+      if (changedLangs(ed.base, ed.result.line).length) {
+        wrap.appendChild(airButtons(id, [['edit-on', 'Put on air', 'pr-retake'], ['edit-keep', 'Keep current line', 'pr-toggle']]));
+      } else {
+        wrap.appendChild(node('div', 'pr-note', NO_CHANGE));
+      }
     }
     return wrap;
   }
@@ -506,8 +775,9 @@
       if (aired) {
         const p = node('p', 'pr-text', aired.line[code]);
         p.setAttribute('lang', code);
+        const said = aired.edited ? (item.commentated ? AIRED_EDIT : AIRED_EDIT_NC) : (item.commentated ? AIRED : AIRED_NC);
         wrap.append(node('div', 'pr-note', aired.summary), p,
-          node('div', 'pr-note', item.commentated ? AIRED : AIRED_NC), airButtons(item.id, [['back', item.commentated ? 'Back to stored line' : 'Take off air', 'pr-toggle']]));
+          node('div', 'pr-note', said), airButtons(item.id, [['back', item.commentated ? 'Back to stored line' : 'Take off air', 'pr-toggle']]));
         return wrap;
       }
       const m = bundle.moments.find((x) => x.bundle.moment.moment_id === item.id);
@@ -526,8 +796,9 @@
   }
 
   const api = { hasTrace, items, stepsOf, splitReason, fillerSummary, foldFinal, failedChecks, retakeSteps, retakeSummary,
-    retakeOutcome, mount, render, invalidate, EMPTY, NOT_RECORDED, REFILLED, NOT_ON_AIR, NOT_ON_AIR_NC, AIRED, AIRED_NC,
-    NOT_COMMENTATED, FROM_MATCH };
+    retakeOutcome, wordCount, changedLangs, editSteps, editSummary, editOutcome, mount, render, invalidate, EMPTY,
+    NOT_RECORDED, REFILLED, NOT_ON_AIR, NOT_ON_AIR_NC, AIRED, AIRED_NC, AIRED_EDIT, AIRED_EDIT_NC, NOT_COMMENTATED,
+    FROM_MATCH, WORD_LIMIT, PASSED, BLOCKED };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.XplainProducer = api;
 })(typeof window !== 'undefined' ? window : this);
