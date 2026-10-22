@@ -370,12 +370,28 @@ there.
   or **Keep stored line**. The choice lives in that browser tab until the page reloads: nothing is sent or saved,
   so the bundle, other viewers and the deployed site keep the stored line. A line the Verifier rejected three times
   says so with the reasons and has no Put on air; a failure names its stage. Stored line goes back.
+- **Edit line** (**Write line** on a moment with no line): AI writes, a human edits, code checks, then air. Three
+  boxes, EN / ES / EL, prefilled with the line on screen (the stored line, a retake's new line or one already on
+  air), each with its word count against the 24-word limit. **Check** sends them to `POST /api/line/check`
+  (`{"match", "moment_id", "line": {"en", "es", "el"}}`, `src/xplain/line_check.py`): always on, code only (no
+  model call, so it works with Foundry down), nothing stored, each line at most 400 characters. A human line runs
+  the Verifier's fact checks only, not the phrasing rules that keep the model in bounds: a line in every language;
+  numbers that match the data (a percent is the pass's xP or PVA as the page rounds it, any other number the
+  moment's minute); no player or club named but the passer and their club; the difficulty word matches the tier;
+  no claims we have no data for (box or penalty area, line-breaking, defender counts, left/right); every fact from
+  one of the moment's drivers, the drivers agree with the rating, "mainly" only for the strongest, and a reason
+  explains the rating, never the outcome. The drivers a line uses are the ones its wording names. Over 24 words is a
+  warning, never a block. A failing line reads "Blocked: not aired" with each failing check (✕) and stays off air;
+  a passing one reads "Facts checked: all correct" with **Put on air** (as a retake: every tab, this browser tab
+  only; the log row reads "On air · edited", and the Agents list gains a Producer (human) step, "edited EN", before
+  the edit's own final check) or **Keep current line**. **Back to stored line** (**Take off air**) undoes it. Edit
+  and Live retake close each other.
 - **Show checks** marks with ✕ the checks a failed Verifier step names in its reasons; the others keep ✓.
 
 ## Docker
 
-The image serves the Studio page, `/api/bundle`, `/score` and (with `XPLAIN_LIVE=1`) `/api/live/health` and
-`/api/live/retake`. It needs the trained model
+The image serves the Studio page, `/api/bundle`, `/score`, `/api/line/check` (always on, no model call) and (with
+`XPLAIN_LIVE=1`) `/api/live/health` and `/api/live/retake`. It needs the trained model
 (`models/xpass_v2/`, git-ignored: train it first) and the demo bundle `data/bundle_seed3001.json`;
 no Azure or OpenAI settings are needed to serve. Build and run from this folder:
 
