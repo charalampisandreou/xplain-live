@@ -6,7 +6,7 @@
   ACR Tasks (az acr build) is paused on credit subscriptions (TasksOperationsNotAllowed), so the image is
   built with local Docker and pushed. The tag is the git short sha, so the working tree must be clean.
   The model and data/bundle_seed3001.json are git-ignored and copied from this checkout.
-  infra/main.json creates or updates the environment cae-xplain-std and the app xplain-studio; the app
+  infra/main.json creates or updates the environment cae-xplain-std and the app xplain-live; the app
   pulls with the user-assigned identity id-xplain-live (AcrPull), so there are no registry passwords or
   tokens. The what-if preview is printed as resource IDs only: its full output contains the workspace key.
   Needs: az login, Docker running.
@@ -20,7 +20,8 @@ param(
     [ValidateSet('germanywestcentral')]
     [string]$Location = 'germanywestcentral',
     [string]$Registry = 'xplainlive',
-    [string]$Deployment = 'xplain-std'
+    [string]$AppName = 'xplain-live',
+    [string]$Deployment = 'xplain-live'
 )
 $ErrorActionPreference = 'Stop'
 
@@ -51,11 +52,11 @@ Invoke-Native docker push $image
 
 Write-Host "== what-if (resource IDs only)"
 Invoke-Native az deployment group what-if -g $ResourceGroup -n $Deployment --template-file $template `
-    --parameters location=$Location image=$image --result-format ResourceIdOnly
+    --parameters location=$Location image=$image appName=$AppName --result-format ResourceIdOnly
 if ((Read-Host "Deploy $image? (y/n)") -ne 'y') { Write-Host 'not deployed'; return }
 
 Write-Host "== deploy"
 $fqdn = Invoke-Native az deployment group create -g $ResourceGroup -n $Deployment --template-file $template `
-    --parameters location=$Location image=$image --query properties.outputs.fqdn.value -o tsv
+    --parameters location=$Location image=$image appName=$AppName --query properties.outputs.fqdn.value -o tsv
 Write-Host "== https://$fqdn/"
 (Invoke-WebRequest "https://$fqdn/health" -UseBasicParsing -TimeoutSec 240).Content

@@ -11,13 +11,14 @@
       "allowedValues": [ "germanywestcentral" ]
     },
     "environmentName": { "type": "string", "defaultValue": "cae-xplain-std" },
-    "appName": { "type": "string", "defaultValue": "xplain-studio" },
+    "appName": { "type": "string", "defaultValue": "xplain-live" },
     "workspaceName": { "type": "string", "defaultValue": "workspace-rgplhackdesV2i" },
     "identityName": { "type": "string", "defaultValue": "id-xplain-live" },
     "registryServer": { "type": "string", "defaultValue": "xplainlive.azurecr.io" },
     "image": { "type": "string", "defaultValue": "xplainlive.azurecr.io/xplain-live:591db22" },
     "foundryEndpoint": { "type": "string", "defaultValue": "https://plhack-foundry-candreou-resource.openai.azure.com/openai/v1/" },
-    "liveDeployment": { "type": "string", "defaultValue": "gpt-4.1-mini" }
+    "liveDeployment": { "type": "string", "defaultValue": "gpt-4.1-mini" },
+    "retakeDeployment": { "type": "string", "defaultValue": "gpt-6.1-sol" }
   },
   "variables": {
     "workspaceId": "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName'))]",
@@ -75,14 +76,15 @@
         "template": {
           "containers": [
             {
-              "name": "xplain-studio",
+              "name": "[parameters('appName')]",
               "image": "[parameters('image')]",
               "resources": { "cpu": "[json('0.5')]", "memory": "1Gi" },
               "env": [
                 { "name": "AZURE_CLIENT_ID", "value": "[reference(variables('identityId'), '2023-01-31').clientId]" },
                 { "name": "XPLAIN_LIVE", "value": "1" },
                 { "name": "XPLAIN_FOUNDRY_ENDPOINT", "value": "[parameters('foundryEndpoint')]" },
-                { "name": "XPLAIN_LIVE_DEPLOYMENT", "value": "[parameters('liveDeployment')]" }
+                { "name": "XPLAIN_LIVE_DEPLOYMENT", "value": "[parameters('liveDeployment')]" },
+                { "name": "XPLAIN_RETAKE_DEPLOYMENT", "value": "[parameters('retakeDeployment')]" }
               ]
             }
           ],
