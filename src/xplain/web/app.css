@@ -637,6 +637,8 @@ html.intro-on .intro:not([hidden]) { display: block; }
 .in-tag { margin: 22px 0 0; font-size: 28px; color: var(--text-soft); }
 .in-btns { display: grid; grid-auto-rows: 56px; gap: 14px; margin-top: 56px; }
 .in-btns .in-b { height: 56px; padding: 0 34px; font-size: 20px; }
+/* Start match only: the match is synthetic, said once, quietly, under the button */
+.in-synth { margin: 22px 0 0; font-size: 15px; color: var(--muted); }
 /* the app's buttons: the accent fill of a picked .seg button, or outlined like Back to live */
 .in-b {
   height: 42px; padding: 0 20px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.2); background: transparent;
