@@ -72,7 +72,7 @@ CSS = (WEB / "app.css").read_text(encoding="utf-8")
 
 SLIDES = {
     "Studio": ("The match as it happens: every pass rated, the biggest surprises narrated.",
-               ["Every pass", "The commentary", "Surprises", "PVA"]),
+               ["Every pass, live", "The commentary", "Surprises", "PVA"]),
     "Analyst": ("How each team passed against the model, and how it rated each surprise.",
                 ["Passing swing", "How the model rated it", "Passing Stats", "By difficulty"]),
     "Player": ("One player's match: every pass, their numbers and their surprises.",
