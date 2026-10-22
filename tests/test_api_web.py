@@ -427,7 +427,7 @@ def test_empty_states_end_with_a_full_stop(client):
 def test_title_and_recap_card_are_on_the_page(client):
     html = client.get("/").text
     assert ('data-live="Live pass map" data-ht="Half Time" data-ft="Full Time" data-producer="Control room" '
-            'data-analyst="Match analysis">Live pass map</h1>') in html
+            'data-analyst="Passing Analysis">Live pass map</h1>') in html
     assert "Pass outliers" not in html
     recap = html.split('<section class="recap" id="recap"')[1].split("</section>")[0]
     for node in ('id="rc-score"', 'id="rc-goal-rows"', 'id="rc-team-rows"', 'id="rc-star"', 'id="rc-text"'):
@@ -618,7 +618,7 @@ def test_analyst_mode_is_on_the_page(client):
     modes = html.split('id="mode"')[1].split("</div>")[0]
     assert modes.index('data-mode="studio"') < modes.index('data-mode="analyst"') < modes.index('data-mode="player"')
     left = html.split('<section class="analyst-left" id="analyst-left"')[1].split("</section>")[0]
-    for node in ('<h2>Match swing</h2>', 'id="an-chart"', 'id="an-chart-empty"', 'id="an-shap-title"',
+    for node in ('<h2>Passing swing</h2>', 'id="an-chart"', 'id="an-chart-empty"', 'id="an-shap-title"',
                  'id="an-shap-rows"', 'id="an-shap-foot"', 'id="an-replay"'):
         assert node in left
     right = html.split('<section class="analyst-right" id="analyst-right"')[1].split("</section>")[0]

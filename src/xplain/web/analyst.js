@@ -1,4 +1,4 @@
-// xPlain Live: Analyst mode. Both teams' passing against the model up to the match clock: the match swing (each
+// xPlain Live: Analyst mode. Both teams' passing against the model up to the match clock: the passing swing (each
 // team's running vs expected), the teams' passing and their passes per difficulty tier, and for a picked surprise
 // the model's reasons (its SHAP drivers, as the bundle stores them).
 //
@@ -165,7 +165,7 @@
     return { shown, list: found };
   }
 
-  // --- the match swing: one line per team, the surprises as dots on their team's line ---------------
+  // --- the passing swing: one line per team, the surprises as dots on their team's line ---------------
   // The chart is drawn in layers that stay in place: the frame (grid, minutes, half time) and the dots are rebuilt
   // only when the scale, the span or the number of surprises changes; the lines and their end labels are updated in
   // place as passes come in; picking a dot only moves the ring. So a dot under the pointer is not replaced while the
@@ -186,7 +186,7 @@
       view.frameSig = '';
       $('an-chart-empty').textContent = ctx.notStarted ? NOT_STARTED : NO_PASSES;
       $('an-chart-empty').hidden = false;
-      svg.setAttribute('aria-label', 'Match swing, ' + (ctx.notStarted ? 'second half not started' : 'no passes yet'));
+      svg.setAttribute('aria-label', 'Passing swing, ' + (ctx.notStarted ? 'second half not started' : 'no passes yet'));
       return;
     }
     $('an-chart-empty').hidden = true;
@@ -289,7 +289,7 @@
     }
 
     const words = ends.map((e) => teams[e.i].name + ' ' + view.api.fixed2(e.v, true)).join(', ');
-    svg.setAttribute('aria-label', 'Match swing: each team\'s completed passes minus expected, running. Now ' + words
+    svg.setAttribute('aria-label', 'Passing swing: each team\'s completed passes minus expected, running. Now ' + words
       + '. ' + found.length + (found.length === 1 ? ' surprise' : ' surprises') + ' marked as dots.');
   }
 
@@ -376,7 +376,7 @@
     box.replaceChildren();
     $('an-replay').hidden = !(entry && entry.bundle.qualifies_live);
     if (!entry) {
-      $('an-shap-title').textContent = 'Why the model rated it';
+      $('an-shap-title').textContent = 'How the model rated it';
       $('an-shap-sub').textContent = '';
       $('an-shap-foot').textContent = '';
       box.appendChild(div('empty', NO_PICK));
@@ -384,7 +384,7 @@
     }
     const m = entry.bundle.moment;
     const x = entry.bundle.explanation;
-    $('an-shap-title').textContent = 'Why the model rated it ' + entry.tier.en;
+    $('an-shap-title').textContent = 'How the model rated it ' + entry.tier.en;
     $('an-shap-sub').textContent = (m.player_name || 'Unknown player') + ' · ' + ctx.teamCode(m.team_id) + ' · '
       + m.minute_label + "' · " + (m.completed ? 'completed' : 'not completed');
     // the bars share one scale: the largest |shap| among the drivers and the rest fills the track (drawing only)

@@ -27,7 +27,7 @@ overlay cards that a graphics system can render alongside the match.
 > narrated moments, an in-plate narration language switch, half-time and full-time recap cards), the
 > Recap Editor (the recap texts, with every number filled in by code), Player mode, the player-focus
 > personalization mode (one player's pass map, numbers and moments up to the match clock; from a recap it
-> opens on the star player), Analyst mode (both teams' running vs expected as a match swing, their passing
+> opens on the star player), Analyst mode (both teams' running vs expected as a passing swing, their passing
 > per difficulty tier, and the model's SHAP reasons for each surprise), the Producer view (the control room:
 > every line the clock has reached, the agents' steps behind it, the checks the Verifier ran, model and
 > latency), a script that compares Narrator models
@@ -222,7 +222,7 @@ card's two-decimal values and checked again by the recap verifier; a change is r
 `recap_filler` step in the trace. It prints the new SHA-256.
 
 `python scripts/refresh_position_labels.py data/bundle_seed3001.json` takes every position driver's label (what
-Analyst's "Why the model rated it" shows) again from `explainer.POSITION_LABELS`, with no model call: only those
+Analyst's "How the model rated it" shows) again from `explainer.POSITION_LABELS`, with no model call: only those
 labels and their evidence copies change, and every line is checked again by the final Verifier. It prints how
 many labels changed and the new SHA-256.
 
@@ -255,9 +255,15 @@ bottom-right Back to live, L or Esc return to the live pass. `?replay=MOMENT_ID`
 `?replay=moment:m42-00817`) opens in replay; if the moment is later than the start time, the
 clock starts at it.
 
+A plain visit opens on a welcome screen with a four-slide tour (Studio, Analyst, Player, Producer: a
+screenshot each with notes) and a Start match screen, then Studio plays from kick-off; nothing is
+remembered, so every plain load shows it. `?tour=0` (recordings) and any deep link (`?t`, `?mode`,
+`?replay`, `?recap`, `?moment`, `?player`) skip it. Its texts live in `index.html`, its screens in
+`intro.js` and its screenshots in `src/xplain/web/intro/`.
+
 The page only formats: every number, minute and ranking comes from the bundle (Player and Analyst modes'
 numbers so far are the one exception, see below). The title reads "Live pass map" ("Half Time" or "Full Time"
-while a recap is shown, "Match analysis" in Analyst, "Control room" in Producer). The tables and the
+while a recap is shown, "Passing Analysis" in Analyst, "Control room" in Producer). The tables and the
 plate show PVA (pass value added, the bundle's `delta` = outcome - xP: 1 - xP when completed, -xP
 when not) in points of completion chance, e.g. "+85%" or "−94%" (sign, round(100 * |PVA|)); the
 bar length is |PVA| on a 0..1 scale. xP is shown small in the plate as a percent with the same
@@ -315,12 +321,12 @@ language as the Studio:
 **Analyst mode** (the Analyst button, or `?mode=analyst`, with `&moment=MOMENT_ID` to pick a surprise) puts
 both teams against the model on the same clock, score and plate:
 
-- **Match swing.** Each team's running vs expected (completed passes minus the sum of their xP, the recap
+- **Passing swing.** Each team's running vs expected (completed passes minus the sum of their xP, the recap
   card's measure), one line per team, a step at each pass, with half time and the goals marked. Every
   surprise is a dot on its team's line (green: a hard pass completed; red: an easy pass not completed).
   All / 1st / 2nd pick the span; the lines grow with the clock, so nothing is spoiled. At full time the
   lines end on the card's values (seed 3001: DUS +19.45, MAR −19.11).
-- **Why the model rated it.** For the picked dot (by default the latest surprise): the pass's SHAP drivers
+- **How the model rated it.** For the picked dot (by default the latest surprise): the pass's SHAP drivers
   and the rest as stored by the Explainer, as bars each way from the centre (green raises the model's score,
   red lowers it), with the model's score for a typical pass, its score for this pass and the calibrated xP ("Typical pass 1.32 →
   this pass 3.19 (model scale, not %) · xP 97%"). The values are log-odds of the raw score, never points of xP. "Replay in Studio" opens a commentated

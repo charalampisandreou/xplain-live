@@ -527,7 +527,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 /* the producer's choice under a new line (Put on air / Keep stored line), or Back to stored line under an aired one */
 .pr-air { display: flex; align-items: center; gap: 18px; padding: 12px 4px 0; }
 
-/* --- Analyst mode (analyst.js): both teams against the model. The match swing and the model's reasons for the
+/* --- Analyst mode (analyst.js): both teams against the model. The passing swing and the model's reasons for the
    shown surprise in the pitch's slot; the teams' passing and their passes per tier in the tables' slot. Studio's
    rules, rows and tokens; no boxes. The score bug, the scope selector, the plate and Play / speed are Studio's. */
 .analyst-left, .analyst-right { display: none; }
@@ -616,3 +616,57 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .an-vs.pos { color: var(--completed); }
 .an-vs.neg { color: var(--failed-text); }
 .analyst-right .footnote { margin-top: auto; }
+
+/* --- the welcome screen and tour (intro.js): a layer over the whole stage on a plain visit, in the app's own
+   tokens and type, its chrome where the app's chrome sits (the slides' mark is the header's mark, placed by
+   intro.js), so the tour reads as the app's first screens, not a page in front of it. Shown only while <html>
+   has "intro-on" (set before the first paint). */
+.intro { display: none; position: absolute; inset: 0; z-index: 20; }
+html.intro-on .intro:not([hidden]) { display: block; }
+.in-bg { position: absolute; inset: 0; background: var(--bg); }
+.in-screen { position: absolute; inset: 0; }
+.in-screen[hidden], .in-nav[hidden], .in-skip[hidden], .in-mark[hidden] { display: none; }
+/* while the logo glides into the header, the header's mark waits for it */
+#stage.intro-gliding .topright .mark { visibility: hidden; }
+.in-mark { position: absolute; top: 37px; right: 40px; font-weight: 800; font-size: 22px; letter-spacing: -0.01em; }
+.in-mark span, .in-big span { font-weight: 500; color: var(--accent); }
+/* welcome and Start match: the logo, the tagline and the buttons in one centred column */
+.in-big-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.in-big { display: inline-block; margin: 0; font-size: 120px; font-weight: 800; letter-spacing: -0.03em; line-height: 1;
+  transform-origin: 0 0; }
+.in-tag { margin: 22px 0 0; font-size: 28px; color: var(--text-soft); }
+.in-btns { display: grid; grid-auto-rows: 56px; gap: 14px; margin-top: 56px; }
+.in-btns .in-b { height: 56px; padding: 0 34px; font-size: 20px; }
+/* welcome and Start match: the match is synthetic, said quietly under the buttons */
+.in-synth { margin: 22px 0 0; font-size: 15px; color: var(--muted); }
+/* the app's buttons: the accent fill of a picked .seg button, or outlined like Back to live */
+.in-b {
+  height: 42px; padding: 0 20px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.2); background: transparent;
+  color: var(--text-soft); font-size: 16px; font-weight: 700; transition: border-color 150ms, color 150ms, background 150ms;
+}
+.in-b:hover { border-color: rgba(255, 255, 255, 0.45); color: var(--text); }
+.in-b.go { border: none; background: var(--accent); color: var(--plate-text); }
+.in-b.go:hover { filter: brightness(1.12); color: var(--plate-text); }
+/* a slide: the kicker on the score bug's line, the mode and its line centred, the screenshot in the pitch's
+   shadow, the notes at the sides with their arrows */
+.in-kicker { position: absolute; top: 40px; left: 40px; font-size: 13px; font-weight: 700; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--muted); }
+.in-mode { position: absolute; top: 92px; left: 0; right: 0; text-align: center; }
+.in-mode h2 { margin: 0; font-size: 44px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.1; }
+.in-mode p { margin: 10px 0 0; font-size: 20px; color: var(--text-soft); }
+.in-shot { position: absolute; left: 300px; top: 220px; width: 840px; height: 525px; border-radius: 8px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.12); }
+.in-shot img { display: block; width: 100%; height: 100%; border-radius: 8px; }
+.in-arrows { position: absolute; inset: 0; width: 1440px; height: 900px; pointer-events: none; overflow: visible; }
+.in-arrows path { fill: none; stroke: var(--accent); stroke-width: 2.5; stroke-linecap: round; }
+.in-arrows circle { fill: var(--accent); stroke: var(--bg); stroke-width: 2; }
+.in-note { position: absolute; width: 230px; font-size: 17px; line-height: 1.35; color: var(--text-soft); }
+.in-note b { display: block; margin-bottom: 4px; font-size: 18px; color: var(--text); }
+.in-nav { position: absolute; bottom: 48px; left: 0; right: 0; display: flex; justify-content: center; align-items: center; gap: 28px; }
+.in-dots span { display: inline-block; width: 10px; height: 10px; margin: 0 5px; border-radius: 50%; background: rgba(255, 255, 255, 0.25);
+  transition: background 150ms; }
+.in-dots span.on { background: var(--accent); }
+.in-skip { position: absolute; bottom: 52px; right: 40px; padding: 4px 0; border: none; background: transparent;
+  color: var(--muted); font-size: 15px; font-weight: 600; }
+.in-skip:hover { color: var(--text); }
+@media (prefers-reduced-motion: reduce) { .in-b, .in-dots span { transition: none; } }
