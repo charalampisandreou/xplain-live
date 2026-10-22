@@ -27,7 +27,7 @@ overlay cards that a graphics system can render alongside the match.
 > narrated moments, an in-plate narration language switch, half-time and full-time recap cards), the
 > Recap Editor (the recap texts, with every number filled in by code), Player mode, the player-focus
 > personalization mode (one player's pass map, numbers and moments up to the match clock; from a recap it
-> opens on the star player), Analyst mode (both teams' running vs expected as a match swing, their passing
+> opens on the star player), Analyst mode (both teams' running vs expected as a passing swing, their passing
 > per difficulty tier, and the model's SHAP reasons for each surprise), the Producer view (the control room:
 > every line the clock has reached, the agents' steps behind it, the checks the Verifier ran, model and
 > latency), a script that compares Narrator models
@@ -315,7 +315,7 @@ language as the Studio:
 **Analyst mode** (the Analyst button, or `?mode=analyst`, with `&moment=MOMENT_ID` to pick a surprise) puts
 both teams against the model on the same clock, score and plate:
 
-- **Match swing.** Each team's running vs expected (completed passes minus the sum of their xP, the recap
+- **Passing swing.** Each team's running vs expected (completed passes minus the sum of their xP, the recap
   card's measure), one line per team, a step at each pass, with half time and the goals marked. Every
   surprise is a dot on its team's line (green: a hard pass completed; red: an easy pass not completed).
   All / 1st / 2nd pick the span; the lines grow with the clock, so nothing is spoiled. At full time the

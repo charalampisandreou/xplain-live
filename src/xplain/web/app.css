@@ -527,7 +527,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 /* the producer's choice under a new line (Put on air / Keep stored line), or Back to stored line under an aired one */
 .pr-air { display: flex; align-items: center; gap: 18px; padding: 12px 4px 0; }
 
-/* --- Analyst mode (analyst.js): both teams against the model. The match swing and the model's reasons for the
+/* --- Analyst mode (analyst.js): both teams against the model. The passing swing and the model's reasons for the
    shown surprise in the pitch's slot; the teams' passing and their passes per tier in the tables' slot. Studio's
    rules, rows and tokens; no boxes. The score bug, the scope selector, the plate and Play / speed are Studio's. */
 .analyst-left, .analyst-right { display: none; }
