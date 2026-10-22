@@ -19,10 +19,21 @@
                         page itself), the away team in amber; both clear of the green / red of the outcomes */
   --away: #FFB547;
   --not-commentated: #C3A6F2;   /* Producer's log: a surprise that was not commentated (not the accent of On air) */
+  --scroll-thumb: rgba(63, 208, 255, 0.55);   /* every scroll area: the accent, softened, on the inset navy */
+  --scroll-track: var(--inset);
   --font: 'Archivo', 'Noto Sans', sans-serif;   /* Noto Sans covers Greek, which Archivo lacks */
 }
 
 * { box-sizing: border-box; }
+/* scrollbars, app-wide: a thin cyan thumb on a navy track, full cyan while the scroll area is hovered. Browsers
+   with scrollbar-color use it; the ::-webkit-scrollbar rules are for Safari, which lacks it. */
+* { scrollbar-width: thin; scrollbar-color: var(--scroll-thumb) var(--scroll-track); }
+*:hover { scrollbar-color: var(--accent) var(--scroll-track); }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: var(--scroll-track); border-radius: 4px; }
+::-webkit-scrollbar-thumb { background: var(--scroll-thumb); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+::-webkit-scrollbar-corner { background: transparent; }
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font-family: var(--font); }
 button { font-family: inherit; cursor: pointer; }
 button:disabled { cursor: default; }
@@ -428,7 +439,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .pv-bands b { margin-left: 4px; font-weight: 800; color: var(--text); }
 .pv-bands .key { display: inline-block; width: 10px; height: 10px; margin-right: 6px; border-radius: 2px; }
 /* the moments: Studio's rows, the minute in the rank's place; three rows show, more scroll inside */
-.pv-rows { max-height: 166px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--hairline) transparent; }
+.pv-rows { max-height: 166px; overflow-y: auto; }
 .pv-rows .row .when { width: 56px; flex: none; font-weight: 800; font-size: 20px; }
 .pv-rows .row .meta { text-transform: none; letter-spacing: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pv-rows .row .track { width: 110px; }
