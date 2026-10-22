@@ -25,6 +25,10 @@
   const SCOPES = ['all', '1', '2'];
   const FADED = [0.8, 0.55, 0.35];   // opacity of the 1st, 2nd and 3rd pass before the selected one
   const FADE_MS = 150;               // the one cross-fade for every plate and tab change
+  // the fast opening: a match opened at kick-off runs at 60x until a match minute before its first narrated
+  // moment, then drops to the speed it had; until that moment the plate says what is happening
+  const FAST_SPEED = 60, FAST_LEAD_S = 60;
+  const FAST_TEXT = 'Rating every pass. Watching for surprises.';
   const GOAL_MIN_MS = 4000;          // the goal plate holds at least this long in real time, at any speed
   const PULSE_MS = 830;              // one ring pulse; three of them round the score plate
   const SOFT_PULSE_EVERY = 4000;     // then one softer pulse this often while the goal plate holds
@@ -43,6 +47,8 @@
     now: 0,            // match t, seconds
     playing: true,
     speed: 12,
+    fastStart: null,   // while the fast opening runs: { until: match t where it ends, speed: the speed it returns to }
+    fastPlate: false,  // the match opened fast: the empty plate shows FAST_TEXT (a picked speed drops it)
     follow: true,      // live: the selected pass is the newest pass with t <= now
     selected: -1,      // index into marks when not following
     lang: 'en',
@@ -199,6 +205,13 @@
       setPlaying(false);
       openRecap(rs, null);
     }
+    // a match opened at kick-off (no ?t, ?replay or ?recap) opens fast until its first narrated moment is close
+    const fastUntil = idx.narr.length ? idx.narrT[0] - FAST_LEAD_S : null;
+    if (!params.has('t') && !state.replay && !state.recap && fastUntil !== null && state.now < fastUntil) {
+      state.fastStart = { until: fastUntil, speed: state.speed };
+      state.fastPlate = true;
+      setSpeed(FAST_SPEED);
+    }
     requestAnimationFrame(frame);
     fitLines();
   }
@@ -222,6 +235,7 @@
       const prevNow = state.now;
       state.now = Math.min(end, state.now + ((ts - state.lastFrame) / 1000) * state.speed);
       if (state.now >= end) setPlaying(false);
+      if (state.fastStart && state.now >= state.fastStart.until) endFastStart();
       // a goal flashes only when live playback crosses it: never on ?t, replay, step mode or language
       const after = lastAtOrBefore(idx.scoreT, state.now);
       if (after > before && idx.score[after].goal) goalFlash(after, ts);
@@ -294,6 +308,14 @@
     $('play-icon').innerHTML = on
       ? '<rect x="6" y="5" width="4" height="14" rx="1" fill="currentColor"></rect><rect x="14" y="5" width="4" height="14" rx="1" fill="currentColor"></rect>'
       : '<path d="M7 5 L19 12 L7 19 z" fill="currentColor"></path>';
+  }
+
+  // the fast opening ends at its time, or when a speed is picked (the pick stays)
+  function endFastStart() {
+    if (!state.fastStart) return;
+    const back = state.fastStart.speed;
+    state.fastStart = null;
+    setSpeed(back);
   }
 
   function setSpeed(s) {
@@ -471,7 +493,7 @@
   function wire() {
     $('play').addEventListener('click', () => setPlaying(!state.playing));
     for (const b of $('speed').querySelectorAll('button')) {
-      b.addEventListener('click', () => setSpeed(Number(b.dataset.speed)));
+      b.addEventListener('click', () => { state.fastStart = null; state.fastPlate = false; setSpeed(Number(b.dataset.speed)); });
     }
     for (const b of $('lang').querySelectorAll('button')) {
       b.addEventListener('click', () => setLang(b.dataset.lang));
@@ -547,7 +569,7 @@
     const key = [sel, live, tick, score, half, brk, state.scope, snaps.map((s) => (s ? s.t : '-')).join('|'),
       plate ? plate.bundle.moment.moment_id : '-', state.lang, state.follow, state.replay,
       narr.reached, narr.pos, goal, state.mode, state.player, state.playerNarr,
-      state.recap ? state.recap.scope + (state.recap.resumeAt !== null) + state.recap.view : '-', state.playerPicked,
+      state.recap ? state.recap.scope + (state.recap.resumeAt !== null) + state.recap.view : '-', state.playerPicked, state.fastPlate,
       state.producerRecap, state.mode === 'producer' ? XplainProducer.items(state.bundle, state.now, idx.recapT).length : '',
       state.analystPick, state.airedRev].join('/');
     if (key === state.renderedKey) return;   // every DOM write below runs in this one animation frame
@@ -1110,6 +1132,7 @@
   // Text is set in place on the existing nodes; nothing is written when the moment and language are
   // unchanged, so stepping through passes that keep the same moment never re-animates the plate.
   function renderPlate(entry, emptyText = 'No commentated moment yet.') {
+    if (!entry && state.fastPlate) emptyText = FAST_TEXT;   // the fast opening's plate, in every tab
     const aired = entry ? state.aired.get(entry.bundle.moment.moment_id) : null;
     const id = entry ? entry.bundle.moment.moment_id + '/' + state.lang + (aired ? '/retake' : '') : '-/' + emptyText;
     if (id === state.plateId) return;

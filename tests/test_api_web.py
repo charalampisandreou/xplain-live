@@ -647,3 +647,21 @@ def test_analyst_empty_states_end_with_a_full_stop(client):
     assert "const NO_PICK = 'No surprise yet. " in js and "as it did.';" in js
     assert "'No surprise yet.'" in app
     assert "const NOT_COMMENTATED = \"Not commentated: when it happened, it was not among the half's top 3 surprises of its kind.\";" in app
+
+
+def test_a_match_opened_at_kick_off_runs_fast_until_its_first_surprise_is_close(client):
+    app = client.get("/static/app.js").text.replace("\r\n", "\n")
+    assert "const FAST_SPEED = 60, FAST_LEAD_S = 60;" in app
+    assert "const FAST_TEXT = 'Rating every pass. Watching for surprises.';" in app
+    # only at kick-off: ?t, ?replay and ?recap open where they ask, at the normal speed
+    opening = app.split("const rs = RECAP_KEYS[params.get('recap')];")[1].split("requestAnimationFrame(frame);")[0]
+    assert "const fastUntil = idx.narr.length ? idx.narrT[0] - FAST_LEAD_S : null;" in opening
+    assert "if (!params.has('t') && !state.replay && !state.recap && fastUntil !== null && state.now < fastUntil) {" in opening
+    assert "state.fastStart = { until: fastUntil, speed: state.speed };" in opening and "setSpeed(FAST_SPEED);" in opening
+    # it ends a match minute before the first narrated moment, back to the speed it had; a picked speed ends it
+    assert "if (state.fastStart && state.now >= state.fastStart.until) endFastStart();" in app
+    assert "() => { state.fastStart = null; state.fastPlate = false; setSpeed(Number(b.dataset.speed)); }" in app
+    # until the first narrated moment the plate says what is happening, in every tab
+    assert "state.fastPlate = true;" in opening
+    assert "if (!entry && state.fastPlate) emptyText = FAST_TEXT;" in app
+    assert "state.playerPicked, state.fastPlate," in app   # the plate redraws when a picked speed drops it
