@@ -502,6 +502,8 @@
       });
     }
     document.addEventListener('keydown', (e) => {
+      // typing in a text box: its keys are the box's, never the app's shortcuts
+      if (e.target.closest && e.target.closest('input, textarea, select, [contenteditable]')) return;
       const control = e.target.closest && e.target.closest('button, [role="button"]');
       if (control && (e.key === ' ' || e.key === 'Enter')) return;
       // Player mode: space plays or pauses, [ ] page the plate; nothing steps or replays
