@@ -1,8 +1,8 @@
 """Producer mode's log (src/xplain/web/producer.js items()): no spoilers, against a Python twin.
 
 node runs producer.js on bundles and the log at each clock time is compared with the Python twin below: the
-commentated moments with t <= now and the recaps whose time the clock has reached, newest first. Nothing later
-ever appears. Producer computes no number: attempts and statuses are the bundle's.
+moments with t <= now (commentated or not) and the recaps whose time the clock has reached, newest first. Nothing
+later ever appears. Producer computes no number: attempts and statuses are the bundle's.
 """
 import json
 import shutil
@@ -25,7 +25,7 @@ HARNESS = r"""
 const fs = require('fs');
 const P = require(process.argv[1]);
 const d = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
-const out = d.cases.map((now) => P.items(d.bundle, now, d.recapT).map((i) => [i.type, i.id, i.onAir, i.attempts]));
+const out = d.cases.map((now) => P.items(d.bundle, now, d.recapT).map((i) => [i.type, i.id, i.onAir, i.attempts, i.commentated]));
 const fillers = {};
 for (const [scope, steps] of Object.entries((d.bundle.trace || {}).recaps || {})) fillers[scope] = P.fillerSummary(steps, 'DUS', 'MAR');
 process.stdout.write(JSON.stringify({ items: out, hasTrace: P.hasTrace(d.bundle), fillers, refilled: P.REFILLED,
@@ -48,24 +48,23 @@ def twin(b: dict, now: float, recap_t: dict) -> list:
     rows = []
     for m in b["moments"]:
         mo = m["bundle"]["moment"]
-        if m["bundle"]["qualifies_live"] and mo["t"] <= now:
+        if mo["t"] <= now:
             n = m.get("narration") or {}
             rows.append((mo["t"], 0, ["moment", mo["moment_id"], n.get("status") in ("accepted", "retried"),
-                                      n.get("attempts") or 0]))
+                                      n.get("attempts") or 0, m["bundle"]["qualifies_live"]]))
     for scope in ("half_time", "full_time"):
         if scope in recap_t and recap_t[scope] <= now:
             e = b["recaps"][scope]
-            rows.append((recap_t[scope], 1, ["recap", scope, e["status"] in ("accepted", "retried"), e["attempts"]]))
+            rows.append((recap_t[scope], 1, ["recap", scope, e["status"] in ("accepted", "retried"), e["attempts"], True]))
     return [r[2] for r in sorted(rows, key=lambda r: (r[0], r[1]), reverse=True)]
 
 
 def times(b: dict, recap_t: dict) -> list[float]:
-    """Kick-off, just before and at every commentated moment, the recaps' times, full time."""
+    """Kick-off, just before and at every moment, the recaps' times, full time."""
     ts = [b["clock"]["first_event_t"], b["clock"]["last_event_t"], *recap_t.values()]
     for m in b["moments"]:
-        if m["bundle"]["qualifies_live"]:
-            t = m["bundle"]["moment"]["t"]
-            ts += [t - 0.001, t]
+        t = m["bundle"]["moment"]["t"]
+        ts += [t - 0.001, t]
     return sorted(set(ts))
 
 
@@ -128,7 +127,7 @@ def test_a_retry_is_shown_as_stored_and_never_staged(tmp_path, built):
     live["narration"].update(status="retried", attempts=3)
     got = run_node(tmp_path, b, [b["clock"]["last_event_t"]])
     row = next(i for i in got["items"][0] if i[1] == live["bundle"]["moment"]["moment_id"])
-    assert row[2:] == [True, 3]
+    assert row[2:] == [True, 3, True]
     src = PRODUCER_JS.read_text(encoding="utf-8")
     assert "it.attempts > 1 ? 'Retried' : ''" in src
 
@@ -145,7 +144,8 @@ def test_a_bundle_without_a_trace_has_the_empty_state(tmp_path, built):
 def test_no_spoilers_on_the_demo_bundle(tmp_path):
     b = json.loads(BUNDLE_3001.read_text(encoding="utf-8"))
     got = check_no_spoilers(tmp_path, b)
-    assert len(got["items"][-1]) == 17 + 2
+    assert len(got["items"][-1]) == 22 + 2
+    assert sum(not i[4] for i in got["items"][-1]) == 5   # the five surprises that were not commentated
     # the recap's numbers in plain words, from the last fill (the text on air); the 2026-10-20 rebuild filled each
     # text once, with the two-decimal values, so there is no refill line
     assert got["fillers"]["full_time"] == {
@@ -160,7 +160,7 @@ const P = require(process.argv[1]);
 const d = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
 process.stdout.write(JSON.stringify(d.results.map((r) => ({
   steps: P.retakeSteps(d.stored, r).map((s) => [s.agent, Boolean(s.fromMatch), Boolean(s.final)]),
-  summary: P.retakeSummary(r), outcome: P.retakeOutcome(r, d.lang) }))));
+  summary: P.retakeSummary(r), outcome: P.retakeOutcome(r, d.lang), uncommentated: P.retakeOutcome(r, d.lang, false) }))));
 """
 
 
@@ -186,6 +186,9 @@ def test_a_live_retake_is_shown_as_the_server_sent_it(tmp_path):
                           ["verifier", False, False], ["verifier", False, True]]
     assert a["summary"] == "gpt-4.1-mini · 1.42 s · 1 attempt"
     assert a["outcome"] == {"text": "Λ", "note": "Not on air yet: put it on air, or keep the stored line.", "reasons": []}
+    # an uncommentated moment has no stored line to keep
+    assert a["uncommentated"] == {"text": "Λ", "note": "Not on air yet: put it on air, or keep it off air.", "reasons": []}
+    assert j["uncommentated"] == j["outcome"] and f["uncommentated"] == f["outcome"]
     assert r["summary"] == "gpt-4.1-mini · 1.42 s · 2 attempts · 1 network retry"
     assert j["outcome"]["text"] is None and j["outcome"]["note"] == "Not aired: the Verifier rejected all 3 attempts."
     assert j["outcome"]["reasons"] == ["attempt 1: no_numbers: x"]

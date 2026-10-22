@@ -18,6 +18,7 @@
   --home: #F25CE6;   /* Analyst mode's team lines: the home team in magenta (not the accent cyan, which marks the
                         page itself), the away team in amber; both clear of the green / red of the outcomes */
   --away: #FFB547;
+  --not-commentated: #C3A6F2;   /* Producer's log: a surprise that was not commentated (not the accent of On air) */
   --font: 'Archivo', 'Noto Sans', sans-serif;   /* Noto Sans covers Greek, which Archivo lacks */
 }
 
@@ -457,8 +458,9 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .pr-rows { flex: 1; min-height: 0; overflow-y: auto; }
 .pr-rows[hidden] { display: none; }
 .pr-row .pr-min { width: 52px; flex: none; font-weight: 800; font-size: 20px; font-variant-numeric: tabular-nums; }
-.pr-row .pr-status { width: 84px; flex: none; font-size: 15px; font-weight: 700; color: var(--muted); }
+.pr-row .pr-status { width: 136px; flex: none; font-size: 15px; font-weight: 700; color: var(--muted); }
 .pr-row .pr-status.on { color: var(--accent); }
+.pr-row .pr-status.nc { color: var(--not-commentated); }
 .pr-row .pr-tries { width: 96px; flex: none; text-align: right; font-size: 14px; font-weight: 500; color: var(--muted); }
 .pr-row .pr-retry { width: 64px; flex: none; text-align: right; font-size: 13px; font-weight: 700; letter-spacing: 0.04em;
   text-transform: uppercase; color: var(--accent); }

@@ -315,8 +315,8 @@ def test_producer_mode_is_wired_and_shares_studio_state(client):
     assert "title.dataset.producer" in app
     # recaps open (and pause) only in Studio: Producer keeps the match running; a recap crossed there is remembered
     assert "if (state.mode !== 'studio') {" in app and "state.unseenRecap = scope;" in app
-    # no spoilers: only commentated moments and reached recaps at or before the clock
-    assert "if (!m.bundle.qualifies_live || mo.t > now) continue;" in js
+    # no spoilers: only moments (commentated or not) and reached recaps at or before the clock
+    assert "if (mo.t > now) continue;" in js
     assert "if (!entry || at === undefined || at === null || at > now) continue;" in js
     # checks only from the step's record; collapsed by default; a failed step shows its reasons
     assert "if (!s.checks) {" in js and "const NOT_RECORDED = 'Checks not recorded in this bundle.';" in js
@@ -347,8 +347,13 @@ def test_a_retake_goes_on_air_only_by_the_producers_choice_and_only_in_this_tab(
     js = client.get("/static/producer.js").text.replace("\r\n", "\n")
     css = client.get("/static/app.css").text.replace("\r\n", "\n")
     # the choice: under a line that passed the Verifier only; "on", "keep" and "back" all close the retake
-    box = js.split("function retakeBox(id, result, lang) {")[1].split("\n  }\n")[0]
-    assert "if (o.text) wrap.appendChild(airButtons(id, [['on', 'Put on air', 'pr-retake'], ['keep', 'Keep stored line', 'pr-toggle']]));" in box
+    box = js.split("function retakeBox(id, result, lang, commentated) {")[1].split("\n  }\n")[0]
+    assert "wrap.appendChild(airButtons(id, [['on', 'Put on air', 'pr-retake']," in box and "if (o.text) {" in box
+    assert "['keep', commentated ? 'Keep stored line' : 'Keep it off air', 'pr-toggle']]));" in box
+    assert "[['back', item.commentated ? 'Back to stored line' : 'Take off air', 'pr-toggle']]" in js
+    # the log's status for a surprise that was not commentated: its own words and colour
+    assert "it.commentated ? 'No line' : 'Not commentated');" in js
+    assert ".pr-row .pr-status.nc { color: var(--not-commentated); }" in css
     assert "if (a.dataset.air === 'on' && retake.id === id && retake.result && retake.result.line) {" in js
     assert "else if (a.dataset.air === 'back') ctx.air(id, null);" in js
     # app.js keeps it in memory (nothing is sent or stored) and the plate reads it for that moment, in every tab
@@ -411,7 +416,8 @@ def test_empty_states_end_with_a_full_stop(client):
     assert "'No surprises yet.'" in js
     producer = client.get("/static/producer.js").text
     for text in ("This match was built without a record of the AI steps.", "Checks not recorded in this bundle.", "No line went on air.",
-                 "No commentated moment yet.", "Pick a line in the log.", "No steps stored for this line."):
+                 "No surprise yet.", "Pick a line in the log.", "No steps stored for this line.",
+                 "No steps stored: no line was written when it happened."):
         assert "'" + text + "'" in producer
 
 
