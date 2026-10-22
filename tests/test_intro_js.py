@@ -76,7 +76,7 @@ SLIDES = {
     "Analyst": ("How each team passed against the model, and how it rated each surprise.",
                 ["Passing swing", "How the model rated it", "Passing Stats", "By difficulty"]),
     "Player": ("One player's match: every pass, their numbers and their surprises.",
-               ["Their passes", "Change player", "Their numbers", "Moments"]),
+               ["Their passes", "Change player", "Their numbers", "Their moments"]),
     "Producer": ("The control room: every AI step behind each line, checked before air.",
                  ["The log", "Live retake", "The AI agents", "Checked before air"]),
 }
