@@ -52,13 +52,14 @@
   // --- the layer (browser only) -------------------------------------------------------------------
 
   const SVG = 'http://www.w3.org/2000/svg';
-  const SLIDE_MS = 220, GLIDE_MS = 450, DRAW_MS = 300, FADE_MS = 150, SHIFT_PX = 12;
+  const SLIDE_MS = 220, GLIDE_MS = 450, FADE_MS = 150, SHIFT_PX = 12;
   const EASE_OUT = 'cubic-bezier(0.2, 0, 0, 1)', EASE_IN_OUT = 'cubic-bezier(0.65, 0, 0.35, 1)';
   const $ = (id) => document.getElementById(id);
 
   let open = false;
   let screen = 'welcome';
-  let busy = false;     // a transition is running: clicks and keys wait for it
+  let busy = null;      // the running transition's promise; a new action finishes it first (running: its animations)
+  let running = [];
   let opts = null;
 
   function isOpen() { return open; }
@@ -88,6 +89,8 @@
     mark.style.right = 'auto';
   }
 
+  // each slide's arrows, built once at mount from the notes' data (pure math, no layout reads): they sit in the
+  // slide's own svg, so they move and fade with it
   function drawArrows(el) {
     const svg = el.querySelector('.in-arrows');
     if (!svg || svg.childNodes.length) return;
@@ -96,24 +99,11 @@
       const a = arrowPath({ side: n.dataset.side, top: Number(n.dataset.top), x, y, bend: n.hasAttribute('data-bend') });
       const path = document.createElementNS(SVG, 'path');
       path.setAttribute('d', a.d);
-      path.setAttribute('pathLength', '1');
       const dot = document.createElementNS(SVG, 'circle');
       dot.setAttribute('cx', a.ex);
       dot.setAttribute('cy', a.ey);
       dot.setAttribute('r', '5');
       svg.append(path, dot);
-    }
-  }
-
-  // the arrows draw in from their notes once the slide has faded in
-  function drawIn(el, delay) {
-    if (reduced()) return;
-    for (const p of el.querySelectorAll('.in-arrows path')) {
-      p.animate([{ strokeDashoffset: 1 }, { strokeDashoffset: 0 }],
-        { duration: DRAW_MS, delay, easing: EASE_OUT, fill: 'backwards' });
-    }
-    for (const c of el.querySelectorAll('.in-arrows circle')) {
-      c.animate([{ opacity: 0 }, { opacity: 1 }], { duration: FADE_MS, delay: delay + DRAW_MS - 60, fill: 'backwards' });
     }
   }
 
@@ -131,7 +121,6 @@
     for (const s of $('intro').querySelectorAll('.in-screen')) s.hidden = s.dataset.screen !== name;
     const el = screenEl(name);
     $('intro').setAttribute('aria-labelledby', el.querySelector('[data-label]').id);
-    if (/^[1-4]$/.test(name)) drawArrows(el);
     setNav(name);
     screen = name;
     return el;
@@ -143,7 +132,16 @@
     if (b) b.focus({ preventScroll: true, focusVisible: false });   // keyboard users still get the ring as they move
   }
 
-  const finished = (anims) => Promise.all(anims.map((a) => a.finished.catch(() => {})));
+  // the transition's animations: kept so a new action can finish them at once; will-change only while they run
+  function finished(anims) {
+    running = anims;
+    const els = anims.map((a) => a.effect && a.effect.target).filter(Boolean);
+    for (const e of els) e.style.willChange = 'opacity, transform';
+    return Promise.all(anims.map((a) => a.finished.catch(() => {}))).then(() => {
+      for (const e of els) e.style.willChange = '';
+      running = [];
+    });
+  }
 
   // one slide to another: a cross-fade with a 12px shift in the direction of travel
   async function slideTo(name, dir) {
@@ -161,7 +159,6 @@
           { duration: SLIDE_MS, easing: EASE_OUT })]);
     }
     from.hidden = true;
-    if (/^[1-4]$/.test(name)) drawIn(to, 0);
   }
 
   // a slide -> Start match: the small mark grows back into the big logo (the glide reversed) while the slide and
@@ -235,7 +232,6 @@
       mark.style.visibility = '';
       logo.getAnimations().forEach((x) => x.cancel());
       rest.forEach((c) => c.getAnimations().forEach((x) => x.cancel()));
-      drawIn(to, 0);
     }
     from.hidden = true;
   }
@@ -266,19 +262,23 @@
     if (opts && opts.onDone) opts.onDone();
   }
 
+  // An action while a transition runs finishes that transition at once (its end state, cleanly), then runs: quick
+  // presses step through the slides without stacking animations or dropping a press.
   async function go(action) {
-    if (!open || busy) return;
+    while (busy) {
+      running.forEach((a) => a.finish());
+      await busy;
+    }
+    if (!open) return;
     const to = nextScreen(screen, action);
     if (to === screen) return;
-    busy = true;
-    try {
+    busy = (async () => {
       if (to === 'app') await leave();
       else if (screen === 'welcome' && to === '1') await tour();
       else if (to === 'end') await toEnd();
       else await slideTo(to, ORDER.indexOf(to) > ORDER.indexOf(screen) ? 1 : -1);
-    } finally {
-      busy = false;
-    }
+    })();
+    try { await busy; } finally { busy = null; }
     if (open) focusPrimary();
   }
 
@@ -316,6 +316,9 @@
     document.addEventListener('keydown', onKey);
     if (document.fonts && document.fonts.ready) document.fonts.ready.then(placeMark);
     root.addEventListener('resize', placeMark);
+    // decode the four screenshots now, so no slide decodes a 1440 x 900 image in the middle of its fade
+    for (const img of intro.querySelectorAll('.in-shot img')) if (img.decode) img.decode().catch(() => {});
+    for (const el of intro.querySelectorAll('.in-slide')) drawArrows(el);
     show('welcome');
     focusPrimary();
     return true;

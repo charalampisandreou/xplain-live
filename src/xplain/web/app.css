@@ -658,7 +658,7 @@ html.intro-on .intro:not([hidden]) { display: block; }
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.12); }
 .in-shot img { display: block; width: 100%; height: 100%; border-radius: 8px; }
 .in-arrows { position: absolute; inset: 0; width: 1440px; height: 900px; pointer-events: none; overflow: visible; }
-.in-arrows path { fill: none; stroke: var(--accent); stroke-width: 2.5; stroke-linecap: round; stroke-dasharray: 1; }
+.in-arrows path { fill: none; stroke: var(--accent); stroke-width: 2.5; stroke-linecap: round; }
 .in-arrows circle { fill: var(--accent); stroke: var(--bg); stroke-width: 2; }
 .in-note { position: absolute; width: 230px; font-size: 17px; line-height: 1.35; color: var(--text-soft); }
 .in-note b { display: block; margin-bottom: 4px; font-size: 18px; color: var(--text); }
