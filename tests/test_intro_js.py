@@ -96,12 +96,12 @@ def test_welcome_and_start_match():
     assert 'role="dialog"' in html and 'aria-modal="true"' in html
 
 
-def test_the_synthetic_line_is_on_start_match_only():
+def test_the_synthetic_line_is_on_welcome_and_start_match():
     html = intro_html()
     welcome = html[html.index('data-screen="welcome"'):html.index('data-screen="1"')]
     end = html[html.index('data-screen="end"'):html.index('id="in-nav"')]
     line = '<p class="in-synth">A synthetic match, generated for this demo.</p>'
-    assert line in end and "synthetic" not in welcome and html.count("synthetic") == 1
+    assert line in welcome and line in end and html.count("synthetic") == 2
 
 
 def test_slides_texts_and_screenshots():
