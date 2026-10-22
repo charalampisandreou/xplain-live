@@ -310,7 +310,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .lower.goal .pvanum { color: var(--accent); letter-spacing: 0.02em; }
 .lower.goal .pvalabel { font-size: 13px; letter-spacing: 0.06em; color: var(--text-soft); }
 /* recap state: the name tab without its minute, "HT" / "FT" in the PVA column; at half time a cyan
-   line under the text drains over the pause (RECAP_PAUSE_MS), then play resumes */
+   line under the text drains over the pause (holdRecap: the card's reading time), then play resumes */
 .lower.recap-plate .tab-div, .lower.recap-plate .tab-when { display: none; }
 .lower.recap-plate .pvanum { color: var(--accent); letter-spacing: 0.02em; }
 .drain { position: absolute; left: 18px; right: 18px; top: 50px; height: 2px; background: var(--accent); opacity: 0;

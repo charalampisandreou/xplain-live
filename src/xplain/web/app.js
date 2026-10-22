@@ -18,7 +18,8 @@
   const RECAP_TAB = { half_time: 'Half-time recap', full_time: 'Full-time recap' };
   const RECAP_LINE = { half_time: 'Press Play to continue.', full_time: 'Full time.' };
   const RECAP_COL = { half_time: 'HT', full_time: 'FT' };
-  const RECAP_PAUSE_MS = 10000;      // the half-time recap holds this long in real time, then play resumes
+  // the reading-time rule: on-screen text stays at least 1.5 s + 0.25 s per word (the half-time recap's hold)
+  const READ_BASE_MS = 1500, READ_WORD_MS = 250;
   const RECAP_TEXT_PX = 19, RECAP_MIN_PX = 16;   // the recap text's size, and the least fitRecapText goes to
   const HALF_LABEL = { 1: '1st half', 2: '2nd half' };
   const SCOPES = ['all', '1', '2'];
@@ -242,7 +243,8 @@
     if (state.pendingRecap && (!state.goal || ts >= state.goal.minUntil)) {
       const scope = state.pendingRecap;
       state.pendingRecap = null;
-      openRecap(scope, scope === 'half_time' ? ts + RECAP_PAUSE_MS : null);
+      openRecap(scope, null);
+      if (scope === 'half_time') holdRecap(ts);   // FT stays paused
     }
     if (state.recap && state.recap.resumeAt !== null && ts >= state.recap.resumeAt) setPlaying(true);
     if (state.goal) {   // held until play restarts after the goal, and at least GOAL_MIN_MS
@@ -704,6 +706,26 @@
     state.playerPicked = false;
   }
 
+  // Half time: play resumes after the reading time of every word the card shows (result, goals, Passing,
+  // star row, text) in the narration language, counted once as it opens; the drain runs over it
+  function holdRecap(ts) {
+    renderRecap();
+    state.recap.holdMs = READ_BASE_MS + READ_WORD_MS * shownWords($('recap'));
+    state.recap.resumeAt = ts + state.recap.holdMs;
+  }
+  // The words under root, one per text node (the card's labels and values are separate spans with no space
+  // between them), a .dec part joined to its number, nothing inside a hidden element
+  function shownWords(root) {
+    let text = '';
+    const walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+      const off = n.parentElement.closest('[hidden]');
+      if (off && off !== root && root.contains(off)) continue;
+      text += (n.parentElement.classList.contains('dec') ? '' : ' ') + n.data;
+    }
+    return text.split(/\s+/).filter(Boolean).length;
+  }
+
   function closeRecap() {
     if (!state.recap) return;
     state.recap = null;
@@ -870,7 +892,7 @@
       lower.classList.add('ticking');
       // from what is left of the pause (the full pause unless a frame ran late)
       const left = Math.max(0, r.resumeAt - performance.now());
-      drain = drainLine.animate([{ transform: 'scaleX(' + left / RECAP_PAUSE_MS + ')' }, { transform: 'scaleX(0)' }],
+      drain = drainLine.animate([{ transform: 'scaleX(' + left / r.holdMs + ')' }, { transform: 'scaleX(0)' }],
         { duration: left, easing: 'linear', fill: 'forwards' });
     }
     fadePlate();

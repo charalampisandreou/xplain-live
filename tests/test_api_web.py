@@ -449,6 +449,7 @@ def test_recap_plate_state_and_drain(client):
     plate = app.split("function renderRecapPlate()")[1].split("function stopDrain()")[0]
     assert "drainLine.animate(" in plate and "duration: left" in plate
     assert "const left = Math.max(0, r.resumeAt - performance.now());" in plate   # goes on where it was
+    assert "scaleX(' + left / r.holdMs + ')'" in plate   # from full over the hold
     assert "!reducedMotion.matches" in plate
     assert "drain.cancel()" in app and "@keyframes drain" not in css
     # Passing rows carry the team code (the tables' token); the full names sit under the score
@@ -460,8 +461,15 @@ def test_recap_opens_only_on_live_playback_and_by_link(client):
     assert "const RECAP_KEYS = { ht: 'half_time', ft: 'full_time' };" in app
     assert "if (at === undefined || !(prevNow < at && state.now >= at) || !isLive()) continue;" in app
     assert "if (state.mode !== 'studio') {" in app   # Producer / Player: reached-unseen (unseenRecap), not opened
-    assert "openRecap(scope, scope === 'half_time' ? ts + RECAP_PAUSE_MS : null);" in app   # FT stays paused
-    assert "const RECAP_PAUSE_MS = 10000;" in app
+    assert "openRecap(scope, null);\n      if (scope === 'half_time') holdRecap(ts);   // FT stays paused" in app
+    # the half-time hold is the card's reading time: 1.5 s + 0.25 s per word it shows, counted as it opens
+    assert "const READ_BASE_MS = 1500, READ_WORD_MS = 250;" in app
+    hold = app.split("function holdRecap(ts) {")[1].split("function closeRecap()")[0]
+    assert hold.index("renderRecap();") < hold.index("READ_BASE_MS + READ_WORD_MS * shownWords($('recap'));")
+    assert "state.recap.resumeAt = ts + state.recap.holdMs;" in hold
+    # one word per text node (labels and values are spans with no space between), none from a hidden element
+    assert "document.createTreeWalker(root, NodeFilter.SHOW_TEXT)" in hold and "closest('[hidden]')" in hold
+    assert "RECAP_PAUSE_MS" not in app
     link = app.split("const rs = RECAP_KEYS[params.get('recap')];")[1].split("requestAnimationFrame(frame);")[0]
     assert "openRecap(rs, null);" in link   # ?recap: static, no auto-resume
     assert "if (state.recap) { closeRecap(); e.preventDefault(); }" in app   # Esc closes

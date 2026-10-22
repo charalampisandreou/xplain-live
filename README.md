@@ -286,8 +286,9 @@ Also in the Studio:
   them in Player) and the recap text in the narration language, whose numbers are the card's, to two
   decimals too ("19.45" in English, "19,45" in Spanish and Greek). The score bug reads HT or FT. A Recap /
   Map switch shows the card or the pitch; the plate's chevrons step from the recap into the narrated
-  moments and back, and stepping or replaying keeps the recap. Half time resumes by itself after 10
-  seconds unless you step away; full time stays. `?recap=ht` or `?recap=ft` opens one, paused. A recap
+  moments and back, and stepping or replaying keeps the recap. Half time resumes by itself once there
+  has been time to read the card (1.5 seconds plus a quarter second for each word it shows, about 23
+  seconds for the sample match) unless you step away; full time stays. `?recap=ht` or `?recap=ft` opens one, paused. A recap
   that live playback passes while you are in Producer or Player (neither pauses or shows it) is kept as
   reached and unseen: switching to Studio while live opens the full-time one, and the half-time one only if
   no second-half pass has been played yet.
