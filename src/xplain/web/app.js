@@ -65,6 +65,7 @@
     renderedKey: '',
     plateId: null,
     goal: null,        // while the plate shows a goal: { score index, restartT, minUntil, nextPulse }
+    scoreFlash: null,  // the last goal crossed: { score index, side 'home'|'away', until } (its digit in the accent)
     recap: null,       // while a recap is open: { scope, resumeAt, view } (resumeAt null: no auto-resume;
                        // view 'recap': the card in the pitch's slot, 'map': the pitch and the narration)
     playerPicked: false,   // a player was picked since the recap opened (else Player opens on its star)
@@ -298,6 +299,7 @@
     if (on && state.now >= state.bundle.clock.last_event_t) {
       state.now = state.bundle.clock.first_event_t;   // play again from kick-off
       state.goal = null;
+      state.scoreFlash = null;
       state.unseenRecap = null;
       exitReplay();
       state.follow = true;
@@ -404,6 +406,7 @@
     state.selected = Math.max(0, Math.min(live, from + dir));
     state.follow = false;
     state.goal = null;
+    state.scoreFlash = null;
   }
 
   // Narrated moments the live clock has reached, and where the selected pass sits among them:
@@ -475,6 +478,7 @@
     if (id === state.replay) return;
     state.replay = id;
     state.goal = null;
+    state.scoreFlash = null;
   }
 
   function exitReplay() {
@@ -566,10 +570,11 @@
     const plate = plateMoment(sel);
     const narr = narration(sel);
     const goal = state.goal && isLive() ? state.goal.score : -1;
+    const scored = scoredSide(score, goal);
     const brk = matchBreak();
     const key = [sel, live, tick, score, half, brk, state.scope, snaps.map((s) => (s ? s.t : '-')).join('|'),
       plate ? plate.bundle.moment.moment_id : '-', state.lang, state.follow, state.replay,
-      narr.reached, narr.pos, goal, state.mode, state.player, state.playerNarr,
+      narr.reached, narr.pos, goal, scored, state.mode, state.player, state.playerNarr,
       state.recap ? state.recap.scope + (state.recap.resumeAt !== null) + state.recap.view : '-', state.playerPicked, state.fastPlate,
       state.producerRecap, state.mode === 'producer' ? XplainProducer.items(state.bundle, state.now, idx.recapT).length : '',
       state.analystPick, state.airedRev].join('/');
@@ -577,7 +582,7 @@
     state.renderedKey = key;
     if (state.mode === 'player') {   // Player mode: the score bug stays live; player.js draws the rest
       renderRecap();
-      renderScoreBug(tick, score, live >= 0 ? half : null, brk);
+      renderScoreBug(tick, score, live >= 0 ? half : null, brk, scored);
       XplainPlayer.render({ bundle: state.bundle, now: state.now, scope: state.scope, playerId: state.player,
         notStarted: state.scope === '2' && half !== 2 });
       const pn = playerNarration();
@@ -589,7 +594,7 @@
     }
     if (state.mode === 'analyst') {   // Analyst mode: the score bug stays live; analyst.js draws the rest; the plate
       renderRecap();                  // shows the surprise the swing shows (its line when it was commentated)
-      renderScoreBug(tick, score, live >= 0 ? half : null, brk);
+      renderScoreBug(tick, score, live >= 0 ? half : null, brk, scored);
       const an = analystNarration();
       renderNarrNav(an);
       renderPlate(an.shown, 'No surprise yet.');
@@ -604,7 +609,7 @@
     $('prev').disabled = sel <= 0;
     $('next').disabled = isLive() || sel >= live;
     renderBadge(sel);
-    renderScoreBug(tick, score, live >= 0 ? half : null, brk);
+    renderScoreBug(tick, score, live >= 0 ? half : null, brk, scored);
     renderPossession(sel);
     renderPitch(sel);
     const notStarted = state.scope === '2' && half !== 2;
@@ -671,6 +676,8 @@
     const colour = team && (team.colour || team.color);
     if (colour) ring.style.setProperty('--ring', colour); else ring.style.removeProperty('--ring');
     pulse(3, 0.9);
+    // the digit the goal changed shows in the accent for the three pulses (and the live goal hold, scoredSide)
+    state.scoreFlash = { score: i, side: idx.score[i].goal.team_id === state.bundle.meta.home.team_id ? 'home' : 'away', until: ts + 3 * PULSE_MS };
     if (!isLive()) return;
     const next = lastAtOrBefore(idx.markT, idx.score[i].t) + 1;
     state.goal = {
@@ -679,6 +686,14 @@
       minUntil: ts + GOAL_MIN_MS,
       nextPulse: ts + SOFT_PULSE_EVERY,
     };
+  }
+
+  // 'home' or 'away' while the score bug shows the last goal crossed and its flash runs (the three pulses, or the
+  // live goal hold for it: goal is the held score index, -1 when none); else ''
+  function scoredSide(score, goal) {
+    const f = state.scoreFlash;
+    if (!f || score !== f.score) return '';
+    return performance.now() < f.until || goal === f.score ? f.side : '';
   }
 
   // ring pulses round the score plate (opacity and scale only); none with reduced motion
@@ -946,9 +961,12 @@
   }
 
   // brk: "HT" or "FT" (matchBreak) takes the minute's place; the half label and the live dot go meanwhile
-  function renderScoreBug(tick, score, half, brk) {
+  function renderScoreBug(tick, score, half, brk, scored) {
     const s = score >= 0 ? idx.score[score] : null;
-    $('score').textContent = s ? s.home + '–' + s.away : '–';
+    $('score-home').textContent = s ? s.home : '';
+    $('score-away').textContent = s ? s.away : '';
+    $('score-home').classList.toggle('scored', scored === 'home');
+    $('score-away').classList.toggle('scored', scored === 'away');
     $('minute').textContent = brk || (tick >= 0 ? idx.ticks[tick].minute_label + "'" : '');
     $('half').textContent = !brk && half ? HALF_LABEL[half] : '';
     $('scorebug').classList.toggle('break', Boolean(brk));

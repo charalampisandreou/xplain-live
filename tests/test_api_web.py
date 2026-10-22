@@ -520,6 +520,29 @@ def test_score_bug_reads_ht_and_ft(client):
     assert ".scorebug.break .live-dot { display: none; }" in css
 
 
+
+def test_the_digit_a_goal_changes_shows_in_the_accent_while_the_flash_runs(client):
+    html = client.get("/").text
+    app = client.get("/static/app.js").text
+    css = client.get("/static/app.css").text
+    assert ('<span class="score" id="score"><span id="score-home">&nbsp;</span><span id="score-sep">–</span>'
+            '<span id="score-away"></span></span>') in html
+    flash = app.split("function goalFlash(i, ts) {")[1].split("\n  }\n")[0]
+    # the scoring side and the three ring pulses, set before the live-only goal plate
+    side = "side: idx.score[i].goal.team_id === state.bundle.meta.home.team_id ? 'home' : 'away'"
+    assert side in flash and "until: ts + 3 * PULSE_MS" in flash
+    assert flash.index("state.scoreFlash = {") < flash.index("if (!isLive()) return;")
+    scored = app.split("function scoredSide(score, goal) {")[1].split("\n  }\n")[0]
+    assert "if (!f || score !== f.score) return '';" in scored
+    assert "return performance.now() < f.until || goal === f.score ? f.side : '';" in scored
+    bug = app.split("function renderScoreBug(")[1].split("\n  }\n")[0]
+    assert "$('score-home').classList.toggle('scored', scored === 'home');" in bug
+    assert "$('score-away').classList.toggle('scored', scored === 'away');" in bug
+    assert "goal, scored, state.mode" in app   # in the render key: the colour goes back when the flash ends
+    for fn in ("function step(dir) {", "function enterReplay(id) {"):
+        assert "state.scoreFlash = null;" in app.split(fn)[1].split("\n  }\n")[0]
+    assert ".scorebug .score .scored { color: var(--accent); }" in css
+
 def test_recap_stays_open_while_stepping_and_the_plate_keeps_its_arrows(client):
     app = client.get("/static/app.js").text
     for fn in ("function step(dir) {", "function enterReplay(id) {"):
