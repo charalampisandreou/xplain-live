@@ -255,6 +255,12 @@ bottom-right Back to live, L or Esc return to the live pass. `?replay=MOMENT_ID`
 `?replay=moment:m42-00817`) opens in replay; if the moment is later than the start time, the
 clock starts at it.
 
+A plain visit opens on a welcome screen with a four-slide tour (Studio, Analyst, Player, Producer: a
+screenshot each with notes) and a Start match screen, then Studio plays from kick-off; nothing is
+remembered, so every plain load shows it. `?tour=0` (recordings) and any deep link (`?t`, `?mode`,
+`?replay`, `?recap`, `?moment`, `?player`) skip it. Its texts live in `index.html`, its screens in
+`intro.js` and its screenshots in `src/xplain/web/intro/`.
+
 The page only formats: every number, minute and ranking comes from the bundle (Player and Analyst modes'
 numbers so far are the one exception, see below). The title reads "Live pass map" ("Half Time" or "Full Time"
 while a recap is shown, "Passing Analysis" in Analyst, "Control room" in Producer). The tables and the
