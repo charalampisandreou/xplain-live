@@ -71,10 +71,13 @@ def test_the_container_gets_the_live_settings_and_the_identity_client_id():
         "XPLAIN_LIVE": "1",
         "XPLAIN_FOUNDRY_ENDPOINT": "[parameters('foundryEndpoint')]",
         "XPLAIN_LIVE_DEPLOYMENT": "[parameters('liveDeployment')]",
+        "XPLAIN_RETAKE_DEPLOYMENT": "[parameters('retakeDeployment')]",
     }
     params = template()["parameters"]
     assert params["foundryEndpoint"]["defaultValue"].endswith(".openai.azure.com/openai/v1/")
     assert params["liveDeployment"]["defaultValue"] == "gpt-4.1-mini"
+    assert params["retakeDeployment"]["defaultValue"] == "gpt-6.1-sol"
+    assert params["appName"]["defaultValue"] == "xplain-live"   # the URL is xplain-live.<environment domain>
     assert not any("secretRef" in e for e in container["env"])
     text = TEMPLATE.read_text(encoding="utf-8")
     assert not re.search(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", text)   # no GUIDs
