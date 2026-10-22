@@ -298,7 +298,7 @@ def test_producer_mode_is_on_the_page(client):
     assert "Coming soon" not in modes and "disabled" not in modes   # every mode is built
     log = html.split('<section class="producer-log" id="producer-log"')[1].split("</section>")[0]
     assert '<h2>Log</h2><div class="tsub">newest first</div>' in log and 'id="pr-rows"' in log
-    assert '<div class="empty" id="pr-empty" hidden>This match was built without a record of the AI steps.</div>' in log
+    assert '<div class="empty" id="pr-empty" hidden>This match was built without a record of the AI agents.</div>' in log
     assert 'id="pr-detail"' in html
 
 
@@ -366,7 +366,7 @@ def test_a_retake_goes_on_air_only_by_the_producers_choice_and_only_in_this_tab(
     # Show checks: a check a failed step names is marked with a cross
     assert "node('li', failed.has(name) ? 'fail' : ''," in js
     assert ".pr-checklist li.fail::before { content: '✕ '; color: var(--failed-text); }" in css
-    # the Log and Steps headings: one height, so their titles and rules line up
+    # the Log and Agents headings: one height, so their titles and rules line up
     assert ".producer-log > .thead, .producer-detail > .thead { height: 40px; box-sizing: border-box; flex: none; }" in css
 
 
@@ -418,9 +418,9 @@ def test_empty_states_end_with_a_full_stop(client):
     assert "emptyText = 'No commentated moment yet.'" in app
     assert "'No surprises yet.'" in js
     producer = client.get("/static/producer.js").text
-    for text in ("This match was built without a record of the AI steps.", "Checks not recorded in this bundle.", "No line went on air.",
-                 "No surprise yet.", "Pick a line in the log.", "No steps stored for this line.",
-                 "No steps stored: no line was written when it happened."):
+    for text in ("This match was built without a record of the AI agents.", "Checks not recorded in this bundle.", "No line went on air.",
+                 "No surprise yet.", "Pick a line in the log.", "No agent records stored for this line.",
+                 "No agent records: no line was written when it happened."):
         assert "'" + text + "'" in producer
 
 

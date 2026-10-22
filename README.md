@@ -344,7 +344,7 @@ there.
 
 - **Log** (newest first): every commentated moment and recap the clock has reached, nothing later: minute,
   player, kind, "On air" or "No line", attempts, and "Retried" when a line took more than one.
-- **Steps** of the selected line, in order, from the bundle's trace: Analyst and Explainer (code), Narrator
+- **Agents** of the selected line, in order, from the bundle's trace: Analyst and Explainer (code), Narrator
   or Recap Editor (LLM: the model and the latency as stored), the Verifier and the final check (code: "18
   checks passed" with a button that lists them in plain words), and for a recap one "Numbers filled by code"
   step from the last fill, in plain words ("DUS vs expected 19.45 · MAR vs expected 19.11 · Star Nevek
@@ -357,9 +357,9 @@ there.
   `trace.check_labels`, from the registries `verifier.CHECKS` and `recap_verifier.RECAP_CHECKS` that the
   verifiers loop over): a check listed is a check that ran. A bundle built before checks were recorded says
   "Checks not recorded in this bundle." on those steps (the demo bundle until its next rebuild); a bundle
-  without a trace shows "This match was built without a record of the AI steps." Every value shown is a bundle field; the only
+  without a trace shows "This match was built without a record of the AI agents." Every value shown is a bundle field; the only
   count is the length of a step's stored check list ("18 checks passed").
-- **Live retake** (a moment line, on a server with `XPLAIN_LIVE=1`): the button at the right of the Steps heading
+- **Live retake** (a moment line, on a server with `XPLAIN_LIVE=1`): the button at the right of the Agents heading
   narrates that moment again, live, on Foundry and checks it with the Verifier on the server
   (`POST /api/live/retake`, see "Deploy to Azure"). The steps then show the stored Analyst and Explainer steps
   ("from the match": not run again) and the server's Narrator, Verifier and final check steps; under them the new

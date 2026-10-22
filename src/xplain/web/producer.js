@@ -34,7 +34,7 @@
   const GATE_WORDS = { ranking: 'top 3 of its kind so far this half', threshold: 'rare enough to always get a line' };
   const ON_AIR = ['accepted', 'retried'];
   const LANGS = ['en', 'es', 'el'];
-  const EMPTY = 'This match was built without a record of the AI steps.';
+  const EMPTY = 'This match was built without a record of the AI agents.';
   const NOT_RECORDED = 'Checks not recorded in this bundle.';
   const REFILL_NOTE = "filled again by refresh_recap_cards with the card's two-decimal values";
   const REFILLED = "First filled with whole numbers; refilled with the card's two-decimal values.";
@@ -46,7 +46,7 @@
   const AIRED = 'Live retake, put on air in this browser tab; the match file keeps the stored line.';
   const AIRED_NC = 'Live retake, put on air in this browser tab; the match file has no line for this moment.';
   const NOT_COMMENTATED = "Not commentated: when it happened, it was not among the half's top 3 surprises of its kind.";
-  const NO_STEPS_NC = 'No steps stored: no line was written when it happened.';
+  const NO_STEPS_NC = 'No agent records: no line was written when it happened.';
   const FROM_MATCH = 'from the match';
   const CHECKED_AGAIN = 'checked again before air';
 
@@ -350,13 +350,13 @@
     const steps = foldFinal(shown ? retakeSteps(stored, shown) : stored);
     const labels = (bundle.trace && bundle.trace.check_labels) || {};
     const head = node('div', 'thead');
-    head.append(node('h2', '', mine && mine.state === 'done' ? 'Live retake' : 'Steps'),
+    head.append(node('h2', '', mine && mine.state === 'done' ? 'Live retake' : 'Agents'),
       node('div', 'tsub', item.type === 'recap' ? item.who : item.minute + "' · " + item.who));
     if (item.type === 'moment') head.appendChild(retakeButtons(item.id, mine, item.commentated));
     box.appendChild(head);
     const list = node('div', 'pr-steps');
     if (steps.length === 0) {
-      list.appendChild(node('div', 'empty', item.commentated ? 'No steps stored for this line.' : NO_STEPS_NC));
+      list.appendChild(node('div', 'empty', item.commentated ? 'No agent records stored for this line.' : NO_STEPS_NC));
     }
     const lastFiller = steps.map((s) => s.agent).lastIndexOf('recap_filler');
     steps.forEach((s, i) => {

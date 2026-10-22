@@ -137,7 +137,7 @@ def test_a_bundle_without_a_trace_has_the_empty_state(tmp_path, built):
     b.pop("trace")
     got = run_node(tmp_path, b, [0.0])
     assert got["hasTrace"] is False
-    assert got["empty"] == "This match was built without a record of the AI steps." and got["notRecorded"].endswith(".")
+    assert got["empty"] == "This match was built without a record of the AI agents." and got["notRecorded"].endswith(".")
 
 
 @pytest.mark.skipif(not BUNDLE_3001.exists(), reason="data/ is git-ignored: the demo bundle is local only")
