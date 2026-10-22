@@ -84,11 +84,21 @@ def test_the_slot_is_the_index_among_commentated_moments_by_seq():
     assert moment.moment.moment_id == MOMENT_ID and slot == 2   # two commentated before it; the other one skipped
 
 
-def test_an_unknown_or_not_commentated_moment_is_refused():
-    for mid in ("moment:nope", "moment:m1-00001x"):
-        with pytest.raises(RetakeRefused) as caught:
-            find_moment(bundle_dict(), mid)
-        assert caught.value.status == 404
+def test_an_uncommentated_moment_takes_the_slot_of_the_commentated_moments_before_it():
+    moment, slot = find_moment(bundle_dict(n_before=2), "moment:m1-00001x")
+    assert moment.moment.moment_id == "moment:m1-00001x" and not moment.qualifies_live
+    assert slot == 2   # the commentated moments at seq 0 and 1 sort before it; make_bundle()'s comes after
+
+
+def test_an_unknown_moment_is_refused():
+    with pytest.raises(RetakeRefused) as caught:
+        find_moment(bundle_dict(), "moment:nope")
+    assert caught.value.status == 404
+
+
+def test_an_uncommentated_moment_is_retaken(served):
+    out = run(runner(make_out()), served, "moment:m1-00001x")
+    assert out["ok"] is True and out["moment_id"] == "moment:m1-00001x" and out["line"]["en"]
 
 
 # --- outcomes -----------------------------------------------------------------------------------

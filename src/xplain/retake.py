@@ -1,11 +1,13 @@
 """
-Live retake: one commentated moment of a served match bundle narrated again, live, by the Foundry Narrator and
-checked by the Verifier, from the running app (the Producer's "Live retake" button).
+Live retake: one moment of a served match bundle narrated again (or, for a moment that was not commentated, for the
+first time), live, by the Foundry Narrator and checked by the Verifier, from the running app (the Producer's "Live
+retake" button).
 
 POST /api/live/retake (api.py), body {"match": name, "moment_id": id}; 404 unless XPLAIN_LIVE=1, like
 /api/live/health. The moment's facts come from the bundle as stored (MomentBundle: the moment and its SHAP drivers),
 so the Analyst and the Explainer are not run again and no number is computed again. Its slot is its index among the
-bundle's commentated moments in seq order, as in the build; the nth retake of a moment (counted per moment since the
+bundle's commentated moments in seq order, as in the build (an uncommentated moment: the count of commentated
+moments before it); the nth retake of a moment (counted per moment since the
 server started) narrates it at slot + n, so each retake gets the next variation nudge (frame, outcome wording,
 opening, Greek link word) and does not write the line on air again. Then, as in the
 workflow: narrator.Narrator (up to narrator.MAX_ATTEMPTS calls, each answer checked by the Verifier, a rejected one
@@ -69,13 +71,15 @@ class RetakeRefused(Exception):
 
 
 def find_moment(bundle: dict, moment_id: str) -> tuple[MomentBundle, int]:
-    """The commentated moment's MomentBundle and its slot (index among the commentated moments by seq)."""
-    live_moments = sorted((m["bundle"] for m in bundle.get("moments", []) if m["bundle"].get("qualifies_live")),
-                          key=lambda b: b["moment"]["seq"])
-    for slot, b in enumerate(live_moments):
+    """The moment's MomentBundle and its slot: a commentated moment's index among the commentated moments by seq; an
+    uncommentated moment's slot is the count of commentated moments before it by seq (its place had it been one)."""
+    slot = 0
+    for b in sorted((m["bundle"] for m in bundle.get("moments", [])), key=lambda b: b["moment"]["seq"]):
         if b["moment"]["moment_id"] == moment_id:
             return MomentBundle.model_validate(b), slot
-    raise RetakeRefused(404, "moment", f"No commentated moment {moment_id!r} in this match.")
+        if b.get("qualifies_live"):
+            slot += 1
+    raise RetakeRefused(404, "moment", f"No moment {moment_id!r} in this match.")
 
 
 def deployment() -> str:
