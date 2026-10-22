@@ -427,7 +427,7 @@ def test_empty_states_end_with_a_full_stop(client):
 def test_title_and_recap_card_are_on_the_page(client):
     html = client.get("/").text
     assert ('data-live="Live pass map" data-ht="Half Time" data-ft="Full Time" data-producer="Control room" '
-            'data-analyst="Match analysis">Live pass map</h1>') in html
+            'data-analyst="Passing Analysis">Live pass map</h1>') in html
     assert "Pass outliers" not in html
     recap = html.split('<section class="recap" id="recap"')[1].split("</section>")[0]
     for node in ('id="rc-score"', 'id="rc-goal-rows"', 'id="rc-team-rows"', 'id="rc-star"', 'id="rc-text"'):

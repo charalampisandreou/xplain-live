@@ -257,7 +257,7 @@ clock starts at it.
 
 The page only formats: every number, minute and ranking comes from the bundle (Player and Analyst modes'
 numbers so far are the one exception, see below). The title reads "Live pass map" ("Half Time" or "Full Time"
-while a recap is shown, "Match analysis" in Analyst, "Control room" in Producer). The tables and the
+while a recap is shown, "Passing Analysis" in Analyst, "Control room" in Producer). The tables and the
 plate show PVA (pass value added, the bundle's `delta` = outcome - xP: 1 - xP when completed, -xP
 when not) in points of completion chance, e.g. "+85%" or "−94%" (sign, round(100 * |PVA|)); the
 bar length is |PVA| on a 0..1 scale. xP is shown small in the plate as a percent with the same
