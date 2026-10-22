@@ -568,8 +568,9 @@
       renderNarrNav(an);
       renderPlate(an.shown, 'No surprise yet.');
       const shown = an.shown;
-      // a surprise that was not commentated has no line: the plate says so instead of an empty line
-      if (shown && !shown.line) { $('lower-line').textContent = NOT_COMMENTATED; $('lower-line').removeAttribute('lang'); }
+      // a surprise that was not commentated has no line: the plate says so instead of an empty line (unless
+      // Producer put a Live retake of it on air: the plate shows that)
+      if (shown && !shown.line && !state.aired.has(shown.bundle.moment.moment_id)) { $('lower-line').textContent = NOT_COMMENTATED; $('lower-line').removeAttribute('lang'); }
       return;
     }
 
@@ -942,9 +943,11 @@
     return null;
   }
 
-  // the latest commentated moment at or before the selected pass, or null
+  // the latest commentated moment at or before the selected pass, or null; a replayed uncommentated moment whose
+  // Live retake Producer put on air shows itself
   function plateMoment(sel) {
     if (sel < 0) return null;
+    if (state.replay && state.aired.has(state.replay)) return idx.moments.get(state.replay);
     const seq = idx.marks[sel].seq;
     let found = null;
     for (const m of idx.live) {

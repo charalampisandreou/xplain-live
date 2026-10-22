@@ -360,6 +360,9 @@ def test_a_retake_goes_on_air_only_by_the_producers_choice_and_only_in_this_tab(
     assert "aired: new Map()," in app and "fetch(" not in app.split("air: (id, aired) => {")[1].split("},")[0]
     assert "line.textContent = aired ? aired.line[state.lang] : (entry.line && entry.line['line_' + state.lang]) || '';" in app
     assert "state.analystPick, state.airedRev].join('/');" in app   # an air or an undo redraws
+    # an uncommentated moment's aired retake is on the plate: while it is replayed, and in Analyst mode
+    assert "if (state.replay && state.aired.has(state.replay)) return idx.moments.get(state.replay);" in app
+    assert "if (shown && !shown.line && !state.aired.has(shown.bundle.moment.moment_id)) {" in app
     # Show checks: a check a failed step names is marked with a cross
     assert "node('li', failed.has(name) ? 'fail' : ''," in js
     assert ".pr-checklist li.fail::before { content: '✕ '; color: var(--failed-text); }" in css
