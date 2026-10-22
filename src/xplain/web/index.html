@@ -8,6 +8,8 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&family=Noto+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/app.css">
+<!-- the welcome screen and tour (intro.js): decides before the first paint whether this visit shows it -->
+<script src="/static/intro.js"></script>
 </head>
 <body>
 <div id="viewport">
@@ -267,6 +269,69 @@
   </section>
 
   <div class="status" id="status" role="status" hidden></div>
+
+  <!-- the welcome screen, the four-slide tour and Start match (intro.js), over the whole stage on a plain visit.
+       Every text of the tour lives here. A note's data-at is the point it marks in its 1440 x 900 screenshot. -->
+  <section class="intro" id="intro" role="dialog" aria-modal="true" aria-labelledby="in-title-welcome">
+    <div class="in-bg" id="in-bg" aria-hidden="true"></div>
+    <div class="in-mark" id="in-mark" aria-hidden="true" hidden>xPlain <span>Live</span></div>
+    <div class="in-screen in-big-screen" data-screen="welcome">
+      <h1 class="in-big" id="in-title-welcome" data-label>xPlain <span>Live</span></h1>
+      <p class="in-tag">Every pass rated. Every surprise explained.</p>
+      <div class="in-btns"><button type="button" class="in-b go" data-go="next">Quick tour (1 min)</button><button type="button" class="in-b" data-go="skip">Skip to match</button></div>
+    </div>
+    <div class="in-screen in-slide" data-screen="1" hidden>
+      <div class="in-kicker">1 of 4</div>
+      <div class="in-mode"><h2 id="in-title-1" data-label>Studio</h2><p>The match as it happens: every pass rated, the biggest surprises narrated.</p></div>
+      <div class="in-shot"><img src="/static/intro/studio.png" width="840" height="525" alt="Studio late in the match"></div>
+      <svg class="in-arrows" viewBox="0 0 1440 900" aria-hidden="true"></svg>
+      <div class="in-note" data-side="L" data-top="340" data-at="600,475" style="left:40px;top:340px"><b>Every pass</b>Green if completed, red if not. Each one gets an <span class="xp">xP</span>: the chance it had to be completed.</div>
+      <div class="in-note" data-side="L" data-top="620" data-at="40,790" style="left:40px;top:620px"><b>The commentary</b>Each surprise narrated in English, Spanish or Greek.</div>
+      <div class="in-note" data-side="R" data-top="286" data-at="1400,228" style="left:1190px;top:286px"><b>Surprises</b>Easy passes missed and hard ones completed.</div>
+      <div class="in-note" data-side="R" data-top="420" data-at="1350,482" style="left:1190px;top:420px"><b>PVA</b>How far the result beat its <span class="xp">xP</span>. Longer bar, bigger surprise.</div>
+    </div>
+    <div class="in-screen in-slide" data-screen="2" hidden>
+      <div class="in-kicker">2 of 4</div>
+      <div class="in-mode"><h2 id="in-title-2" data-label>Analyst</h2><p>How each team passed against the model, and how it rated each surprise.</p></div>
+      <div class="in-shot"><img src="/static/intro/analyst.png" width="840" height="525" alt="Analyst late in the match"></div>
+      <svg class="in-arrows" viewBox="0 0 1440 900" aria-hidden="true"></svg>
+      <div class="in-note" data-side="L" data-top="296" data-at="90,360" style="left:40px;top:296px"><b>Passing swing</b>Each team's passing against expected, pass by pass. Dots are surprises.</div>
+      <div class="in-note" data-side="L" data-top="630" data-at="45,590" style="left:40px;top:630px"><b>How the model rated it</b>The reasons behind each surprising pass's <span class="xp">xP</span>.</div>
+      <div class="in-note" data-side="R" data-top="286" data-at="1400,228" style="left:1190px;top:286px"><b>Passing Stats</b>Each team's completed passes against what the model expected.</div>
+      <div class="in-note" data-side="R" data-top="500" data-at="1400,387" style="left:1190px;top:500px"><b>By difficulty</b>Where each team beat or fell short of the model, easy passes to hard.</div>
+    </div>
+    <div class="in-screen in-slide" data-screen="3" hidden>
+      <div class="in-kicker">3 of 4</div>
+      <div class="in-mode"><h2 id="in-title-3" data-label>Player</h2><p>One player's match: every pass, their numbers and their surprises.</p></div>
+      <div class="in-shot"><img src="/static/intro/player.png" width="840" height="525" alt="Player late in the match"></div>
+      <svg class="in-arrows" viewBox="0 0 1440 900" aria-hidden="true"></svg>
+      <div class="in-note" data-side="L" data-top="520" data-at="200,478" style="left:40px;top:520px"><b>Their passes</b>Every pass the player has made so far in the match.</div>
+      <div class="in-note" data-side="L" data-top="246" data-at="860,162" data-bend style="left:40px;top:246px"><b>Change player</b>Pick any of the 22.</div>
+      <div class="in-note" data-side="R" data-top="300" data-at="1400,277" style="left:1190px;top:300px"><b>Their numbers</b>Completed against expected, and how hard their passes were.</div>
+      <div class="in-note" data-side="R" data-top="540" data-at="1400,442" style="left:1190px;top:540px"><b>Moments</b>Their surprises so far.</div>
+    </div>
+    <div class="in-screen in-slide" data-screen="4" hidden>
+      <div class="in-kicker">4 of 4</div>
+      <div class="in-mode"><h2 id="in-title-4" data-label>Producer</h2><p>The control room: every AI step behind each line, checked before air.</p></div>
+      <div class="in-shot"><img src="/static/intro/producer.png" width="840" height="525" alt="Producer late in the match"></div>
+      <svg class="in-arrows" viewBox="0 0 1440 900" aria-hidden="true"></svg>
+      <div class="in-note" data-side="L" data-top="296" data-at="45,256" style="left:40px;top:296px"><b>The log</b>Every line that went on air.</div>
+      <div class="in-note" data-side="R" data-top="220" data-at="1400,212" style="left:1190px;top:220px"><b>Live retake</b>Have the AI narrate a moment again, on the spot.</div>
+      <div class="in-note" data-side="R" data-top="330" data-at="1412,292" style="left:1190px;top:330px"><b>The AI agents</b>4 agents working together to write a commentary line for each surprising pass.</div>
+      <div class="in-note" data-side="R" data-top="540" data-at="1412,384" style="left:1190px;top:540px"><b>Checked before air</b>18 checks on every line before it is shown.</div>
+    </div>
+    <div class="in-screen in-big-screen" data-screen="end" hidden>
+      <h1 class="in-big" id="in-title-end" data-label>xPlain <span>Live</span></h1>
+      <p class="in-tag">Every pass rated. Every surprise explained.</p>
+      <div class="in-btns"><button type="button" class="in-b go" data-go="start">Start match</button></div>
+    </div>
+    <div class="in-nav" id="in-nav" hidden>
+      <button type="button" class="in-b" id="in-back" data-go="back">Back</button>
+      <div class="in-dots" id="in-dots" aria-hidden="true"><span data-dot="1"></span><span data-dot="2"></span><span data-dot="3"></span><span data-dot="4"></span></div>
+      <button type="button" class="in-b go" data-go="next">Next</button>
+    </div>
+    <button type="button" class="in-skip" id="in-skip" data-go="skip" hidden>Skip</button>
+  </section>
 </main>
 </div>
 <script src="/static/player.js"></script>

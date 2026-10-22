@@ -79,6 +79,7 @@
                        // the plate shows it for that moment in every tab, in this browser tab only (nothing is stored)
     airedRev: 0,
     fades: new Map(),  // element -> { anim, at }: its running cross-fade and when it started
+    intro: false,      // the welcome screen and tour (intro.js) are open: playback holds at kick-off until they close
   };
   let idx = null;      // lookups built once per bundle
   let drain = null;    // the half-time drain animation on the plate (stopDrain cancels it)
@@ -543,6 +544,7 @@
       });
     }
     document.addEventListener('keydown', (e) => {
+      if (state.intro) return;   // the tour's keys are its own (intro.js)
       // typing in a text box: its keys are the box's, never the app's shortcuts
       if (e.target.closest && e.target.closest('input, textarea, select, [contenteditable]')) return;
       const control = e.target.closest && e.target.closest('button, [role="button"]');
@@ -569,7 +571,8 @@
       else if (e.key === ' ') { setPlaying(!state.playing); e.preventDefault(); }
       else if (e.key === 'l' || e.key === 'L') backToLive();
     });
-    setPlaying(state.now < state.bundle.clock.last_event_t);   // ?t at full time opens paused, not restarted
+    // ?t at full time opens paused, not restarted; a plain visit holds at kick-off while the tour is open
+    setPlaying(!state.intro && state.now < state.bundle.clock.last_event_t);
     setSpeed(state.speed);
   }
 
@@ -1265,5 +1268,10 @@
   window.addEventListener('resize', fit);
   fit();
 
+  // a plain visit opens on the welcome screen; closing it starts the match from kick-off (once loaded)
+  state.intro = XplainIntro.mount({ onDone: () => {
+    state.intro = false;
+    if (state.bundle) setPlaying(true);
+  } });
   load();
 })();
