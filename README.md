@@ -10,7 +10,7 @@ expected with what happened, explains the gap, and emits timed, machine-readable
 overlay cards that a graphics system can render alongside the match.
 
 > Status: work in progress. **Live demo:** the Studio page playing a synthetic match (seed 3001) at
-> https://xplain-studio.whiteocean-b5bbd7fb.germanywestcentral.azurecontainerapps.io/
+> https://xplain-live.whiteocean-b5bbd7fb.germanywestcentral.azurecontainerapps.io/
 >
 > **Hidden-skill check (synthetic data):** on the 100 hold-out matches (seeds 2001-2100, xpass_v2), a
 > player's PVA per pass correlates with the generator's hidden pass skill at Pearson 0.70 (raw completion
@@ -390,10 +390,10 @@ folder.
 ## Deploy to Azure
 
 The Studio runs on Azure Container Apps in `germanywestcentral`:
-https://xplain-studio.whiteocean-b5bbd7fb.germanywestcentral.azurecontainerapps.io/
+https://xplain-live.whiteocean-b5bbd7fb.germanywestcentral.azurecontainerapps.io/
 
 `infra/main.json` (ARM, Microsoft.App API 2026-07-01) describes the environment `cae-xplain-std` and the
-app `xplain-studio` (0.5 vCPU / 1 GiB, 0 to 1 replicas, so it scales to zero). The app pulls
+app `xplain-live` (0.5 vCPU / 1 GiB, 0 to 1 replicas, so it scales to zero). The app pulls
 `xplainlive.azurecr.io/xplain-live:<tag>` with the user-assigned identity `id-xplain-live` (AcrPull role),
 so it holds no registry password, token or other secret. Logs go to the Log Analytics workspace
 `workspace-rgplhackdesV2i` (daily ingestion cap 0.1 GB). The template reads the workspace key with
