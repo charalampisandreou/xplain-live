@@ -301,6 +301,11 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .seg.lang button.on { background: var(--accent); color: var(--plate-text); font-weight: 800; }
 .xp { text-transform: none; }   /* "xP" keeps its casing inside upper-case labels */
 .lower.waiting .line { color: var(--muted); font-weight: 400; }
+/* the opening's offer of 60x: easy to see, in the accent; the 60x button it points to gets the accent ring */
+.lower.waiting.hint .line { color: var(--text); font-size: 20px; font-weight: 700; }
+.lower.waiting.hint .body { border-color: var(--accent); }
+.lower .hint-key { color: var(--accent); white-space: nowrap; }
+.seg.speed button.hint:not(.on) { box-shadow: inset 0 0 0 2px var(--accent); color: var(--accent); font-weight: 700; }
 .body > .right {
   width: 116px; flex: none; border-left: 1px solid rgba(255, 255, 255, 0.08);
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
