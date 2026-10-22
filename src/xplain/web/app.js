@@ -25,9 +25,10 @@
   const SCOPES = ['all', '1', '2'];
   const FADED = [0.8, 0.55, 0.35];   // opacity of the 1st, 2nd and 3rd pass before the selected one
   const FADE_MS = 150;               // the one cross-fade for every plate and tab change
-  // the fast opening: a match opened at kick-off runs at 60x until a match minute before its first narrated
-  // moment, then drops to the speed it had; until that moment the plate says what is happening
+  // the opening: a match opened at kick-off plays at its speed (12x) and, until its first narrated moment, the plate
+  // offers 60x; picked then, 60x runs until a match minute before that moment and drops back to the speed it had
   const FAST_SPEED = 60, FAST_LEAD_S = 60;
+  const HINT_TEXT = ['Waiting for the first surprise. Pick ', '60×', ' to get there faster.'];   // the middle is the button's label
   const FAST_TEXT = 'Rating every pass. Watching for surprises.';
   const GOAL_MIN_MS = 4000;          // the goal plate holds at least this long in real time, at any speed
   const PULSE_MS = 830;              // one ring pulse; three of them round the score plate
@@ -47,8 +48,9 @@
     now: 0,            // match t, seconds
     playing: true,
     speed: 12,
-    fastStart: null,   // while the fast opening runs: { until: match t where it ends, speed: the speed it returns to }
-    fastPlate: false,  // the match opened fast: the empty plate shows FAST_TEXT (a picked speed drops it)
+    waitUntil: null,   // opened at kick-off: the match t a minute before the first narrated moment (60x runs until it)
+    fastStart: null,   // while 60x from the hint runs: { until: waitUntil, speed: the speed it returns to }
+    plateNote: null,   // the empty plate before the first narrated moment: 'hint' (HINT_TEXT), 'fast' (FAST_TEXT), null
     follow: true,      // live: the selected pass is the newest pass with t <= now
     selected: -1,      // index into marks when not following
     lang: 'en',
@@ -204,12 +206,11 @@
       setPlaying(false);
       openRecap(rs, null);
     }
-    // a match opened at kick-off (no ?t, ?replay or ?recap) opens fast until its first narrated moment is close
+    // a match opened at kick-off (no ?t, ?replay or ?recap) offers 60x on the plate until its first narrated moment
     const fastUntil = idx.narr.length ? idx.narrT[0] - FAST_LEAD_S : null;
     if (!params.has('t') && !state.replay && !state.recap && fastUntil !== null && state.now < fastUntil) {
-      state.fastStart = { until: fastUntil, speed: state.speed };
-      state.fastPlate = true;
-      setSpeed(FAST_SPEED);
+      state.waitUntil = fastUntil;
+      state.plateNote = 'hint';
     }
     requestAnimationFrame(frame);
     fitLines();
@@ -299,6 +300,7 @@
       state.now = state.bundle.clock.first_event_t;   // play again from kick-off
       state.goal = null;
       state.unseenRecap = null;
+      if (state.waitUntil !== null) { state.fastStart = null; state.plateNote = 'hint'; }   // the opening's offer again
       exitReplay();
       state.follow = true;
     }
@@ -309,7 +311,20 @@
       : '<path d="M7 5 L19 12 L7 19 z" fill="currentColor"></path>';
   }
 
-  // the fast opening ends at its time, or when a speed is picked (the pick stays)
+  // a picked speed: 60x while the plate offers it runs until the first narrated moment is close; any other pick
+  // ends that run and stays
+  function pickSpeed(s) {
+    if (s === FAST_SPEED && state.plateNote === 'hint' && state.now < state.waitUntil) {
+      state.fastStart = { until: state.waitUntil, speed: state.speed };
+      state.plateNote = 'fast';
+    } else {
+      state.fastStart = null;
+      if (state.plateNote === 'fast') state.plateNote = null;
+    }
+    setSpeed(s);
+  }
+
+  // 60x from the hint ends a match minute before the first narrated moment, back to the speed it had
   function endFastStart() {
     if (!state.fastStart) return;
     const back = state.fastStart.speed;
@@ -492,7 +507,7 @@
   function wire() {
     $('play').addEventListener('click', () => setPlaying(!state.playing));
     for (const b of $('speed').querySelectorAll('button')) {
-      b.addEventListener('click', () => { state.fastStart = null; state.fastPlate = false; setSpeed(Number(b.dataset.speed)); });
+      b.addEventListener('click', () => pickSpeed(Number(b.dataset.speed)));
     }
     for (const b of $('lang').querySelectorAll('button')) {
       b.addEventListener('click', () => setLang(b.dataset.lang));
@@ -570,7 +585,7 @@
     const key = [sel, live, tick, score, half, brk, state.scope, snaps.map((s) => (s ? s.t : '-')).join('|'),
       plate ? plate.bundle.moment.moment_id : '-', state.lang, state.follow, state.replay,
       narr.reached, narr.pos, goal, state.mode, state.player, state.playerNarr,
-      state.recap ? state.recap.scope + (state.recap.resumeAt !== null) + state.recap.view : '-', state.playerPicked, state.fastPlate,
+      state.recap ? state.recap.scope + (state.recap.resumeAt !== null) + state.recap.view : '-', state.playerPicked, state.plateNote,
       state.producerRecap, state.mode === 'producer' ? XplainProducer.items(state.bundle, state.now, idx.recapT).length : '',
       state.analystPick, state.airedRev].join('/');
     if (key === state.renderedKey) return;   // every DOM write below runs in this one animation frame
@@ -705,7 +720,7 @@
     const s = idx.score[i];
     const lower = $('lower');
     stopDrain();
-    lower.classList.remove('completed', 'failed', 'waiting', 'recap-plate');
+    lower.classList.remove('completed', 'failed', 'waiting', 'recap-plate', 'hint');
     lower.classList.add('goal');
     $('lower-num').textContent = '';
     $('lower-name').textContent = goalTabText(s);
@@ -896,7 +911,7 @@
     if (id === state.plateId) return;
     state.plateId = id;
     const lower = $('lower');
-    lower.classList.remove('completed', 'failed', 'waiting', 'goal');
+    lower.classList.remove('completed', 'failed', 'waiting', 'goal', 'hint');
     lower.classList.add('recap-plate');
     $('lower-num').textContent = '';
     $('lower-name').textContent = RECAP_TAB[r.scope];
@@ -1133,19 +1148,27 @@
   // Text is set in place on the existing nodes; nothing is written when the moment and language are
   // unchanged, so stepping through passes that keep the same moment never re-animates the plate.
   function renderPlate(entry, emptyText = 'No commentated moment yet.') {
-    if (!entry && state.fastPlate) emptyText = FAST_TEXT;   // the fast opening's plate, in every tab
+    const note = entry ? null : state.plateNote;   // the opening's plate, in every tab
+    $('speed').querySelector('[data-speed="60"]').classList.toggle('hint', note === 'hint');
+    if (note) emptyText = note === 'hint' ? HINT_TEXT.join('') : FAST_TEXT;
     const aired = entry ? state.aired.get(entry.bundle.moment.moment_id) : null;
     const id = entry ? entry.bundle.moment.moment_id + '/' + state.lang + (aired ? '/retake' : '') : '-/' + emptyText;
     if (id === state.plateId) return;
     state.plateId = id;
     const lower = $('lower');
     stopDrain();
-    lower.classList.remove('completed', 'failed', 'waiting', 'goal', 'recap-plate');
+    lower.classList.remove('completed', 'failed', 'waiting', 'goal', 'recap-plate', 'hint');
     const line = $('lower-line');
     fadePlate();
     if (!entry) {   // before the first commentated moment: the body only
       lower.classList.add('waiting');
       line.textContent = emptyText;
+      if (note === 'hint') {   // "60×" in the accent, as on the button it points to
+        lower.classList.add('hint');
+        const words = document.createElement('span');   // one flex item, so the spaces round "60×" stay
+        words.append(HINT_TEXT[0], span('hint-key', HINT_TEXT[1]), HINT_TEXT[2]);
+        line.replaceChildren(words);
+      }
       line.removeAttribute('lang');
       line.style.fontSize = '';
       $('lower-meta').textContent = '';

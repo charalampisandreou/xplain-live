@@ -649,19 +649,27 @@ def test_analyst_empty_states_end_with_a_full_stop(client):
     assert "const NOT_COMMENTATED = \"Not commentated: when it happened, it was not among the half's top 3 surprises of its kind.\";" in app
 
 
-def test_a_match_opened_at_kick_off_runs_fast_until_its_first_surprise_is_close(client):
+def test_a_match_opened_at_kick_off_offers_60x_until_its_first_surprise(client):
     app = client.get("/static/app.js").text.replace("\r\n", "\n")
+    css = client.get("/static/app.css").text
     assert "const FAST_SPEED = 60, FAST_LEAD_S = 60;" in app
+    assert "const HINT_TEXT = ['Waiting for the first surprise. Pick ', '60×', ' to get there faster.'];" in app
     assert "const FAST_TEXT = 'Rating every pass. Watching for surprises.';" in app
-    # only at kick-off: ?t, ?replay and ?recap open where they ask, at the normal speed
+    # only at kick-off (?t, ?replay and ?recap open as before), and it opens at the normal speed
     opening = app.split("const rs = RECAP_KEYS[params.get('recap')];")[1].split("requestAnimationFrame(frame);")[0]
     assert "const fastUntil = idx.narr.length ? idx.narrT[0] - FAST_LEAD_S : null;" in opening
     assert "if (!params.has('t') && !state.replay && !state.recap && fastUntil !== null && state.now < fastUntil) {" in opening
-    assert "state.fastStart = { until: fastUntil, speed: state.speed };" in opening and "setSpeed(FAST_SPEED);" in opening
-    # it ends a match minute before the first narrated moment, back to the speed it had; a picked speed ends it
+    assert "state.plateNote = 'hint';" in opening and "setSpeed(" not in opening
+    # 60x picked from the hint runs until a match minute before the first narrated moment, then drops back
+    pick = app.split("function pickSpeed(s) {")[1].split("function endFastStart()")[0]
+    assert "if (s === FAST_SPEED && state.plateNote === 'hint' && state.now < state.waitUntil) {" in pick
+    assert "state.fastStart = { until: state.waitUntil, speed: state.speed };" in pick and "state.plateNote = 'fast';" in pick
     assert "if (state.fastStart && state.now >= state.fastStart.until) endFastStart();" in app
-    assert "() => { state.fastStart = null; state.fastPlate = false; setSpeed(Number(b.dataset.speed)); }" in app
-    # until the first narrated moment the plate says what is happening, in every tab
-    assert "state.fastPlate = true;" in opening
-    assert "if (!entry && state.fastPlate) emptyText = FAST_TEXT;" in app
-    assert "state.playerPicked, state.fastPlate," in app   # the plate redraws when a picked speed drops it
+    assert "() => pickSpeed(Number(b.dataset.speed))" in app
+    # the plate shows the hint (60× in the accent) or FAST_TEXT until the first narrated moment, in every tab
+    assert "if (note) emptyText = note === 'hint' ? HINT_TEXT.join('') : FAST_TEXT;" in app
+    assert "words.append(HINT_TEXT[0], span('hint-key', HINT_TEXT[1]), HINT_TEXT[2]);" in app
+    assert "$('speed').querySelector('[data-speed=\"60\"]').classList.toggle('hint', note === 'hint');" in app
+    assert "state.playerPicked, state.plateNote," in app   # the plate redraws when the note changes
+    assert ".lower.waiting.hint .line { color: var(--text); font-size: 20px; font-weight: 700; }" in css
+    assert ".seg.speed button.hint:not(.on) { box-shadow: inset 0 0 0 2px var(--accent);" in css
