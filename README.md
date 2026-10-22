@@ -222,7 +222,7 @@ card's two-decimal values and checked again by the recap verifier; a change is r
 `recap_filler` step in the trace. It prints the new SHA-256.
 
 `python scripts/refresh_position_labels.py data/bundle_seed3001.json` takes every position driver's label (what
-Analyst's "Why the model rated it" shows) again from `explainer.POSITION_LABELS`, with no model call: only those
+Analyst's "How the model rated it" shows) again from `explainer.POSITION_LABELS`, with no model call: only those
 labels and their evidence copies change, and every line is checked again by the final Verifier. It prints how
 many labels changed and the new SHA-256.
 
@@ -320,7 +320,7 @@ both teams against the model on the same clock, score and plate:
   surprise is a dot on its team's line (green: a hard pass completed; red: an easy pass not completed).
   All / 1st / 2nd pick the span; the lines grow with the clock, so nothing is spoiled. At full time the
   lines end on the card's values (seed 3001: DUS +19.45, MAR −19.11).
-- **Why the model rated it.** For the picked dot (by default the latest surprise): the pass's SHAP drivers
+- **How the model rated it.** For the picked dot (by default the latest surprise): the pass's SHAP drivers
   and the rest as stored by the Explainer, as bars each way from the centre (green raises the model's score,
   red lowers it), with the model's score for a typical pass, its score for this pass and the calibrated xP ("Typical pass 1.32 →
   this pass 3.19 (model scale, not %) · xP 97%"). The values are log-odds of the raw score, never points of xP. "Replay in Studio" opens a commentated

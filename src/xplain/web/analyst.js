@@ -376,7 +376,7 @@
     box.replaceChildren();
     $('an-replay').hidden = !(entry && entry.bundle.qualifies_live);
     if (!entry) {
-      $('an-shap-title').textContent = 'Why the model rated it';
+      $('an-shap-title').textContent = 'How the model rated it';
       $('an-shap-sub').textContent = '';
       $('an-shap-foot').textContent = '';
       box.appendChild(div('empty', NO_PICK));
@@ -384,7 +384,7 @@
     }
     const m = entry.bundle.moment;
     const x = entry.bundle.explanation;
-    $('an-shap-title').textContent = 'Why the model rated it ' + entry.tier.en;
+    $('an-shap-title').textContent = 'How the model rated it ' + entry.tier.en;
     $('an-shap-sub').textContent = (m.player_name || 'Unknown player') + ' · ' + ctx.teamCode(m.team_id) + ' · '
       + m.minute_label + "' · " + (m.completed ? 'completed' : 'not completed');
     // the bars share one scale: the largest |shap| among the drivers and the rest fills the track (drawing only)
