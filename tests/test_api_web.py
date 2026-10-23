@@ -221,6 +221,20 @@ def test_language_switch_keeps_its_behaviour(client):
     assert "lower-line" in fade and "lang" not in fade.replace("lower-line", "")
 
 
+def test_a_tables_new_tag_turns_into_a_dash_after_five_match_minutes(client):
+    # 2026-10-23 (owner): NEW stayed until the table changed again, at full time still on a 76' row
+    js = client.get("/static/app.js").text.replace("\r\n", "\n")
+    assert "const NEW_FOR_S = 300;" in js
+    move = js.split("function moveText(entry, fresh) {")[1].split("\n  }\n")[0]
+    assert "return fresh ? { text: 'NEW', cls: 'new' } : { text: '–', cls: '' };" in move
+    table = js.split("function renderTable(kind, snap, plate, notStarted) {")[1].split("\n  }\n")[0]
+    assert "const fresh = !!snap && state.now - snap.t < NEW_FOR_S;" in table
+    # the rows are drawn again when it flips (the sig), and render runs at least every match minute (tick)
+    assert "const sig = [notStarted, snap ? snap.scope + snap.t : '-', fresh, selIdNow, state.replay].join('/');" in table
+    assert "const mv = moveText(e, fresh);" in table
+    assert "const key = [sel, live, tick," in js
+
+
 def test_the_plate_facts_follow_the_narration_language(client):
     # review 2026-10-23: with ES or EL the line changed language but "VERY EASY PASS, NOT COMPLETED" stayed English
     js = client.get("/static/app.js").text.replace("\r\n", "\n")

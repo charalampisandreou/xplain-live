@@ -31,6 +31,7 @@
   };
   const SCOPES = ['all', '1', '2'];
   const FADED = [0.8, 0.55, 0.35];   // opacity of the 1st, 2nd and 3rd pass before the selected one
+  const NEW_FOR_S = 300;   // a table row's NEW tag lasts 5 match minutes after it entered, then reads as a dash
   const FADE_MS = 150;               // the one cross-fade for every plate and tab change
   // the opening: a match opened at kick-off plays at its speed (12x) and, until its first narrated moment, the plate
   // offers 60x; picked then, 60x runs until a match minute before that moment and drops back to the speed it had
@@ -1124,8 +1125,11 @@
 
   // --- tables ---
 
-  function moveText(entry) {
-    if (entry.previous_rank === null || entry.previous_rank === undefined) return { text: 'NEW', cls: 'new' };
+  // fresh: the snapshot the row entered at is less than NEW_FOR_S old on the match clock
+  function moveText(entry, fresh) {
+    if (entry.previous_rank === null || entry.previous_rank === undefined) {
+      return fresh ? { text: 'NEW', cls: 'new' } : { text: '–', cls: '' };
+    }
     const d = entry.previous_rank - entry.rank;
     if (d > 0) return { text: '▲ ' + d, cls: '' };
     if (d < 0) return { text: '▼ ' + (-d), cls: '' };
@@ -1148,7 +1152,8 @@
   function renderTable(kind, snap, plate, notStarted) {
     const rows = $('rows-' + kind);
     const selIdNow = plate ? plate.bundle.moment.moment_id : null;
-    const sig = [notStarted, snap ? snap.scope + snap.t : '-', selIdNow, state.replay].join('/');
+    const fresh = !!snap && state.now - snap.t < NEW_FOR_S;
+    const sig = [notStarted, snap ? snap.scope + snap.t : '-', fresh, selIdNow, state.replay].join('/');
     if (state.tableSig[kind] === sig) return;   // unchanged: keep the rows (and keyboard focus)
     state.tableSig[kind] = sig;
     const focused = document.activeElement && rows.contains(document.activeElement)
@@ -1183,7 +1188,7 @@
       track.appendChild(bar);
       row.appendChild(track);
       row.appendChild(div('value', pva(m.delta)));
-      const mv = moveText(e);
+      const mv = moveText(e, fresh);
       row.appendChild(div('move' + (mv.cls ? ' ' + mv.cls : ''), mv.text));
       rows.appendChild(row);
       if (e.moment_id === focused) row.focus();
