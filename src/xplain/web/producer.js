@@ -20,7 +20,9 @@
 // plate for that moment, in every tab, in this browser tab only, until the page reloads; nothing is stored) or "Keep
 // stored line" ("Keep it off air" for an uncommentated moment). An aired retake shows in On air with its steps, and
 // "Back to stored line" ("Take off air") undoes it. Model, latency,
-// attempts and network retries are the server's, shown as sent.
+// attempts and network retries are the server's, shown as sent. A retake Foundry failed (sign-in, timeout, rate limit,
+// network) says so in plain words, in red, and the failed Narrator step says "No answer from Foundry" or "Foundry
+// busy": the raw error is in the server's answer only, never on screen.
 (function (root) {
   'use strict';
 
@@ -41,12 +43,18 @@
   const FILLED_AGAIN = 'Filled again; the last fill is shown.';
   const RETAKE_OFF = 'Live retake is off on this server.';
   const RETAKE_UNREACHABLE = 'Could not reach the server.';
-  // a failed retake (token, timeout, rate limit, network): what the producer reads; the server's reason stays under it
+  // a failed retake (token, timeout, rate limit, network): what the producer reads, in red; the server's raw error
+  // stays in its answer, never on screen
   const FOUNDRY_BUSY = 'Azure AI Foundry is busy right now.';
   const FOUNDRY_NO_ANSWER = 'Azure AI Foundry did not answer this time.';
   const STORED_STAYS = 'The stored line stays on air.';
   const NOTHING_ON_AIR = 'Nothing goes on air.';
   const TRY_AGAIN = 'Try again in a minute.';
+  // ... and the failed Narrator step's reason in place of the raw error
+  const STEP_BUSY = 'Foundry busy';
+  const STEP_NO_ANSWER = 'No answer from Foundry';
+  const isBusy = (text) => /RateLimit|\b429\b/.test(text || '');   // Foundry's rate limit (openai's RateLimitError)
+  const isCallError = (reason) => /^(error |timeout after )/.test(reason);   // narrator.py's words for a failed call
   const NOT_ON_AIR = 'Not on air yet: put it on air, or keep the stored line.';
   const NOT_ON_AIR_NC = 'Not on air yet: put it on air, or keep it off air.';
   const AIRED = 'Live retake, put on air in this browser tab; the match file keeps the stored line.';
@@ -166,11 +174,17 @@
     return out;
   }
 
-  // A retake's steps: the stored Analyst and Explainer steps (fromMatch: not run again), then the server's steps.
+  // A retake's steps: the stored Analyst and Explainer steps (fromMatch: not run again), then the server's steps; a
+  // Narrator call that failed (an error or a timeout, not a rejected answer) says so in plain words.
   function retakeSteps(stored, result) {
     const before = stored.filter((s) => s.agent === 'analyst' || s.agent === 'explainer')
       .map((s) => Object.assign({}, s, { fromMatch: true }));
-    return before.concat(result.steps || []);
+    const server = (result.steps || []).map((s) => {
+      const reasons = s.reasons || [];
+      if (s.agent !== 'narrator' || s.ok || !reasons.some(isCallError)) return s;
+      return Object.assign({}, s, { reasons: [isBusy(reasons.join(' ')) ? STEP_BUSY : STEP_NO_ANSWER] });
+    });
+    return before.concat(server);
   }
 
   // The retake's summary line, the server's values as sent: model, latency, attempts, network retries (when any).
@@ -194,9 +208,8 @@
       return { text: null, note: 'Not aired: the Verifier rejected ' + (n === 1 ? 'the line.' : 'all ' + n + ' attempts.'),
         reasons: result.reasons || [] };
     }
-    const busy = /RateLimit|\b429\b/.test(result.message || '');   // Foundry's rate limit (openai's RateLimitError)
-    return { text: null, note: [busy ? FOUNDRY_BUSY : FOUNDRY_NO_ANSWER, commentated ? STORED_STAYS : NOTHING_ON_AIR,
-      TRY_AGAIN].join(' '), reasons: result.message ? [result.message] : [] };
+    return { text: null, note: [isBusy(result.message) ? FOUNDRY_BUSY : FOUNDRY_NO_ANSWER,
+      commentated ? STORED_STAYS : NOTHING_ON_AIR, TRY_AGAIN].join(' '), reasons: [] };
   }
 
   // --- DOM ------------------------------------------------------------------------------------
@@ -479,7 +492,8 @@
       p.setAttribute('lang', code);
       wrap.appendChild(p);
     }
-    wrap.appendChild(node('div', 'pr-note', o.note));
+    const failed = !o.text && result.status !== 'rejected';   // Foundry failed: the note in red
+    wrap.appendChild(node('div', failed ? 'pr-note pr-retake-failed' : 'pr-note', o.note));
     if (o.reasons.length) wrap.appendChild(reasonsBlock(o.reasons, null));
     if (o.text) {
       wrap.appendChild(airButtons(id, [['on', 'Put on air', 'pr-retake'],

@@ -382,7 +382,8 @@ there.
   so the bundle, other viewers and the deployed site keep the stored line. A line the Verifier rejected three times
   says so with the reasons and has no Put on air. A failure (sign-in, timeout, rate limit, network) says in plain
   words that Azure AI Foundry is busy or did not answer, that the stored line stays on air, and to try again in a
-  minute, with the server's reason under it. Stored line goes back.
+  minute, in red; the failed Narrator step says "No answer from Foundry" or "Foundry busy" (the raw error stays
+  in the server's answer, not on screen). Stored line goes back.
 - **Show checks** marks with ✕ the checks a failed Verifier step names in its reasons; the others keep ✓.
 
 ## Docker

@@ -197,14 +197,41 @@ def test_a_live_retake_is_shown_as_the_server_sent_it(tmp_path):
     assert j["outcome"]["text"] is None and j["outcome"]["note"] == "Not aired: the Verifier rejected all 3 attempts."
     assert j["outcome"]["reasons"] == ["attempt 1: no_numbers: x"]
     assert f["steps"] == [["analyst", True, False], ["explainer", True, False]]
-    # a failure reads as Foundry's, in plain words; the server's reason stays under it
-    assert f["outcome"] == {"text": None, "reasons": ["no identity"], "note":
+    # a failure reads as Foundry's, in plain words; the raw error is never shown
+    assert f["outcome"] == {"text": None, "reasons": [], "note":
                             "Azure AI Foundry did not answer this time. The stored line stays on air. Try again in a minute."}
     assert f["uncommentated"]["note"] == "Azure AI Foundry did not answer this time. Nothing goes on air. Try again in a minute."
     assert b["outcome"]["note"] == "Azure AI Foundry is busy right now. The stored line stays on air. Try again in a minute."
     assert b["uncommentated"]["note"] == "Azure AI Foundry is busy right now. Nothing goes on air. Try again in a minute."
-    assert b["outcome"]["reasons"] == [limited["message"]]
+    assert b["outcome"]["reasons"] == []
     assert f["summary"] == "gpt-4.1-mini · 0.2 s"
+
+
+STEPS_HARNESS = r"""
+const fs = require('fs');
+const P = require(process.argv[1]);
+const d = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+process.stdout.write(JSON.stringify(P.retakeSteps([], { steps: d }).map((s) => s.reasons)));
+"""
+
+
+def test_a_failed_narrator_call_shows_plain_words_not_the_raw_error(tmp_path):
+    """An error or a timeout reads "No answer from Foundry" ("Foundry busy" on a rate limit); a rejected answer and
+    every other agent's reasons stay as sent."""
+    raw = ("error ChatClientException: (\"<class 'agent_framework_openai._chat_completion_client."
+           "OpenAIChatCompletionClient'> service failed to complete the prompt: ")
+    steps = [{"agent": "narrator", "ok": False, "reasons": [raw + "Connection error.\", APIConnectionError"]},
+             {"agent": "narrator", "ok": False, "reasons": ["timeout after 20 s"]},
+             {"agent": "narrator", "ok": False, "reasons": [raw + "Error code: 429 - {'error'"]},
+             {"agent": "narrator", "ok": False, "reasons": ["format: no NarratorOut in the answer"]},
+             {"agent": "verifier", "ok": False, "reasons": ["no_numbers: x"]},
+             {"agent": "narrator", "ok": True, "reasons": []}]
+    path = tmp_path / "steps.json"
+    path.write_text(json.dumps(steps), encoding="utf-8")
+    out = subprocess.run([NODE, "-e", STEPS_HARNESS, str(PRODUCER_JS), str(path)], capture_output=True, text=True,
+                         encoding="utf-8", check=True)
+    assert json.loads(out.stdout) == [["No answer from Foundry"], ["No answer from Foundry"], ["Foundry busy"],
+                                      ["format: no NarratorOut in the answer"], ["no_numbers: x"], []]
 
 
 FOLD_HARNESS = r"""

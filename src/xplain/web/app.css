@@ -521,6 +521,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .pr-retake:disabled { opacity: 0.55; }
 .pr-step.pending .pr-mark { color: var(--muted); }
 .pr-retake-error { margin-top: 10px; color: var(--failed-text); }
+.pr-onair > .pr-note.pr-retake-failed { color: var(--failed-text); }   /* Foundry failed: no line */
 .pr-onair > .pr-note { padding: 6px 4px 0; }
 /* the line in the plate's NARRATION language only */
 .pr-text { margin: 0; padding: 8px 4px 0; font-size: 20px; line-height: 1.4; color: var(--text-soft); }
