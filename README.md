@@ -9,7 +9,7 @@ Expectation versus outcome, live. A studio copilot for the Microsoft
 expected with what happened, explains the gap, and emits timed, machine-readable
 overlay cards that a graphics system can render alongside the match.
 
-> Status: work in progress. **Live demo:** the Studio page playing a synthetic match (seed 3001) at
+> **Live demo:** the Studio page playing a synthetic match (seed 3001) at
 > https://xplain-live.whiteocean-b5bbd7fb.germanywestcentral.azurecontainerapps.io/
 >
 > **Hidden-skill check (synthetic data):** on the 100 hold-out matches (seeds 2001-2100, xpass_v2), a
@@ -79,8 +79,8 @@ Measured on generated matches only (generator 0.2.1; `reports/xpass_v2_metrics.j
 
 - xpass_v2 is trained on 250 generated matches (231,412 passes) and evaluated on 100 hold-out
   generated matches (92,396 passes): ROC AUC 0.770, log-loss 0.4326 (constant rate 0.5168),
-  Brier 0.1372 (constant rate 0.1671), Brier skill 0.179, calibration slope 1.002. Completion on
-  the hold-out is 78.8% against a mean xP of 78.8%. These are results on generated passes.
+  Brier 0.1372 (constant rate 0.1671), Brier skill 0.179. Completion on the hold-out
+  is 78.79% against an expected 78.83% (the mean xP). These are results on generated passes.
 - The generator's completion rule also uses pass length, forward gain and a hidden player skill,
   which xP cannot see (it uses start-of-pass information only), so xP cannot rank passes
   perfectly. Generator 0.2.1 makes the context xP does see matter more, by design (position and
