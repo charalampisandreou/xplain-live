@@ -718,3 +718,15 @@ def test_the_waiting_state_is_one_style_in_every_tab(client):
     assert "@keyframes live-pulse" in block
     assert "@media (prefers-reduced-motion: reduce) { .waiting-title::before, .pr-step.idle.rating .pr-mark::before { animation: none; } }" in block
     assert re.findall(r"#[0-9A-Fa-f]{3,6}\b", block) == []
+
+
+def test_the_idle_agents_sit_on_the_log_waiting_grid(client):
+    """Producer before the first surprise: each agent's dot 12px in and 8px wide with a 10px gap, as the log's waiting
+    title (12px padding, 8px dot, 10px gap); the hollow rings are 8px across too (border inside)."""
+    css = client.get("/static/app.css").text
+    block = css.split("/* Producer before the first surprise")[1]
+    assert ".pr-step.idle { padding: 15px 12px 13px; }" in block
+    assert ".pr-step.idle .pr-mark { width: 8px; align-self: center; display: flex; }" in block
+    ring = block.split(".pr-step.idle:not(.rating) .pr-mark::before {")[1].split("}")[0]
+    assert "box-sizing: border-box" in ring and "width: 8px" in ring and "height: 8px" in ring
+    assert ".empty.waiting { padding: 14px 12px 18px; }" in css and ".pr-step-top { display: flex; align-items: baseline; gap: 10px; }" in css

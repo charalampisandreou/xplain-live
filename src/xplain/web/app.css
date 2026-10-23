@@ -685,10 +685,10 @@ html.intro-on .intro:not([hidden]) { display: block; }
 }
 @media (prefers-reduced-motion: reduce) { .waiting-title::before, .pr-step.idle.rating .pr-mark::before { animation: none; } }
 /* Producer before the first surprise: the four agents as a traced line's rows, a dot where its tick goes (Analyst's
-   pulses: it is rating every pass), on the same row height */
-.pr-step.idle .pr-mark { line-height: 20px; }
-.pr-step.idle .pr-step-top > :not(.pr-mark) { position: relative; top: 1px; }
-.pr-step.idle .pr-mark::before { margin-left: 2px; vertical-align: -1px; }
-.pr-step.idle:not(.rating) .pr-mark::before { content: ''; display: inline-block; width: 8px; height: 8px; border-radius: 50%;
-  border: 1.5px solid var(--muted); opacity: 0.6; }
+   pulses: it is rating every pass), on the log's grid: the dot 12px in, the name 18px after it, the first row level
+   with the log's waiting title */
+.pr-step.idle { padding: 15px 12px 13px; }
+.pr-step.idle .pr-mark { width: 8px; align-self: center; display: flex; }
+.pr-step.idle:not(.rating) .pr-mark::before { content: ''; display: inline-block; box-sizing: border-box; width: 8px; height: 8px;
+  border-radius: 50%; border: 1.5px solid var(--muted); opacity: 0.6; }
 .pr-step.idle.rating .pr-info { color: var(--text-soft); font-variant-numeric: tabular-nums; }
