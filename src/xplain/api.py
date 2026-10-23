@@ -134,9 +134,15 @@ def create_app(scorer: Scorer | None = None, bundles: Path | None = None,
             return JSONResponse(refused.body(), status_code=refused.status, headers=headers)
         return JSONResponse(out, headers=headers)
 
-    @app.get("/", include_in_schema=False)
+    # HEAD too, for link checkers and uptime monitors
+    @app.api_route("/", methods=["GET", "HEAD"], include_in_schema=False)
     def index() -> FileResponse:
         return FileResponse(WEB_DIR / "index.html", media_type="text/html")
+
+    # tools that ask for /favicon.ico without reading the page get the 32 px logo (the page names its own icons)
+    @app.get("/favicon.ico", include_in_schema=False)
+    def favicon() -> FileResponse:
+        return FileResponse(WEB_DIR / "favicon-32.png", media_type="image/png")
 
     @app.get("/api/bundle/{name}")
     def match_bundle(name: Annotated[str, PathParam(pattern=BUNDLE_NAME, max_length=64)]) -> FileResponse:

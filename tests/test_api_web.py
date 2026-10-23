@@ -86,6 +86,15 @@ def test_a_bundle_is_served_from_the_bundle_dir(client):
     assert r.json() == {"meta": {"schema_version": "2"}}
 
 
+def test_head_on_the_page_and_a_favicon_ico(client):
+    # review 2026-10-23: HEAD / was 405 and /favicon.ico 404 (link checkers, uptime monitors, older tools)
+    head = client.head("/")
+    assert head.status_code == 200 and head.headers["content-type"].startswith("text/html") and head.content == b""
+    ico = client.get("/favicon.ico")
+    assert ico.status_code == 200 and ico.headers["content-type"] == "image/png"
+    assert ico.content == (ROOT / "src" / "xplain" / "web" / "favicon-32.png").read_bytes()
+
+
 def test_large_responses_are_gzipped(client, bundle_dir):
     # review 2026-10-23: the 700 KB bundle and the scripts went out uncompressed
     (bundle_dir / "bundle_big.json").write_text('{"x": "' + "a" * 5000 + '"}', encoding="utf-8")
