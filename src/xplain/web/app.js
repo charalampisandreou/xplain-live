@@ -23,6 +23,12 @@
   const READ_BASE_MS = 1500, READ_WORD_MS = 250;
   const RECAP_TEXT_PX = 19, RECAP_MIN_PX = 16;   // the recap text's size, and the least fitRecapText goes to
   const HALF_LABEL = { 1: '1st half', 2: '2nd half' };
+  // the plate's facts under the line, in the narration language: the tier's own words (mark.tier) and the outcome
+  const PASS_FACTS = {
+    en: (tier, done) => tier + ' pass, ' + (done ? 'completed' : 'not completed'),
+    es: (tier, done) => 'pase ' + tier + ', ' + (done ? 'completado' : 'no completado'),
+    el: (tier, done) => tier + ' πάσα, ' + (done ? 'ολοκληρωμένη' : 'μη ολοκληρωμένη'),
+  };
   const SCOPES = ['all', '1', '2'];
   const FADED = [0.8, 0.55, 0.35];   // opacity of the 1st, 2nd and 3rd pass before the selected one
   const FADE_MS = 150;               // the one cross-fade for every plate and tab change
@@ -1223,7 +1229,8 @@
     $('lower-num').textContent = shirt(m.player_id);
     $('lower-name').textContent = playerName(m);
     $('lower-when').textContent = teamCode(m.team_id, m.team_name) + ' · ' + m.minute_label + "'";
-    $('lower-meta').textContent = entry.tier.en + ' pass, ' + (m.completed ? 'completed' : 'not completed');
+    $('lower-meta').textContent = PASS_FACTS[state.lang](entry.tier[state.lang] || entry.tier.en, m.completed);
+    $('lower-meta').setAttribute('lang', state.lang);   // Greek upper case drops its accents only with lang="el"
     $('lower-xp-val').textContent = percent(m.xp) + '%';   // " · xP 92%", xP in its own span
     $('lower-xp').hidden = false;
     // no stored line: the line row is empty and hidden (:empty), so no gap is left

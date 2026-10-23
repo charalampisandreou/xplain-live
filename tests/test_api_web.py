@@ -212,6 +212,19 @@ def test_language_switch_keeps_its_behaviour(client):
     assert "lower-line" in fade and "lang" not in fade.replace("lower-line", "")
 
 
+def test_the_plate_facts_follow_the_narration_language(client):
+    # review 2026-10-23: with ES or EL the line changed language but "VERY EASY PASS, NOT COMPLETED" stayed English
+    js = client.get("/static/app.js").text.replace("\r\n", "\n")
+    facts = js.split("const PASS_FACTS = {")[1].split("\n  };")[0]
+    assert "en: (tier, done) => tier + ' pass, ' + (done ? 'completed' : 'not completed')," in facts
+    assert "es: (tier, done) => 'pase ' + tier + ', ' + (done ? 'completado' : 'no completado')," in facts
+    assert "el: (tier, done) => tier + ' πάσα, ' + (done ? 'ολοκληρωμένη' : 'μη ολοκληρωμένη')," in facts
+    plate = js.split("function renderPlate(")[1].split("\n  }\n")[0]
+    assert "PASS_FACTS[state.lang](entry.tier[state.lang] || entry.tier.en, m.completed);" in plate
+    assert "$('lower-meta').setAttribute('lang', state.lang);" in plate
+    assert "entry.tier.en + ' pass, '" not in js
+
+
 def test_pva_column_shows_a_dash_or_the_goal(client):
     html = client.get("/").text
     js = client.get("/static/app.js").text
