@@ -44,6 +44,17 @@ def test_the_page_has_the_logo_as_its_icons(client):
         assert r.status_code == 200 and r.content.startswith(b"\x89PNG")
 
 
+def test_the_bubble_leads_every_xplain_live_mark(client):
+    html = client.get("/").text
+    assert html.count('<symbol id="logo-bubble"') == 1
+    bubble = '<svg class="logo-bubble" aria-hidden="true"><use href="#logo-bubble"></use></svg>xPlain <span>Live</span>'
+    assert html.count(bubble) == 4   # the header, the slides' mark, welcome and Start match
+    # sized in em, so the walkthrough's glide scales it with the words
+    css = client.get("/static/app.css").text
+    rule = next(line for line in css.splitlines() if line.startswith(".logo-bubble {"))
+    assert "width: 1.18em; height: 1.18em;" in rule and "px" not in rule
+
+
 def test_a_shared_link_shows_the_share_card(client):
     html = client.get("/").text
     site = "https://xplain-live.whiteocean-b5bbd7fb.germanywestcentral.azurecontainerapps.io"

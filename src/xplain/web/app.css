@@ -74,6 +74,10 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .topright { position: absolute; top: 28px; right: 40px; display: flex; align-items: center; gap: 18px; }
 .mark { font-weight: 800; font-size: 22px; letter-spacing: -0.01em; }
 .mark span { font-weight: 500; color: var(--accent); }
+/* the logo's bubble in front of the words, in em so it scales with them (the header, the walkthrough's marks and its
+   big logo); its body spans the capitals and its tail drops below the baseline; the negative block margins keep it
+   from growing the line, so the words sit where they did */
+.logo-bubble { width: 1.18em; height: 1.18em; vertical-align: 0.07em; margin: -0.05em 0.26em -0.4em 0; }
 .seg { display: flex; background: var(--surface); border: 1px solid var(--switch-border); border-radius: 6px; padding: 3px; }
 .seg button {
   height: 36px; padding: 0 14px; border: none; border-radius: 4px; background: transparent; color: var(--text);

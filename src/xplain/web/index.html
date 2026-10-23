@@ -34,6 +34,16 @@
 <script src="/static/intro.js"></script>
 </head>
 <body>
+<!-- the logo, the commentary bubble: drawn once, used in front of every "xPlain Live" (sized in em, so the
+     walkthrough's glide scales it with the words) -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="logo-bubble" viewBox="0 0 64 64">
+    <path d="M18 7 H46 A11 11 0 0 1 57 18 V35 A11 11 0 0 1 46 46 H27 L13 57 L16 45.6 A11 11 0 0 1 7 35 V18 A11 11 0 0 1 18 7 Z" fill="#3FD0FF"></path>
+    <path d="M19.5 35.5 Q 22 18 37.5 18.5" fill="none" stroke="#0A1B2E" stroke-width="4" stroke-linecap="round"></path>
+    <circle cx="19.5" cy="35.5" r="5" fill="#0A1B2E"></circle>
+    <circle cx="44" cy="20" r="6" fill="none" stroke="#0A1B2E" stroke-width="3.6"></circle>
+  </symbol>
+</svg>
 <div id="viewport">
 <main id="stage" aria-label="xPlain Live studio screen">
 
@@ -50,7 +60,7 @@
 
   <!-- product mark + modes -->
   <div class="topright">
-    <div class="mark">xPlain <span>Live</span></div>
+    <div class="mark"><svg class="logo-bubble" aria-hidden="true"><use href="#logo-bubble"></use></svg>xPlain <span>Live</span></div>
     <div class="seg" role="group" aria-label="Mode" id="mode">
       <button type="button" data-mode="studio" class="on" aria-pressed="true">Studio</button>
       <button type="button" data-mode="analyst" aria-pressed="false">Analyst</button>
@@ -296,9 +306,9 @@
        Every text of the tour lives here. A note's data-at is the point it marks in its 1440 x 900 screenshot. -->
   <section class="intro" id="intro" role="dialog" aria-modal="true" aria-labelledby="in-title-welcome">
     <div class="in-bg" id="in-bg" aria-hidden="true"></div>
-    <div class="in-mark" id="in-mark" aria-hidden="true" hidden>xPlain <span>Live</span></div>
+    <div class="in-mark" id="in-mark" aria-hidden="true" hidden><svg class="logo-bubble" aria-hidden="true"><use href="#logo-bubble"></use></svg>xPlain <span>Live</span></div>
     <div class="in-screen in-big-screen" data-screen="welcome">
-      <h1 class="in-big" id="in-title-welcome" data-label>xPlain <span>Live</span></h1>
+      <h1 class="in-big" id="in-title-welcome" data-label><svg class="logo-bubble" aria-hidden="true"><use href="#logo-bubble"></use></svg>xPlain <span>Live</span></h1>
       <p class="in-tag">Every pass rated. Every surprise explained.</p>
       <div class="in-btns"><button type="button" class="in-b go" data-go="next">Quick tour (1 min)</button><button type="button" class="in-b" data-go="skip">Skip to match</button></div>
       <p class="in-synth">A synthetic match, generated for this demo.</p>
@@ -344,7 +354,7 @@
       <div class="in-note" data-side="R" data-top="540" data-at="1412,384" style="left:1190px;top:540px"><b>Checked before air</b>18 checks on every line before it is shown.</div>
     </div>
     <div class="in-screen in-big-screen" data-screen="end" hidden>
-      <h1 class="in-big" id="in-title-end" data-label>xPlain <span>Live</span></h1>
+      <h1 class="in-big" id="in-title-end" data-label><svg class="logo-bubble" aria-hidden="true"><use href="#logo-bubble"></use></svg>xPlain <span>Live</span></h1>
       <p class="in-tag">Every pass rated. Every surprise explained.</p>
       <div class="in-btns"><button type="button" class="in-b go" data-go="start">Start match</button></div>
       <p class="in-synth">A synthetic match, generated for this demo.</p>
