@@ -426,7 +426,8 @@ are copied from the local checkout.
 **Warning:** the full `az deployment group what-if` output contains the evaluated workspace key. The
 script prints it with `--result-format ResourceIdOnly`; if you run what-if by hand, do the same.
 
-Measured on 2026-10-16: a request after scale to zero (cold start) took 4.95 s; warm requests take under 1 s.
+The app keeps one replica running (`minReplicas: 1`), so it never scales to zero. Measured on 2026-10-16, when it still did:
+a request after scale to zero (cold start) took 4.95 s; warm requests take under 1 s.
 
 The environment runs in Container Apps **Express** mode (the platform picks it even though the template
 does not set `environmentMode`). Express facts that matter here:

@@ -56,9 +56,9 @@ def test_registry_pull_uses_the_user_assigned_identity():
     assert registries and all(r == {"server": r["server"], "identity": identity} for r in registries)
 
 
-def test_scale_to_zero_and_size():
+def test_one_warm_replica_and_size():   # never scales to zero: no cold start on a judge's first click
     (app,) = resources("Microsoft.App/containerApps")
-    assert app["properties"]["template"]["scale"] == {"minReplicas": 0, "maxReplicas": 1}
+    assert app["properties"]["template"]["scale"] == {"minReplicas": 1, "maxReplicas": 1}
     assert app["properties"]["configuration"]["ingress"]["targetPort"] == 8000
 
 
