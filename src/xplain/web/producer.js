@@ -41,6 +41,12 @@
   const FILLED_AGAIN = 'Filled again; the last fill is shown.';
   const RETAKE_OFF = 'Live retake is off on this server.';
   const RETAKE_UNREACHABLE = 'Could not reach the server.';
+  // a failed retake (token, timeout, rate limit, network): what the producer reads; the server's reason stays under it
+  const FOUNDRY_BUSY = 'Azure AI Foundry is busy right now.';
+  const FOUNDRY_NO_ANSWER = 'Azure AI Foundry did not answer this time.';
+  const STORED_STAYS = 'The stored line stays on air.';
+  const NOTHING_ON_AIR = 'Nothing goes on air.';
+  const TRY_AGAIN = 'Try again in a minute.';
   const NOT_ON_AIR = 'Not on air yet: put it on air, or keep the stored line.';
   const NOT_ON_AIR_NC = 'Not on air yet: put it on air, or keep it off air.';
   const AIRED = 'Live retake, put on air in this browser tab; the match file keeps the stored line.';
@@ -188,8 +194,9 @@
       return { text: null, note: 'Not aired: the Verifier rejected ' + (n === 1 ? 'the line.' : 'all ' + n + ' attempts.'),
         reasons: result.reasons || [] };
     }
-    return { text: null, note: 'Retake failed at the ' + (result.stage || 'request') + ' stage.',
-      reasons: result.message ? [result.message] : [] };
+    const busy = /RateLimit|\b429\b/.test(result.message || '');   // Foundry's rate limit (openai's RateLimitError)
+    return { text: null, note: [busy ? FOUNDRY_BUSY : FOUNDRY_NO_ANSWER, commentated ? STORED_STAYS : NOTHING_ON_AIR,
+      TRY_AGAIN].join(' '), reasons: result.message ? [result.message] : [] };
   }
 
   // --- DOM ------------------------------------------------------------------------------------

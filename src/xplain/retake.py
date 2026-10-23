@@ -16,8 +16,10 @@ imported, it would pull the build pipeline into the container) of the accepted l
 phrase mode. Nothing is stored: the bundle and what Studio puts on air stay as they are.
 
 Model: XPLAIN_RETAKE_DEPLOYMENT (deployment(), default DEFAULT_DEPLOYMENT = gpt-6.1-sol, the model that wrote the
-bundle's lines; owner's pick 2026-10-21), at XPLAIN_FOUNDRY_ENDPOINT, with its request parameters and per-call
-timeout from models.MODEL_PARAMS (the health check keeps XPLAIN_LIVE_DEPLOYMENT). Auth as in
+bundle's lines; owner's pick 2026-10-21), at XPLAIN_FOUNDRY_ENDPOINT, with its request parameters from
+models.MODEL_PARAMS (the health check keeps XPLAIN_LIVE_DEPLOYMENT). Its per-call timeout is CALL_TIMEOUT_S, not the
+model's build timeout: the producer is waiting on a spinner, and the bundle's Narrator calls took 3.2 to 7.5 s, so a
+hung Foundry call (retried once on a timeout) ends the retake in about 40 s instead of 2 minutes. Auth as in
 live.py: the managed identity (live.make_credential: DefaultAzureCredential, AZURE_CLIENT_ID, its get_token in a
 thread) in Azure, az login locally; the token is
 fetched first, on its own ("token" stage), and sent as the bearer (never a key). The client connects over IPv4 only
@@ -46,7 +48,6 @@ from typing import Any
 from . import live
 from .config import phrase_mode
 from .contracts import MomentBundle
-from .models import params_for
 from .narrator import Narrator, NarratorAgent
 from .trace import TraceStep, code_step
 from .verifier import VerifierResult, verify
@@ -54,6 +55,7 @@ from .verifier import VerifierResult, verify
 DEFAULT_DEPLOYMENT = "gpt-6.1-sol"
 COOLDOWN_S = 10.0
 DAILY_CAP = 200
+CALL_TIMEOUT_S = 20.0   # per Narrator call in a retake (owner's OK 2026-10-23)
 
 
 class RetakeRefused(Exception):
@@ -88,14 +90,14 @@ def deployment() -> str:
 
 def make_agent(token: str, model: str, mode: str, backend: live.AsyncIPv4Backend) -> NarratorAgent:
     """The Narrator agent on an AsyncOpenAI client at the Foundry /openai/v1/ route, over IPv4 only; api_key is the
-    Entra ID access token (sent as the bearer), never a key. The http timeout is the model's per-call timeout."""
+    Entra ID access token (sent as the bearer), never a key. The http timeout is CALL_TIMEOUT_S."""
     from agent_framework import Agent
     from agent_framework.openai import OpenAIChatCompletionClient
     from openai import AsyncOpenAI
 
     from .prompts import narrator_instructions
     client = AsyncOpenAI(base_url=live.endpoint(), api_key=token, max_retries=0,
-                         http_client=live.ipv4_async_http_client(backend, params_for(model).timeout_s))
+                         http_client=live.ipv4_async_http_client(backend, CALL_TIMEOUT_S))
     return Agent(OpenAIChatCompletionClient(model=model, async_client=client), narrator_instructions(mode),
                  name="Narrator")
 
@@ -174,7 +176,8 @@ class Retake:
             return {**base, "ok": False, "status": "failed", "stage": "token", "error": chain[0]["error"],
                     "message": chain[0]["message"], "line": None, "attempts": 0, "reasons": [], "notes": [],
                     "steps": [], "network_retries": 0, "latency_s": round(time.perf_counter() - start, 3)}
-        narrator = Narrator(self._agent_factory(token, model, mode, backend), mode=mode, model=model)
+        narrator = Narrator(self._agent_factory(token, model, mode, backend), mode=mode, model=model,
+                            timeout_s=CALL_TIMEOUT_S)
         result = await narrator.narrate(moment, slot)
         steps: list[TraceStep] = list(result.trace)
         line, reasons, notes = result.line, [live.scrub(r) for r in result.reasons], list(result.notes)

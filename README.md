@@ -380,7 +380,9 @@ there.
   languages, the log row reads "On air · retake", and On air shows it with its steps and **Back to stored line**)
   or **Keep stored line**. The choice lives in that browser tab until the page reloads: nothing is sent or saved,
   so the bundle, other viewers and the deployed site keep the stored line. A line the Verifier rejected three times
-  says so with the reasons and has no Put on air; a failure names its stage. Stored line goes back.
+  says so with the reasons and has no Put on air. A failure (sign-in, timeout, rate limit, network) says in plain
+  words that Azure AI Foundry is busy or did not answer, that the stored line stays on air, and to try again in a
+  minute, with the server's reason under it. Stored line goes back.
 - **Show checks** marks with ✕ the checks a failed Verifier step names in its reasons; the others keep ✓.
 
 ## Docker
@@ -460,7 +462,7 @@ unless `XPLAIN_LIVE=1`, narrates one commentated moment of the served bundle aga
 the nth retake of that moment since the server started (so each retake gets the next variation nudge: another
 sentence frame, outcome wording and opening, not the line on air again), then the
 Narrator on `XPLAIN_RETAKE_DEPLOYMENT` (default `gpt-6.1-sol`, the model that wrote the bundle's lines; its
-parameters and 60 s per-call timeout from `models.MODEL_PARAMS`; up to three calls, each answer checked by the Verifier, a rejected one
+parameters from `models.MODEL_PARAMS`, but a 20 s per-call timeout so a hung call ends the retake in about 40 s; up to three calls, each answer checked by the Verifier, a rejected one
 retried with the reasons) and the final check, in the bundle's phrase mode (`src/xplain/retake.py`). Same auth
 as the live check (the token first, then the request), over IPv4 only; a failed IPv4 lookup is retried after
 0.5 s and 1 s and counted as `network_retries`. It answers `status` (accepted, retried, rejected, failed), the
