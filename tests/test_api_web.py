@@ -44,6 +44,23 @@ def test_the_page_has_the_logo_as_its_icons(client):
         assert r.status_code == 200 and r.content.startswith(b"\x89PNG")
 
 
+def test_a_shared_link_shows_the_share_card(client):
+    html = client.get("/").text
+    site = "https://xplain-live.whiteocean-b5bbd7fb.germanywestcentral.azurecontainerapps.io"
+    tagline = "Every pass rated. Every surprise explained."
+    assert f'<meta property="og:url" content="{site}/">' in html
+    assert f'<meta property="og:description" content="{tagline}">' in html
+    assert f'<meta name="twitter:description" content="{tagline}">' in html
+    assert '<meta name="twitter:card" content="summary_large_image">' in html
+    # crawlers need absolute image URLs, on the app that serves them
+    images = re.findall(r'<meta (?:property="og:image"|name="twitter:image") content="([^"]+)">', html)
+    assert images == [f"{site}/static/og-image.png"] * 2
+    r = client.get("/static/og-image.png")
+    assert r.status_code == 200 and r.content.startswith(b"\x89PNG")
+    width, height = int.from_bytes(r.content[16:20], "big"), int.from_bytes(r.content[20:24], "big")
+    assert (width, height) == (1200, 630)
+
+
 def test_static_files_are_served(client):
     js = client.get("/static/app.js")
     css = client.get("/static/app.css")
