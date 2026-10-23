@@ -22,6 +22,7 @@ const I = require(process.argv[1]);
 const cases = JSON.parse(process.argv[2]);
 process.stdout.write(JSON.stringify({
   show: cases.show.map((s) => I.shouldShow(s)),
+  reload: (cases.reload || []).map((s) => I.reloadSearch(s)),
   next: cases.next.map(([s, a]) => I.nextScreen(s, a)),
   arrows: cases.arrows.map((n) => I.arrowPath(n)),
 }));
@@ -42,6 +43,17 @@ def test_shown_on_a_plain_visit_only():
                "?lang=el&tour=0", "?scope=1&mode=player"]
     out = run_node({"show": plain + skipped, "next": [], "arrows": []})["show"]
     assert out == [True] * len(plain) + [False] * len(skipped)
+
+
+@needs_node
+def test_a_reload_starts_over():
+    """A reload keeps only ?tour and ?match: Studio at kick-off, with the welcome screen unless ?tour=0."""
+    searches = ["", "?mode=player&player=dsk-p6", "?mode=analyst&moment=m3&t=5520", "?replay=m12&recap=ft",
+                "?tour=0&mode=producer", "?lang=el&scope=2&tour=0", "?match=seed3001&mode=player&player=p7", "?tour=1"]
+    out = run_node({"show": [], "reload": searches, "next": [], "arrows": []})["reload"]
+    assert out == ["", "", "", "", "?tour=0", "?tour=0", "?match=seed3001", "?tour=1"]
+    assert run_node({"show": out, "next": [], "arrows": []})["show"] == [True, True, True, True, False, False,
+                                                                         True, True]
 
 
 @needs_node

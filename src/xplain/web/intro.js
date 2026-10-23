@@ -1,6 +1,6 @@
 // xPlain Live: the welcome screen and the four-slide tour. A layer inside #stage (the same 1440 x 900 canvas, the
 // same tokens), shown on every plain visit: welcome -> slides 1..4 -> Start match -> Studio from kick-off. Nothing
-// is remembered; ?tour=0 and the deep links skip it. Every text lives in index.html; this file only moves between
+// is remembered; ?tour=0 and the deep links skip it, and a reload starts over (reloadSearch). Every text lives in index.html; this file only moves between
 // the screens and draws the slides' arrows from each note's data attributes.
 //
 // Loaded in <head>: it decides before the first paint whether the layer shows (the "intro-on" class on <html>),
@@ -18,6 +18,17 @@
     const params = new URLSearchParams(search || '');
     if (params.get('tour') === '0') return false;
     return !DEEP_LINKS.some((k) => params.has(k));
+  }
+
+  // the query a reload keeps: only ?tour and ?match, so a reload from any tab or time opens Studio at kick-off in
+  // the normal opening state (the app writes ?mode and ?player as tabs change); ?tour=0 recordings stay tour-free
+  const RELOAD_KEEPS = ['tour', 'match'];
+  function reloadSearch(search) {
+    const params = new URLSearchParams(search || '');
+    const kept = new URLSearchParams();
+    for (const [k, v] of params) if (RELOAD_KEEPS.includes(k)) kept.append(k, v);
+    const s = kept.toString();
+    return s ? '?' + s : '';
   }
 
   // The screen after an action on a screen: 'next' (Quick tour, Next, Enter / Right), 'back' (Back, Left), 'skip'
@@ -324,10 +335,16 @@
     return true;
   }
 
-  const api = { shouldShow, nextScreen, arrowPath, mount, isOpen };
+  const api = { shouldShow, reloadSearch, nextScreen, arrowPath, mount, isOpen };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else {
     root.XplainIntro = api;
+    // a reload drops the deep links before app.js reads them; a fresh visit to one keeps it
+    const nav = root.performance && performance.getEntriesByType && performance.getEntriesByType('navigation')[0];
+    if (nav && nav.type === 'reload') {
+      const search = reloadSearch(root.location.search);
+      if (search !== root.location.search) history.replaceState(null, '', root.location.pathname + search + root.location.hash);
+    }
     // before the first paint: the layer shows only on a plain visit
     if (shouldShow(root.location.search)) document.documentElement.classList.add('intro-on');
   }
