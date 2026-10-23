@@ -86,6 +86,27 @@ def test_a_bundle_is_served_from_the_bundle_dir(client):
     assert r.json() == {"meta": {"schema_version": "2"}}
 
 
+def test_head_on_the_page_and_a_favicon_ico(client):
+    # review 2026-10-23: HEAD / was 405 and /favicon.ico 404 (link checkers, uptime monitors, older tools)
+    head = client.head("/")
+    assert head.status_code == 200 and head.headers["content-type"].startswith("text/html") and head.content == b""
+    ico = client.get("/favicon.ico")
+    assert ico.status_code == 200 and ico.headers["content-type"] == "image/png"
+    assert ico.content == (ROOT / "src" / "xplain" / "web" / "favicon-32.png").read_bytes()
+
+
+def test_large_responses_are_gzipped(client, bundle_dir):
+    # review 2026-10-23: the 700 KB bundle and the scripts went out uncompressed
+    (bundle_dir / "bundle_big.json").write_text('{"x": "' + "a" * 5000 + '"}', encoding="utf-8")
+    for url in ("/api/bundle/big", "/static/app.js", "/"):
+        r = client.get(url, headers={"Accept-Encoding": "gzip"})
+        assert r.status_code == 200 and r.headers.get("content-encoding") == "gzip", url
+    assert client.get("/api/bundle/big", headers={"Accept-Encoding": "gzip"}).json() == {"x": "a" * 5000}
+    # a small answer and a browser that does not ask for it stay plain
+    assert "content-encoding" not in client.get("/api/bundle/demo_1", headers={"Accept-Encoding": "gzip"}).headers
+    assert "content-encoding" not in client.get("/static/app.js", headers={"Accept-Encoding": "identity"}).headers
+
+
 def test_missing_bundle_is_404(client):
     assert client.get("/api/bundle/nope").status_code == 404
 
@@ -198,6 +219,33 @@ def test_language_switch_keeps_its_behaviour(client):
     # the plate content fades on a language change; the switch itself does not
     fade = js.split("function fadePlate()")[1].split("}")[0]
     assert "lower-line" in fade and "lang" not in fade.replace("lower-line", "")
+
+
+def test_a_tables_new_tag_turns_into_a_dash_after_five_match_minutes(client):
+    # 2026-10-23 (owner): NEW stayed until the table changed again, at full time still on a 76' row
+    js = client.get("/static/app.js").text.replace("\r\n", "\n")
+    assert "const NEW_FOR_S = 300;" in js
+    move = js.split("function moveText(entry, fresh) {")[1].split("\n  }\n")[0]
+    assert "return fresh ? { text: 'NEW', cls: 'new' } : { text: '–', cls: '' };" in move
+    table = js.split("function renderTable(kind, snap, plate, notStarted) {")[1].split("\n  }\n")[0]
+    assert "const fresh = !!snap && state.now - snap.t < NEW_FOR_S;" in table
+    # the rows are drawn again when it flips (the sig), and render runs at least every match minute (tick)
+    assert "const sig = [notStarted, snap ? snap.scope + snap.t : '-', fresh, selIdNow, state.replay].join('/');" in table
+    assert "const mv = moveText(e, fresh);" in table
+    assert "const key = [sel, live, tick," in js
+
+
+def test_the_plate_facts_follow_the_narration_language(client):
+    # review 2026-10-23: with ES or EL the line changed language but "VERY EASY PASS, NOT COMPLETED" stayed English
+    js = client.get("/static/app.js").text.replace("\r\n", "\n")
+    facts = js.split("const PASS_FACTS = {")[1].split("\n  };")[0]
+    assert "en: (tier, done) => tier + ' pass, ' + (done ? 'completed' : 'not completed')," in facts
+    assert "es: (tier, done) => 'pase ' + tier + ', ' + (done ? 'completado' : 'no completado')," in facts
+    assert "el: (tier, done) => tier + ' πάσα, ' + (done ? 'ολοκληρωμένη' : 'μη ολοκληρωμένη')," in facts
+    plate = js.split("function renderPlate(")[1].split("\n  }\n")[0]
+    assert "PASS_FACTS[state.lang](entry.tier[state.lang] || entry.tier.en, m.completed);" in plate
+    assert "$('lower-meta').setAttribute('lang', state.lang);" in plate
+    assert "entry.tier.en + ' pass, '" not in js
 
 
 def test_pva_column_shows_a_dash_or_the_goal(client):
@@ -382,6 +430,16 @@ def test_producer_layout_keeps_studio_rules(client):
     assert re.findall(r"#[0-9A-Fa-f]{3,6}\b", block) == []   # tokens only
 
 
+def test_a_live_retake_keeps_its_moment_selected(client):
+    # bug 2026-10-23: the detail followed the newest moment, so the next one the clock reached took a fresh retake
+    # (and its Put on air / Keep stored line) out of view. Starting a retake selects its moment, as its log row does
+    js = client.get("/static/producer.js").text.replace("\r\n", "\n")
+    start = js.split("else if (retake.state !== 'running') {")[1].split("return;")[0]
+    assert start.index("ctx.selectMoment(r.dataset.retake);") < start.index("runRetake(r.dataset.retake);")
+    app = client.get("/static/app.js").text.replace("\r\n", "\n")
+    assert "selectMoment: (id) => { if (idx.markOf.has(id)) enterReplay(id); }," in app
+
+
 def test_a_retake_goes_on_air_only_by_the_producers_choice_and_only_in_this_tab(client):
     app = client.get("/static/app.js").text.replace("\r\n", "\n")
     js = client.get("/static/producer.js").text.replace("\r\n", "\n")
@@ -435,9 +493,21 @@ def test_leaving_studio_keeps_the_recap_and_its_switch(client):
     # and Producer; play resumed unseen, closed the recap, and back in Studio the Recap / Map switch was gone
     app = client.get("/static/app.js").text.replace("\r\n", "\n")
     mode = app.split("function setMode(mode) {")[1].split("\n  }\n")[0]
-    off = "if (mode !== 'studio' && state.recap) state.recap.resumeAt = null;"
+    off = "if (mode !== 'studio' && state.recap && state.recap.resumeAt !== null) {"
     assert off in mode and "closeRecap" not in mode
     assert mode.index(off) < mode.index("if (mode === 'studio') showUnseenRecap();")
+    # bug 2026-10-23: back in Studio the countdown never came back (paused until Play). Leaving keeps what was
+    # left of it; back on the card while live it goes on from there, and the plate's drain starts from that
+    pause = mode.split(off)[1].split("\n    }\n")[0]
+    assert "state.recap.leftMs = Math.max(0, state.recap.resumeAt - performance.now());" in pause
+    assert "state.recap.resumeAt = null;" in pause
+    back = mode.split("if (mode === 'studio' && state.recap && state.recap.leftMs !== undefined) {")[1].split("\n    }\n")[0]
+    assert "if (state.recap.view === 'recap' && isLive()) state.recap.resumeAt = performance.now() + state.recap.leftMs;" in back
+    assert "delete state.recap.leftMs;" in back
+    assert mode.index(off) < mode.index("state.recap.leftMs !== undefined")
+    # Map (and stepping or a replay, which go through recapToMap) drops a paused countdown for good
+    to_map = app.split("function recapToMap() {")[1].split("\n  }\n")[0]
+    assert "delete state.recap.leftMs;" in to_map
     # the auto-resume is the only timed path to closeRecap: it fires only while resumeAt is set
     frame = app.split("function frame(ts) {")[1].split("\n  }\n")[0]
     assert "if (state.recap && state.recap.resumeAt !== null && ts >= state.recap.resumeAt) setPlaying(true);" in frame

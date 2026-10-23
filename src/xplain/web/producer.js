@@ -187,10 +187,11 @@
     return before.concat(server);
   }
 
-  // The retake's summary line, the server's values as sent: model, latency, attempts, network retries (when any).
+  // The retake's summary line, the server's values as sent: model, latency ("in all": the whole retake, not the
+  // Narrator step's own call shown above it), attempts, network retries (when any).
   function retakeSummary(result) {
     const parts = [result.model];
-    if (result.latency_s !== null && result.latency_s !== undefined) parts.push(result.latency_s + ' s');
+    if (result.latency_s !== null && result.latency_s !== undefined) parts.push(result.latency_s + ' s in all');
     if (result.attempts) parts.push(result.attempts + (result.attempts === 1 ? ' attempt' : ' attempts'));
     if (result.network_retries) {
       parts.push(result.network_retries + (result.network_retries === 1 ? ' network retry' : ' network retries'));
@@ -281,7 +282,13 @@
       const r = e.target.closest('button[data-retake]');
       if (r) {
         if (r.dataset.retake === 'back') retake = { id: null, state: 'idle', result: null, error: '' };
-        else if (retake.state !== 'running') { runRetake(r.dataset.retake); return; }
+        else if (retake.state !== 'running') {
+          // the retake's moment becomes the selection (as its log row would), so the next moment the clock
+          // reaches does not take the detail away while the retake runs or its line waits for a choice
+          ctx.selectMoment(r.dataset.retake);
+          runRetake(r.dataset.retake);
+          return;
+        }
         drawn.detail = '';
         ctx.redraw();
         return;

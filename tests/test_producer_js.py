@@ -188,12 +188,12 @@ def test_a_live_retake_is_shown_as_the_server_sent_it(tmp_path):
     a, r, j, f, b = json.loads(out.stdout)
     assert a["steps"] == [["analyst", True, False], ["explainer", True, False], ["narrator", False, False],
                           ["verifier", False, False], ["verifier", False, True]]
-    assert a["summary"] == "gpt-4.1-mini · 1.42 s · 1 attempt"
+    assert a["summary"] == "gpt-4.1-mini · 1.42 s in all · 1 attempt"
     assert a["outcome"] == {"text": "Λ", "note": "Not on air yet: put it on air, or keep the stored line.", "reasons": []}
     # an uncommentated moment has no stored line to keep
     assert a["uncommentated"] == {"text": "Λ", "note": "Not on air yet: put it on air, or keep it off air.", "reasons": []}
     assert j["uncommentated"] == j["outcome"]
-    assert r["summary"] == "gpt-4.1-mini · 1.42 s · 2 attempts · 1 network retry"
+    assert r["summary"] == "gpt-4.1-mini · 1.42 s in all · 2 attempts · 1 network retry"
     assert j["outcome"]["text"] is None and j["outcome"]["note"] == "Not aired: the Verifier rejected all 3 attempts."
     assert j["outcome"]["reasons"] == ["attempt 1: no_numbers: x"]
     assert f["steps"] == [["analyst", True, False], ["explainer", True, False]]
@@ -204,7 +204,7 @@ def test_a_live_retake_is_shown_as_the_server_sent_it(tmp_path):
     assert b["outcome"]["note"] == "Azure AI Foundry is busy right now. The stored line stays on air. Try again in a minute."
     assert b["uncommentated"]["note"] == "Azure AI Foundry is busy right now. Nothing goes on air. Try again in a minute."
     assert b["outcome"]["reasons"] == []
-    assert f["summary"] == "gpt-4.1-mini · 0.2 s"
+    assert f["summary"] == "gpt-4.1-mini · 0.2 s in all"
 
 
 STEPS_HARNESS = r"""
