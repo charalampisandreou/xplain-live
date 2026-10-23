@@ -416,10 +416,14 @@ def test_empty_states_end_with_a_full_stop(client):
     for text in (app, js):
         assert "const NOT_STARTED = 'Starts in the 2nd half.';" in text
     assert "emptyText = 'No commentated moment yet.'" in app
-    assert "'No surprises yet.'" in js
+    assert "const NO_MOMENTS = ['No surprises yet', \"This player's surprising passes land here.\"];" in js
+    # Studio's tables before their first surprise: a title (no stop) over a line on what lands there (a stop)
+    assert "surprise_failure: ['No surprise failures yet', 'An easy pass that is not completed lands here.']," in app
+    assert "surprise_success: ['No surprise successes yet', 'A hard pass that is completed lands here.']," in app
+    assert "rows.appendChild(waiting(...EMPTY[kind]));" in app
     producer = client.get("/static/producer.js").text
     for text in ("This match was built without a record of the AI agents.", "Checks not recorded in this bundle.", "No line went on air.",
-                 "No surprise yet.", "Pick a line in the log.", "No agent records stored for this line.",
+                 "Pick a line in the log.", "No agent records stored for this line.",
                  "No agent records: no line was written when it happened."):
         assert "'" + text + "'" in producer
 
@@ -667,7 +671,9 @@ def test_analyst_empty_states_end_with_a_full_stop(client):
     app = client.get("/static/app.js").text
     for text in ("Starts in the 2nd half.", "No passes yet."):
         assert "'" + text + "'" in js
-    assert "const NO_PICK = 'No surprise yet. " in js and "as it did.';" in js
+    assert ("const NO_PICK = ['No surprise yet', 'Each surprise becomes a dot on the swing. Pick one to see how the "
+            "model rated the pass.'];") in js
+    assert "const wait = div('empty waiting');" in js
     assert "'No surprise yet.'" in app
     assert "const NOT_COMMENTATED = \"Not commentated: when it happened, it was not among the half's top 3 surprises of its kind.\";" in app
 
@@ -696,3 +702,31 @@ def test_a_match_opened_at_kick_off_offers_60x_until_its_first_surprise(client):
     assert "state.playerPicked, state.plateNote," in app   # the plate redraws when the note changes
     assert ".lower.waiting.hint .line { color: var(--text); font-size: 20px; font-weight: 700; }" in css
     assert ".seg.speed button.hint:not(.on) { box-shadow: inset 0 0 0 2px var(--accent);" in css
+
+
+def test_the_waiting_state_is_one_style_in_every_tab(client):
+    """Before the first surprise: a white title after a pulsing accent dot, a muted line under it; tokens only, and
+    the pulse stops for reduced motion."""
+    css = client.get("/static/app.css").text
+    block = css.split("/* before the first surprise, in every tab")[1]
+    assert ".empty.waiting {" in block and ".waiting-sub {" in block
+    title = block.split(".waiting-title {")[1].split("}")[0]
+    assert "color: var(--text)" in title
+    dot = block.split(".waiting-title::before")[1].split("}")[0]
+    assert "background: var(--accent)" in dot and "animation: live-pulse" in dot
+    assert "color: var(--muted)" in block.split(".waiting-sub {")[1].split("}")[0]
+    assert "@keyframes live-pulse" in block
+    assert "@media (prefers-reduced-motion: reduce) { .waiting-title::before, .pr-step.idle.rating .pr-mark::before { animation: none; } }" in block
+    assert re.findall(r"#[0-9A-Fa-f]{3,6}\b", block) == []
+
+
+def test_the_idle_agents_sit_on_the_log_waiting_grid(client):
+    """Producer before the first surprise: each agent's dot 12px in and 8px wide with a 10px gap, as the log's waiting
+    title (12px padding, 8px dot, 10px gap); the hollow rings are 8px across too (border inside)."""
+    css = client.get("/static/app.css").text
+    block = css.split("/* Producer before the first surprise")[1]
+    assert ".pr-step.idle { padding: 15px 12px 13px; }" in block
+    assert ".pr-step.idle .pr-mark { width: 8px; align-self: center; display: flex; }" in block
+    ring = block.split(".pr-step.idle:not(.rating) .pr-mark::before {")[1].split("}")[0]
+    assert "box-sizing: border-box" in ring and "width: 8px" in ring and "height: 8px" in ring
+    assert ".empty.waiting { padding: 14px 12px 18px; }" in css and ".pr-step-top { display: flex; align-items: baseline; gap: 10px; }" in css

@@ -48,9 +48,24 @@
   const NOT_COMMENTATED = "Not commentated: when it happened, it was not among the half's top 3 surprises of its kind.";
   const NO_STEPS_NC = 'No agent records: no line was written when it happened.';
   const FROM_MATCH = 'from the match';
+  // before the first surprise: the log's waiting text, and what each agent does (Producer's right column)
+  const NO_LINE = ['No line on air yet', 'When a pass surprises the model, the agents write a commentary line and check it. It lands here.'];
+  const IDLE = [
+    ['analyst', 'Code', null],
+    ['explainer', 'Code', 'explains each surprise: what made the pass easy or hard'],
+    ['narrator', 'LLM', 'writes the line on Azure AI Foundry'],
+    ['verifier', 'Code', null],
+  ];
   const CHECKED_AGAIN = 'checked again before air';
 
   // --- pure functions (no DOM; also loaded by node in the test) -----------------------------------
+
+  // passes rated by the clock: the bundle's passes at or before now
+  function ratedSoFar(bundle, now) {
+    let n = 0;
+    for (const p of bundle.marks || []) if (p.t <= now) n++;
+    return n;
+  }
 
   // a bundle with at least one traced moment or recap
   function hasTrace(bundle) {
@@ -280,11 +295,12 @@
     }
     const item = sel && log.find((i) => i.type === sel.type && i.id === sel.id);
     if (selKey !== openFor) { openFor = selKey; openChecks = new Set(); }
-    const detailKey = (item ? selKey : '-') + '/' + args.lang + '/' + [...openChecks].join(',') + '/' +
+    const rated = log.length ? null : ratedSoFar(bundle, args.now);   // the idle Analyst's count, before any surprise
+    const detailKey = (item ? selKey : '-') + '/' + rated + '/' + args.lang + '/' + [...openChecks].join(',') + '/' +
       (retake.id || '') + ':' + retake.state + '/' + (item && ctx.aired(item.id) ? 'aired' : '');
     if (detailKey !== drawn.detail) {
       drawn.detail = detailKey;
-      renderDetail(bundle, item || null, args.lang);
+      renderDetail(bundle, item || null, args.lang, rated);
     }
   }
 
@@ -292,7 +308,11 @@
     const rows = $('pr-rows');
     const scroll = rows.scrollTop;
     rows.replaceChildren();
-    if (log.length === 0) rows.appendChild(node('div', 'empty', 'No surprise yet.'));
+    if (log.length === 0) {
+      const box = node('div', 'empty waiting');
+      box.append(node('div', 'waiting-title', NO_LINE[0]), node('div', 'waiting-sub', NO_LINE[1]));
+      rows.appendChild(box);
+    }
     for (const it of log) {
       const isSel = Boolean(sel) && sel.type === it.type && sel.id === it.id;
       const row = node('div', 'row pr-row' + (isSel ? ' sel' : ''));
@@ -336,9 +356,35 @@
     return parts.filter(Boolean).join(' · ');
   }
 
-  function renderDetail(bundle, item, lang) {
+  // the right column before the first surprise: the head and the four agents, laid out as a traced line's
+  function idleAgents(box, bundle, rated) {
+    const head = node('div', 'thead');
+    head.append(node('h2', '', 'Agents'), node('div', 'tsub', 'waiting for the first surprise'));
+    box.appendChild(head);
+    const checks = ((bundle.trace && bundle.trace.check_labels) || {}).verifier;
+    const n = checks ? Object.keys(checks).length : 0;
+    const list = node('div', 'pr-steps');
+    for (const [agent, kind, text] of IDLE) {
+      const row = node('div', 'pr-step idle' + (agent === 'analyst' ? ' rating' : ''));
+      const top = node('div', 'pr-step-top');
+      const info = agent === 'analyst' ? 'rating every pass · ' + rated + ' so far'
+        : agent === 'verifier' ? (n ? n + ' checks on every line before it goes on air' : 'checks every line before it goes on air')
+        : text;
+      top.append(node('span', 'pr-mark'), node('span', 'pr-agent', AGENT_WORDS[agent]),
+        node('span', 'pr-kind', kind), node('span', 'pr-info', info));
+      row.appendChild(top);
+      list.appendChild(row);
+    }
+    box.appendChild(list);
+  }
+
+  function renderDetail(bundle, item, lang, rated) {
     const box = $('pr-detail');
     box.replaceChildren();
+    if (!item && rated !== null) {   // before the first surprise: the four agents, Analyst rating every pass
+      idleAgents(box, bundle, rated);
+      return;
+    }
     if (!item) {
       box.appendChild(node('div', 'empty', 'Pick a line in the log.'));
       return;
@@ -525,9 +571,9 @@
     return wrap;
   }
 
-  const api = { hasTrace, items, stepsOf, splitReason, fillerSummary, foldFinal, failedChecks, retakeSteps, retakeSummary,
-    retakeOutcome, mount, render, invalidate, EMPTY, NOT_RECORDED, REFILLED, NOT_ON_AIR, NOT_ON_AIR_NC, AIRED, AIRED_NC,
-    NOT_COMMENTATED, FROM_MATCH };
+  const api = { hasTrace, items, ratedSoFar, stepsOf, splitReason, fillerSummary, foldFinal, failedChecks, retakeSteps,
+    retakeSummary, retakeOutcome, mount, render, invalidate, EMPTY, NOT_RECORDED, REFILLED, NOT_ON_AIR, NOT_ON_AIR_NC, AIRED, AIRED_NC,
+    NOT_COMMENTATED, FROM_MATCH, NO_LINE, IDLE };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.XplainProducer = api;
 })(typeof window !== 'undefined' ? window : this);

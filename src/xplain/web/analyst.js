@@ -70,7 +70,7 @@
   const SVG = 'http://www.w3.org/2000/svg';
   const NOT_STARTED = 'Starts in the 2nd half.';
   const NO_PASSES = 'No passes yet.';
-  const NO_PICK = 'No surprise yet. Each one becomes a dot on the swing; pick a dot to see why the model rated the pass as it did.';
+  const NO_PICK = ['No surprise yet', 'Each surprise becomes a dot on the swing. Pick one to see how the model rated the pass.'];
   const KIND_LABEL = { surprise_failure: 'Surprise failure', surprise_success: 'Surprise success' };
   const TEAM_CLASS = ['home', 'away'];
   // the chart's drawing area in the svg's own units (= px: the svg is drawn at 780 x 270)
@@ -379,7 +379,9 @@
       $('an-shap-title').textContent = 'How the model rated it';
       $('an-shap-sub').textContent = '';
       $('an-shap-foot').textContent = '';
-      box.appendChild(div('empty', NO_PICK));
+      const wait = div('empty waiting');
+      wait.append(div('waiting-title', NO_PICK[0]), div('waiting-sub', NO_PICK[1]));
+      box.appendChild(wait);
       return;
     }
     const m = entry.bundle.moment;
