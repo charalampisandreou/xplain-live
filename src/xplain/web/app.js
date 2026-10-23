@@ -368,9 +368,17 @@
   function setMode(mode) {
     state.mode = mode;
     // Player and Producer show no recap, but an open one stays open: back in Studio it is there again. Leaving
-    // Studio turns the half-time auto-resume off (as Map does), else play resumed unseen and closed the recap,
-    // taking the Recap / Map switch with it. From a recap, Player opens on its star until a player is picked.
-    if (mode !== 'studio' && state.recap) state.recap.resumeAt = null;
+    // Studio pauses the half-time auto-resume (else play resumed unseen and closed the recap, taking the Recap /
+    // Map switch with it); back in Studio on the card it goes on with what was left of it (the drain too).
+    // From a recap, Player opens on its star until a player is picked.
+    if (mode !== 'studio' && state.recap && state.recap.resumeAt !== null) {
+      state.recap.leftMs = Math.max(0, state.recap.resumeAt - performance.now());
+      state.recap.resumeAt = null;
+    }
+    if (mode === 'studio' && state.recap && state.recap.leftMs !== undefined) {
+      if (state.recap.view === 'recap' && isLive()) state.recap.resumeAt = performance.now() + state.recap.leftMs;
+      delete state.recap.leftMs;
+    }
     if (mode === 'player' && state.recap && !state.playerPicked) {
       const star = state.bundle.recaps[state.recap.scope].card.star;
       if (star) state.player = star.player_id;
@@ -917,6 +925,7 @@
     if (!state.recap) return;
     state.recap.view = 'map';
     state.recap.resumeAt = null;
+    delete state.recap.leftMs;   // an auto-resume paused outside Studio does not come back after Map
   }
 
   // The star's row opens the star in Player

@@ -435,9 +435,21 @@ def test_leaving_studio_keeps_the_recap_and_its_switch(client):
     # and Producer; play resumed unseen, closed the recap, and back in Studio the Recap / Map switch was gone
     app = client.get("/static/app.js").text.replace("\r\n", "\n")
     mode = app.split("function setMode(mode) {")[1].split("\n  }\n")[0]
-    off = "if (mode !== 'studio' && state.recap) state.recap.resumeAt = null;"
+    off = "if (mode !== 'studio' && state.recap && state.recap.resumeAt !== null) {"
     assert off in mode and "closeRecap" not in mode
     assert mode.index(off) < mode.index("if (mode === 'studio') showUnseenRecap();")
+    # bug 2026-10-23: back in Studio the countdown never came back (paused until Play). Leaving keeps what was
+    # left of it; back on the card while live it goes on from there, and the plate's drain starts from that
+    pause = mode.split(off)[1].split("\n    }\n")[0]
+    assert "state.recap.leftMs = Math.max(0, state.recap.resumeAt - performance.now());" in pause
+    assert "state.recap.resumeAt = null;" in pause
+    back = mode.split("if (mode === 'studio' && state.recap && state.recap.leftMs !== undefined) {")[1].split("\n    }\n")[0]
+    assert "if (state.recap.view === 'recap' && isLive()) state.recap.resumeAt = performance.now() + state.recap.leftMs;" in back
+    assert "delete state.recap.leftMs;" in back
+    assert mode.index(off) < mode.index("state.recap.leftMs !== undefined")
+    # Map (and stepping or a replay, which go through recapToMap) drops a paused countdown for good
+    to_map = app.split("function recapToMap() {")[1].split("\n  }\n")[0]
+    assert "delete state.recap.leftMs;" in to_map
     # the auto-resume is the only timed path to closeRecap: it fires only while resumeAt is set
     frame = app.split("function frame(ts) {")[1].split("\n  }\n")[0]
     assert "if (state.recap && state.recap.resumeAt !== null && ts >= state.recap.resumeAt) setPlaying(true);" in frame
