@@ -126,7 +126,7 @@
   const SVG = 'http://www.w3.org/2000/svg';
   const KIND_LABEL = { surprise_failure: 'Surprise failure', surprise_success: 'Surprise success' };
   const NOT_STARTED = 'Starts in the 2nd half.';
-  const NO_MOMENTS = 'No surprises yet.';
+  const NO_MOMENTS = ['No surprises yet', "This player's surprising passes land here."];
 
   let view = null;   // what app.js handed over in mount(), and what was last drawn
 
@@ -439,8 +439,14 @@
     const { api } = view;
     const rows = $('pv-rows');
     rows.replaceChildren();
-    if (notStarted || moments.length === 0) {
-      rows.appendChild(div('empty', notStarted ? NOT_STARTED : NO_MOMENTS));
+    if (notStarted) {
+      rows.appendChild(div('empty', NOT_STARTED));
+      return;
+    }
+    if (moments.length === 0) {
+      const box = div('empty waiting');
+      box.append(div('waiting-title', NO_MOMENTS[0]), div('waiting-sub', NO_MOMENTS[1]));
+      rows.appendChild(box);
       return;
     }
     for (const e of moments) {

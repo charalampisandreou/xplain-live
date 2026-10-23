@@ -416,7 +416,7 @@ def test_empty_states_end_with_a_full_stop(client):
     for text in (app, js):
         assert "const NOT_STARTED = 'Starts in the 2nd half.';" in text
     assert "emptyText = 'No commentated moment yet.'" in app
-    assert "'No surprises yet.'" in js
+    assert "const NO_MOMENTS = ['No surprises yet', \"This player's surprising passes land here.\"];" in js
     # Studio's tables before their first surprise: a title (no stop) over a line on what lands there (a stop)
     assert "surprise_failure: ['No surprise failures yet', 'An easy pass that is not completed lands here.']," in app
     assert "surprise_success: ['No surprise successes yet', 'A hard pass that is completed lands here.']," in app
