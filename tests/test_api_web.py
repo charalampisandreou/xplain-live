@@ -671,7 +671,9 @@ def test_analyst_empty_states_end_with_a_full_stop(client):
     app = client.get("/static/app.js").text
     for text in ("Starts in the 2nd half.", "No passes yet."):
         assert "'" + text + "'" in js
-    assert "const NO_PICK = 'No surprise yet. " in js and "as it did.';" in js
+    assert ("const NO_PICK = ['No surprise yet', 'Each surprise becomes a dot on the swing. Pick one to see how the "
+            "model rated the pass.'];") in js
+    assert "const wait = div('empty waiting');" in js
     assert "'No surprise yet.'" in app
     assert "const NOT_COMMENTATED = \"Not commentated: when it happened, it was not among the half's top 3 surprises of its kind.\";" in app
 
