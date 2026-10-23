@@ -143,6 +143,14 @@ def test_a_foundry_error_is_a_failure_at_the_request_stage(served):
     assert "ConnectionError" in out["message"]
 
 
+def test_a_hung_foundry_call_times_out_at_the_retake_timeout_and_is_retried_once(served, monkeypatch):
+    monkeypatch.setattr(retake, "CALL_TIMEOUT_S", 0.05)   # 20 s in the app
+    out = run(runner("slow", "slow"), served)
+    assert out["status"] == "failed" and out["stage"] == "request" and out["line"] is None
+    assert out["attempts"] == 2 and "timeout after 0.05 s" in out["message"]
+    assert out["latency_s"] < 5
+
+
 def test_a_token_failure_is_a_failure_at_the_token_stage_and_never_calls_the_model(served):
     seen = []
     out = run(runner(make_out(), credential=FakeCredential(PermissionError("no identity")), seen=seen), served)
@@ -265,7 +273,7 @@ def test_the_real_agent_talks_to_foundry_over_ipv4_with_the_token_as_bearer(monk
     assert str(openai_client.base_url) == "https://example.openai.azure.com/openai/v1/"
     assert openai_client.api_key == "entra-access-token" and openai_client.max_retries == 0
     assert openai_client._client._transport._pool._network_backend is backend
-    assert openai_client._client.timeout.read == 60.0   # gpt-6.1-sol's per-call timeout (models.MODEL_PARAMS)
+    assert openai_client._client.timeout.read == retake.CALL_TIMEOUT_S == 20.0   # not the model's 60 s build timeout
 
 
 def test_the_final_step_is_the_workflows():

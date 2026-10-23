@@ -380,7 +380,10 @@ there.
   languages, the log row reads "On air · retake", and On air shows it with its steps and **Back to stored line**)
   or **Keep stored line**. The choice lives in that browser tab until the page reloads: nothing is sent or saved,
   so the bundle, other viewers and the deployed site keep the stored line. A line the Verifier rejected three times
-  says so with the reasons and has no Put on air; a failure names its stage. Stored line goes back.
+  says so with the reasons and has no Put on air. A failure (sign-in, timeout, rate limit, network) says in plain
+  words that Azure AI Foundry is busy or did not answer, that the stored line stays on air, and to try again in a
+  minute, in red; the failed Narrator step says "No answer from Foundry" or "Foundry busy" (the raw error stays
+  in the server's answer, not on screen). Stored line goes back.
 - **Show checks** marks with ✕ the checks a failed Verifier step names in its reasons; the others keep ✓.
 
 ## Docker
@@ -426,7 +429,8 @@ are copied from the local checkout.
 **Warning:** the full `az deployment group what-if` output contains the evaluated workspace key. The
 script prints it with `--result-format ResourceIdOnly`; if you run what-if by hand, do the same.
 
-Measured on 2026-10-16: a request after scale to zero (cold start) took 4.95 s; warm requests take under 1 s.
+The app keeps one replica running (`minReplicas: 1`), so it never scales to zero. Measured on 2026-10-16, when it still did:
+a request after scale to zero (cold start) took 4.95 s; warm requests take under 1 s.
 
 The environment runs in Container Apps **Express** mode (the platform picks it even though the template
 does not set `environmentMode`). Express facts that matter here:
@@ -459,7 +463,7 @@ unless `XPLAIN_LIVE=1`, narrates one commentated moment of the served bundle aga
 the nth retake of that moment since the server started (so each retake gets the next variation nudge: another
 sentence frame, outcome wording and opening, not the line on air again), then the
 Narrator on `XPLAIN_RETAKE_DEPLOYMENT` (default `gpt-6.1-sol`, the model that wrote the bundle's lines; its
-parameters and 60 s per-call timeout from `models.MODEL_PARAMS`; up to three calls, each answer checked by the Verifier, a rejected one
+parameters from `models.MODEL_PARAMS`, but a 20 s per-call timeout so a hung call ends the retake in about 40 s; up to three calls, each answer checked by the Verifier, a rejected one
 retried with the reasons) and the final check, in the bundle's phrase mode (`src/xplain/retake.py`). Same auth
 as the live check (the token first, then the request), over IPv4 only; a failed IPv4 lookup is retried after
 0.5 s and 1 s and counted as `network_retries`. It answers `status` (accepted, retried, rejected, failed), the
