@@ -187,10 +187,11 @@
     return before.concat(server);
   }
 
-  // The retake's summary line, the server's values as sent: model, latency, attempts, network retries (when any).
+  // The retake's summary line, the server's values as sent: model, latency ("in all": the whole retake, not the
+  // Narrator step's own call shown above it), attempts, network retries (when any).
   function retakeSummary(result) {
     const parts = [result.model];
-    if (result.latency_s !== null && result.latency_s !== undefined) parts.push(result.latency_s + ' s');
+    if (result.latency_s !== null && result.latency_s !== undefined) parts.push(result.latency_s + ' s in all');
     if (result.attempts) parts.push(result.attempts + (result.attempts === 1 ? ' attempt' : ' attempts'));
     if (result.network_retries) {
       parts.push(result.network_retries + (result.network_retries === 1 ? ' network retry' : ' network retries'));
