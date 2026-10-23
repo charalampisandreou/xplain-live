@@ -252,3 +252,32 @@ def test_show_checks_marks_the_checks_a_failed_verifier_step_names(tmp_path):
     out = subprocess.run([NODE, "-e", FAILED_HARNESS, str(PRODUCER_JS), str(path)], capture_output=True, text=True,
                          encoding="utf-8", check=True)
     assert json.loads(out.stdout) == [[], ["no_numbers", "length"], [], []]
+
+
+IDLE_HARNESS = r"""
+const fs = require('fs');
+const P = require(process.argv[1]);
+const d = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+process.stdout.write(JSON.stringify({ rated: d.cases.map((now) => P.ratedSoFar(d.bundle, now)), noLine: P.NO_LINE,
+  idle: P.IDLE.map((a) => [a[0], a[1]]) }));
+"""
+
+
+def test_before_the_first_surprise_the_agents_wait_and_analyst_counts_the_passes_rated(tmp_path, built):
+    """The idle Analyst's count is the bundle's passes with t <= now (no spoilers); the four agents in workflow order,
+    only Narrator an LLM; the log's waiting text is a title over a line that ends with a full stop."""
+    times = sorted({m["t"] for m in built["marks"]})
+    cases = [0.0, times[0], times[len(times) // 2], times[-1], times[-1] + 60]
+    path = tmp_path / "d.json"
+    path.write_text(json.dumps({"bundle": built, "cases": cases}), encoding="utf-8")
+    out = subprocess.run([NODE, "-e", IDLE_HARNESS, str(PRODUCER_JS), str(path)], capture_output=True, text=True,
+                         encoding="utf-8", check=True)
+    got = json.loads(out.stdout)
+    assert got["rated"] == [sum(m["t"] <= now for m in built["marks"]) for now in cases]
+    assert got["rated"][-1] == len(built["marks"])
+    assert got["idle"] == [["analyst", "Code"], ["explainer", "Code"], ["narrator", "LLM"], ["verifier", "Code"]]
+    assert got["noLine"][0] == "No line on air yet" and got["noLine"][1].endswith(".")
+    src = PRODUCER_JS.read_text(encoding="utf-8")
+    assert "'rating every pass · ' + rated + ' so far'" in src
+    assert "n + ' checks on every line before it goes on air'" in src
+    assert "const rated = log.length ? null : ratedSoFar(bundle, args.now);" in src

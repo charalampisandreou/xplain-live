@@ -423,7 +423,7 @@ def test_empty_states_end_with_a_full_stop(client):
     assert "rows.appendChild(waiting(...EMPTY[kind]));" in app
     producer = client.get("/static/producer.js").text
     for text in ("This match was built without a record of the AI agents.", "Checks not recorded in this bundle.", "No line went on air.",
-                 "No surprise yet.", "Pick a line in the log.", "No agent records stored for this line.",
+                 "Pick a line in the log.", "No agent records stored for this line.",
                  "No agent records: no line was written when it happened."):
         assert "'" + text + "'" in producer
 
@@ -716,5 +716,5 @@ def test_the_waiting_state_is_one_style_in_every_tab(client):
     assert "background: var(--accent)" in dot and "animation: live-pulse" in dot
     assert "color: var(--muted)" in block.split(".waiting-sub {")[1].split("}")[0]
     assert "@keyframes live-pulse" in block
-    assert "@media (prefers-reduced-motion: reduce) { .waiting-title::before { animation: none; } }" in block
+    assert "@media (prefers-reduced-motion: reduce) { .waiting-title::before, .pr-step.idle.rating .pr-mark::before { animation: none; } }" in block
     assert re.findall(r"#[0-9A-Fa-f]{3,6}\b", block) == []
