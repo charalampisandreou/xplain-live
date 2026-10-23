@@ -32,6 +32,46 @@ def test_index_is_the_studio_page(client):
     assert "/static/app.js" in r.text and "/static/app.css" in r.text
 
 
+def test_the_page_has_the_logo_as_its_icons(client):
+    html = client.get("/").text
+    assert '<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">' in html
+    assert '<link rel="icon" href="/static/favicon-32.png" type="image/png" sizes="32x32">' in html
+    assert '<link rel="apple-touch-icon" href="/static/apple-touch-icon.png">' in html
+    svg = client.get("/static/favicon.svg")
+    assert svg.status_code == 200 and "image/svg+xml" in svg.headers["content-type"]
+    for path in ("/static/favicon-32.png", "/static/apple-touch-icon.png"):
+        r = client.get(path)
+        assert r.status_code == 200 and r.content.startswith(b"\x89PNG")
+
+
+def test_the_bubble_leads_every_xplain_live_mark(client):
+    html = client.get("/").text
+    assert html.count('<symbol id="logo-bubble"') == 1
+    bubble = '<svg class="logo-bubble" aria-hidden="true"><use href="#logo-bubble"></use></svg>xPlain <span>Live</span>'
+    assert html.count(bubble) == 4   # the header, the slides' mark, welcome and Start match
+    # sized in em, so the walkthrough's glide scales it with the words
+    css = client.get("/static/app.css").text
+    rule = next(line for line in css.splitlines() if line.startswith(".logo-bubble {"))
+    assert "width: 1.18em; height: 1.18em;" in rule and "px" not in rule
+
+
+def test_a_shared_link_shows_the_share_card(client):
+    html = client.get("/").text
+    site = "https://xplain-live.whiteocean-b5bbd7fb.germanywestcentral.azurecontainerapps.io"
+    tagline = "Every pass rated. Every surprise explained."
+    assert f'<meta property="og:url" content="{site}/">' in html
+    assert f'<meta property="og:description" content="{tagline}">' in html
+    assert f'<meta name="twitter:description" content="{tagline}">' in html
+    assert '<meta name="twitter:card" content="summary_large_image">' in html
+    # crawlers need absolute image URLs, on the app that serves them
+    images = re.findall(r'<meta (?:property="og:image"|name="twitter:image") content="([^"]+)">', html)
+    assert images == [f"{site}/static/og-image.png"] * 2
+    r = client.get("/static/og-image.png")
+    assert r.status_code == 200 and r.content.startswith(b"\x89PNG")
+    width, height = int.from_bytes(r.content[16:20], "big"), int.from_bytes(r.content[20:24], "big")
+    assert (width, height) == (1200, 630)
+
+
 def test_static_files_are_served(client):
     js = client.get("/static/app.js")
     css = client.get("/static/app.css")
