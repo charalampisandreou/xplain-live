@@ -550,6 +550,10 @@
       if (e.target.closest && e.target.closest('input, textarea, select, [contenteditable]')) return;
       const control = e.target.closest && e.target.closest('button, [role="button"]');
       if (control && (e.key === ' ' || e.key === 'Enter')) return;
+      // the opening's hint: Enter picks 60x, as a click on the ringed button would (every tab)
+      if (e.key === 'Enter' && state.plateNote === 'hint' && $('speed').querySelector('[data-speed="60"].hint')) {
+        pickSpeed(FAST_SPEED); e.preventDefault(); return;
+      }
       // Player mode: space plays or pauses, [ ] page the plate; nothing steps or replays
       if (state.mode === 'player' && ![' ', '[', ']'].includes(e.key)) return;
       // Analyst mode: space plays or pauses, [ ] page the plate's surprises; Esc or L drops the pick (the swing
