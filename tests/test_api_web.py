@@ -724,6 +724,13 @@ def test_a_match_opened_at_kick_off_offers_60x_until_its_first_surprise(client):
     assert "const FAST_SPEED = 60, FAST_LEAD_S = 60;" in app
     assert "const HINT_TEXT = ['Waiting for the first surprise. Pick ', '60×', ' to get there faster.'];" in app
     assert "const FAST_TEXT = 'Rating every pass. Watching for surprises.';" in app
+    # Enter picks 60x only while the ring is on, after the tour, text box and focused-button guards
+    keys = app.split("document.addEventListener('keydown', (e) => {")[1].split("// Player mode")[0]
+    assert "if (state.intro) return;" in keys
+    assert "if (control && (e.key === ' ' || e.key === 'Enter')) return;" in keys
+    assert ("if (e.key === 'Enter' && state.plateNote === 'hint' && "
+            "$('speed').querySelector('[data-speed=\"60\"].hint')) {\n        pickSpeed(FAST_SPEED);") in keys
+    assert keys.index("if (control &&") < keys.index("e.key === 'Enter' && state.plateNote === 'hint'")
     # only at kick-off (?t, ?replay and ?recap open as before), and it opens at the normal speed
     opening = app.split("const rs = RECAP_KEYS[params.get('recap')];")[1].split("requestAnimationFrame(frame);")[0]
     assert "const fastUntil = idx.narr.length ? idx.narrT[0] - FAST_LEAD_S : null;" in opening
