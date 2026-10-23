@@ -382,6 +382,16 @@ def test_producer_layout_keeps_studio_rules(client):
     assert re.findall(r"#[0-9A-Fa-f]{3,6}\b", block) == []   # tokens only
 
 
+def test_a_live_retake_keeps_its_moment_selected(client):
+    # bug 2026-10-23: the detail followed the newest moment, so the next one the clock reached took a fresh retake
+    # (and its Put on air / Keep stored line) out of view. Starting a retake selects its moment, as its log row does
+    js = client.get("/static/producer.js").text.replace("\r\n", "\n")
+    start = js.split("else if (retake.state !== 'running') {")[1].split("return;")[0]
+    assert start.index("ctx.selectMoment(r.dataset.retake);") < start.index("runRetake(r.dataset.retake);")
+    app = client.get("/static/app.js").text.replace("\r\n", "\n")
+    assert "selectMoment: (id) => { if (idx.markOf.has(id)) enterReplay(id); }," in app
+
+
 def test_a_retake_goes_on_air_only_by_the_producers_choice_and_only_in_this_tab(client):
     app = client.get("/static/app.js").text.replace("\r\n", "\n")
     js = client.get("/static/producer.js").text.replace("\r\n", "\n")

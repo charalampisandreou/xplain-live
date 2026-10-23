@@ -281,7 +281,13 @@
       const r = e.target.closest('button[data-retake]');
       if (r) {
         if (r.dataset.retake === 'back') retake = { id: null, state: 'idle', result: null, error: '' };
-        else if (retake.state !== 'running') { runRetake(r.dataset.retake); return; }
+        else if (retake.state !== 'running') {
+          // the retake's moment becomes the selection (as its log row would), so the next moment the clock
+          // reaches does not take the detail away while the retake runs or its line waits for a choice
+          ctx.selectMoment(r.dataset.retake);
+          runRetake(r.dataset.retake);
+          return;
+        }
         drawn.detail = '';
         ctx.redraw();
         return;
