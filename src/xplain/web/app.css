@@ -670,3 +670,17 @@ html.intro-on .intro:not([hidden]) { display: block; }
   color: var(--muted); font-size: 15px; font-weight: 600; }
 .in-skip:hover { color: var(--text); }
 @media (prefers-reduced-motion: reduce) { .in-b, .in-dots span { transition: none; } }
+
+/* before the first surprise, in every tab: a white title after the live dot (a slow cyan pulse), and a muted line
+   on what will land there */
+.empty.waiting { padding: 14px 12px 18px; }
+.waiting-title { display: flex; align-items: center; gap: 10px; font-size: 18px; font-weight: 700; color: var(--text); }
+.waiting-title::before {
+  content: ''; flex: none; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--accent);
+  animation: live-pulse 1.6s ease-in-out infinite; }
+.waiting-sub { margin-top: 6px; padding-left: 18px; font-size: 15px; line-height: 1.4; color: var(--muted); }
+@keyframes live-pulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(63, 208, 255, 0.55); }
+  50% { opacity: 0.5; box-shadow: 0 0 0 6px rgba(63, 208, 255, 0); }
+}
+@media (prefers-reduced-motion: reduce) { .waiting-title::before { animation: none; } }

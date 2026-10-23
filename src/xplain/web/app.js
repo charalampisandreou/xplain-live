@@ -7,9 +7,10 @@
 
   const SVG = 'http://www.w3.org/2000/svg';
   const KINDS = ['surprise_failure', 'surprise_success'];
+  // a table before its first surprise: a title (the live dot before it) over what will land there
   const EMPTY = {
-    surprise_failure: 'No surprise failures yet.',
-    surprise_success: 'No surprise successes yet.',
+    surprise_failure: ['No surprise failures yet', 'An easy pass that is not completed lands here.'],
+    surprise_success: ['No surprise successes yet', 'A hard pass that is completed lands here.'],
   };
   const NOT_STARTED = 'Starts in the 2nd half.';
   const NOT_COMMENTATED = "Not commentated: when it happened, it was not among the half's top 3 surprises of its kind.";
@@ -1112,6 +1113,12 @@
     return { text: '–', cls: '' };
   }
 
+  function waiting(title, sub) {
+    const box = div('empty waiting');
+    box.append(div('waiting-title', title), div('waiting-sub', sub));
+    return box;
+  }
+
   function div(cls, text) {
     const d = document.createElement('div');
     d.className = cls;
@@ -1133,7 +1140,7 @@
       return;
     }
     if (!snap || snap.entries.length === 0) {
-      rows.appendChild(div('empty', EMPTY[kind]));
+      rows.appendChild(waiting(...EMPTY[kind]));
       return;
     }
     const selId = plate ? plate.bundle.moment.moment_id : null;
