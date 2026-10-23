@@ -32,6 +32,18 @@ def test_index_is_the_studio_page(client):
     assert "/static/app.js" in r.text and "/static/app.css" in r.text
 
 
+def test_the_page_has_the_logo_as_its_icons(client):
+    html = client.get("/").text
+    assert '<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">' in html
+    assert '<link rel="icon" href="/static/favicon-32.png" type="image/png" sizes="32x32">' in html
+    assert '<link rel="apple-touch-icon" href="/static/apple-touch-icon.png">' in html
+    svg = client.get("/static/favicon.svg")
+    assert svg.status_code == 200 and "image/svg+xml" in svg.headers["content-type"]
+    for path in ("/static/favicon-32.png", "/static/apple-touch-icon.png"):
+        r = client.get(path)
+        assert r.status_code == 200 and r.content.startswith(b"\x89PNG")
+
+
 def test_static_files_are_served(client):
     js = client.get("/static/app.js")
     css = client.get("/static/app.css")

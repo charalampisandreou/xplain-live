@@ -1,2 +1,4 @@
 # The page's files are checked out with LF everywhere: tests split app.js on "\n  }\n" (a CRLF checkout fails them)
 src/xplain/web/* text eol=lf
+# ...except images, which are bytes: an eol rule on a PNG corrupts it
+src/xplain/web/*.png binary

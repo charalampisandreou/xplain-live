@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- the commentary bubble: a speech bubble with a pass inside it, landing in the surprise ring -->
+  <path d="M18 7 H46 A11 11 0 0 1 57 18 V35 A11 11 0 0 1 46 46 H27 L13 57 L16 45.6 A11 11 0 0 1 7 35 V18 A11 11 0 0 1 18 7 Z" fill="#3FD0FF"/>
+  <path d="M19.5 35.5 Q 22 18 37.5 18.5" fill="none" stroke="#0A1B2E" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="19.5" cy="35.5" r="5" fill="#0A1B2E"/>
+  <circle cx="44" cy="20" r="6" fill="none" stroke="#0A1B2E" stroke-width="3.6"/>
+</svg>
