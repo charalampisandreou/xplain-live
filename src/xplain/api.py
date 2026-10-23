@@ -8,6 +8,7 @@ band, delta and outlier flag. The scorer only ever receives ``event.inputs``.
 
 GET / is the Studio page (src/xplain/web/index.html, its files under /static). It plays a match
 bundle from GET /api/bundle/{name}: <bundle dir>/bundle_{name}.json, name matching ^[a-z0-9_]+$.
+Responses of 1 KB or more go out gzipped when the browser accepts it (the bundle is about 700 KB of JSON).
 The bundle dir is create_app(bundle_dir=...), else XPLAIN_BUNDLE_DIR, else config.BUNDLE_DIR.
 
 GET /api/live/health (live spike, live.py) is 404 unless XPLAIN_LIVE=1: one tiny model call with the app's managed
@@ -25,6 +26,7 @@ from typing import Annotated
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi import Path as PathParam
 from fastapi.responses import FileResponse, JSONResponse
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -84,6 +86,7 @@ def create_app(scorer: Scorer | None = None, bundles: Path | None = None,
         yield
 
     app = FastAPI(title="xplain-live scoring", lifespan=lifespan)
+    app.add_middleware(GZipMiddleware, minimum_size=1024)
 
     @app.get("/health", response_model=HealthResponse)
     def health(request: Request) -> HealthResponse:

@@ -86,6 +86,18 @@ def test_a_bundle_is_served_from_the_bundle_dir(client):
     assert r.json() == {"meta": {"schema_version": "2"}}
 
 
+def test_large_responses_are_gzipped(client, bundle_dir):
+    # review 2026-10-23: the 700 KB bundle and the scripts went out uncompressed
+    (bundle_dir / "bundle_big.json").write_text('{"x": "' + "a" * 5000 + '"}', encoding="utf-8")
+    for url in ("/api/bundle/big", "/static/app.js", "/"):
+        r = client.get(url, headers={"Accept-Encoding": "gzip"})
+        assert r.status_code == 200 and r.headers.get("content-encoding") == "gzip", url
+    assert client.get("/api/bundle/big", headers={"Accept-Encoding": "gzip"}).json() == {"x": "a" * 5000}
+    # a small answer and a browser that does not ask for it stay plain
+    assert "content-encoding" not in client.get("/api/bundle/demo_1", headers={"Accept-Encoding": "gzip"}).headers
+    assert "content-encoding" not in client.get("/static/app.js", headers={"Accept-Encoding": "identity"}).headers
+
+
 def test_missing_bundle_is_404(client):
     assert client.get("/api/bundle/nope").status_code == 404
 
