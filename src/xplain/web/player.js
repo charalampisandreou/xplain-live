@@ -24,6 +24,21 @@
     return scope === '1' ? 1 : scope === '2' ? 2 : null;
   }
 
+  // The full-time star player's id once the clock reaches full time (clock.last_event_t, the score bug's FT),
+  // else null: the full-time recap card's star (recap.star_player, "full_time"), not a new pick
+  function fullTimeStar(bundle, now) {
+    const ft = bundle.recaps && bundle.recaps.full_time;
+    const star = ft && ft.card && ft.card.star;
+    if (!star || now === null || now === undefined || now < bundle.clock.last_event_t) return null;
+    return star.player_id;
+  }
+
+  // whether the Player title shows the star: only the full-time star player, only from full time
+  function starShown(bundle, now, playerId) {
+    const id = fullTimeStar(bundle, now);
+    return id !== null && id === playerId;
+  }
+
   // The player's passes with t <= now (all when now is null) and in the period (any when null), in
   // seq order: pipeline.player_pass_map. Passes without a player never match.
   function playerPasses(marks, playerId, now, period) {
@@ -333,11 +348,13 @@
     const period = scopePeriod(ctx.scope);
     const passes = ctx.notStarted ? [] : playerPasses(ctx.bundle.marks, ctx.playerId, ctx.now, period);
     const moments = ctx.notStarted ? [] : momentsFor(ctx.bundle.moments, ctx.playerId, ctx.now, period);
-    const sig = [ctx.playerId, ctx.scope, ctx.notStarted, passes.length, moments.length].join('/');
+    const star = starShown(ctx.bundle, ctx.now, ctx.playerId);
+    const sig = [ctx.playerId, ctx.scope, ctx.notStarted, passes.length, moments.length, star].join('/');
     if (sig === view.sig) return;
     view.sig = sig;
     const stats = playerStats(passes);
     setText('player-name', player ? player.name : '');
+    $('player-star').hidden = !star;
     setText('player-team', player ? view.api.teamName(player.team_id) : '');
     setText('player-num-val', player && player.shirt_number != null ? String(player.shirt_number) : '');
     $('player-num').hidden = !(player && player.shirt_number != null);
@@ -472,7 +489,7 @@
     }
   }
 
-  const api = { scopePeriod, playerPasses, playerStats, fixed2, hardestCompleted, narratedFor, tierCounts,
+  const api = { scopePeriod, fullTimeStar, starShown, playerPasses, playerStats, fixed2, hardestCompleted, narratedFor, tierCounts,
     completedTierCounts, momentsFor,
     mount, invalidate, render };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

@@ -239,3 +239,54 @@ def test_player_js_names_its_python_references():
     js = PLAYER_JS.read_text(encoding="utf-8")
     assert "Browser computation exception" in js and "player_summary" in js
     assert "fetch(" not in js and "XMLHttpRequest" not in js   # nothing computed here leaves the page
+
+
+# node: fullTimeStar / starShown for each case (bundle, now, player)
+STAR_HARNESS = r"""
+const fs = require('fs');
+const P = require(process.argv[1]);
+const d = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+process.stdout.write(JSON.stringify(d.cases.map((c) => [P.fullTimeStar(d.bundles[c.b], c.now),
+                                                        P.starShown(d.bundles[c.b], c.now, c.player)])));
+"""
+
+
+def run_star(tmp_path, bundles, cases):
+    data = tmp_path / "star.json"
+    data.write_text(json.dumps({"bundles": bundles, "cases": cases}), encoding="utf-8")
+    done = subprocess.run([NODE, "-e", STAR_HARNESS, str(PLAYER_JS), str(data)], capture_output=True, text=True,
+                          encoding="utf-8", timeout=60)
+    assert done.returncode == 0, done.stderr
+    return json.loads(done.stdout)
+
+
+def test_the_star_shows_only_for_the_full_time_star_from_full_time(tmp_path):
+    """Player's star: the full-time recap card's star (recap.star_player), from clock.last_event_t on, nobody else."""
+    clock = {"last_event_t": 100.0}
+    star = {"clock": clock, "recaps": {"half_time": {"card": {"star": {"player_id": "b"}}},
+                                       "full_time": {"card": {"star": {"player_id": "a"}}}}}
+    no_star = {"clock": clock, "recaps": {"full_time": {"card": {"star": None}}}}
+    no_recap = {"clock": clock, "recaps": {}}
+    cases = [{"b": 0, "now": 50.0, "player": "a"},     # before full time: no star
+             {"b": 0, "now": 99.999, "player": "a"},   # one tick before
+             {"b": 0, "now": 100.0, "player": "a"},    # at full time: the star
+             {"b": 0, "now": 120.0, "player": "a"},    # after
+             {"b": 0, "now": 100.0, "player": "b"},    # the half-time star is not the full-time star
+             {"b": 0, "now": 100.0, "player": "c"},    # any other player
+             {"b": 0, "now": None, "player": "a"},
+             {"b": 1, "now": 100.0, "player": "a"},    # a card with no star
+             {"b": 2, "now": 100.0, "player": "a"}]    # a bundle with no full-time recap
+    assert run_star(tmp_path, [star, no_star, no_recap], cases) == [
+        [None, False], [None, False], ["a", True], ["a", True], ["a", False], ["a", False],
+        [None, False], [None, False], [None, False]]
+
+
+@pytest.mark.skipif(not BUNDLE_3001.exists(), reason="data/ is git-ignored: the demo bundle is local only")
+def test_the_demo_matchs_star_is_the_full_time_cards_star(tmp_path):
+    b = json.loads(BUNDLE_3001.read_text(encoding="utf-8"))
+    ft, star = b["clock"]["last_event_t"], b["recaps"]["full_time"]["card"]["star"]["player_id"]
+    cases = [{"b": 0, "now": ft - 0.001, "player": star}, {"b": 0, "now": ft, "player": star}]
+    cases += [{"b": 0, "now": ft, "player": p["player_id"]} for p in b["meta"]["players"] if p["player_id"] != star]
+    got = run_star(tmp_path, [{"clock": b["clock"], "recaps": b["recaps"]}], cases)
+    assert got[0] == [None, False] and got[1] == [star, True]
+    assert all(g == [star, False] for g in got[2:]) and len(got) > 20

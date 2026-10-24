@@ -374,6 +374,10 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .player-team { font-size: 22px; font-weight: 500; letter-spacing: 0; color: var(--muted); }
 .player-num { margin-right: -6px; color: var(--accent); font-stretch: 85%; letter-spacing: 0; font-variant-numeric: tabular-nums; }
 .player-num[hidden] { display: none; }
+/* the full-time star player's star, right after the name (player.js starShown); its title says why */
+.star-icon { width: 1em; height: 1em; fill: var(--accent); }
+.player-star { display: inline-flex; align-self: center; margin-left: -6px; font-size: 40px; cursor: help; }
+.player-star[hidden] { display: none; }
 .player-num .num-hash { font-size: 0.5em; font-weight: 700; margin-right: 2px; vertical-align: 0.5em; color: var(--muted); }
 /* the picker button, on the scope selector's row at the column's left edge; the same height as the selector */
 .player-change {

@@ -288,6 +288,23 @@ def test_players_mode_is_on_the_page(client):
     assert "recap" not in view.lower()   # Player mode has no recap
 
 
+def test_players_title_carries_the_full_time_star(client):
+    html = client.get("/").text.replace("\r\n", "\n")
+    js = client.get("/static/player.js").text.replace("\r\n", "\n")
+    css = client.get("/static/app.css").text
+    head = html.split('<h1 class="player-head">')[1].split("</h1>")[0]
+    star = head.split('id="player-star"')[1].split("</span>")[0]
+    # right after the name, hidden until player.js shows it; mockup A: the star only, its title says why
+    assert head.index('id="player-name"') < head.index('id="player-star"') < head.index('id="player-team"')
+    assert 'title="Star player: most passes completed above expected"' in star and " hidden>" in star
+    assert 'role="img" aria-label="Star player"' in star and 'class="star-icon"' in star
+    assert ".star-icon { width: 1em; height: 1em; fill: var(--accent); }" in css   # #3FD0FF, no new colour
+    render = js.split("function render(ctx) {")[1].split("\n  }\n")[0]
+    assert "const star = starShown(ctx.bundle, ctx.now, ctx.playerId);" in render
+    assert "$('player-star').hidden = !star;" in render
+    assert "moments.length, star].join('/')" in render   # redrawn when full time arrives
+
+
 def test_players_mode_draws_the_passers_frame_and_keeps_studio_rules(client):
     js = client.get("/static/player.js").text
     app = client.get("/static/app.js").text
