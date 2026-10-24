@@ -379,6 +379,10 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 /* the full-time star player's star, right after the name (player.js starShown); its title says why */
 .star-icon { width: 1em; height: 1em; fill: var(--accent); }
 .player-star { display: inline-flex; align-self: center; margin-left: -6px; font-size: 40px; cursor: help; }
+/* when full time shows it: a quiet fade in, no bounce or spin; none under reduced motion */
+.player-star:not([hidden]) { animation: star-in 700ms ease-out both; }
+@keyframes star-in { from { opacity: 0; transform: scale(0.92); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .player-star:not([hidden]) { animation: none; } }
 .player-star[hidden] { display: none; }
 .player-num .num-hash { font-size: 0.5em; font-weight: 700; margin-right: 2px; vertical-align: 0.5em; color: var(--muted); }
 /* the picker button, on the scope selector's row at the column's left edge; the same height as the selector */

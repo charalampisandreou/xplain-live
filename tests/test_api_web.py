@@ -299,6 +299,10 @@ def test_players_title_carries_the_full_time_star(client):
     assert 'title="Star player: most passes completed above expected"' in star and " hidden>" in star
     assert 'role="img" aria-label="Star player"' in star and 'class="star-icon"' in star
     assert ".star-icon { width: 1em; height: 1em; fill: var(--accent); }" in css   # #3FD0FF, no new colour
+    # it fades in quietly when full time shows it (owner: smooth, not childish), still under reduced motion
+    assert ".player-star:not([hidden]) { animation: star-in 700ms ease-out both; }" in css
+    assert "@keyframes star-in { from { opacity: 0; transform: scale(0.92); } to { opacity: 1; transform: none; } }" in css
+    assert "@media (prefers-reduced-motion: reduce) { .player-star:not([hidden]) { animation: none; } }" in css
     render = js.split("function render(ctx) {")[1].split("\n  }\n")[0]
     assert "const star = starShown(ctx.bundle, ctx.now, ctx.playerId);" in render
     assert "$('player-star').hidden = !star;" in render
