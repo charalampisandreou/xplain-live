@@ -732,7 +732,7 @@ def test_analyst_mode_is_on_the_page(client):
     modes = html.split('id="mode"')[1].split("</div>")[0]
     assert modes.index('data-mode="studio"') < modes.index('data-mode="analyst"') < modes.index('data-mode="player"')
     left = html.split('<section class="analyst-left" id="analyst-left"')[1].split("</section>")[0]
-    for node in ('<h2>Passing swing</h2>', 'id="an-chart"', 'id="an-chart-empty"', 'id="an-shap-title"',
+    for node in ('<h2>Passing Swing</h2>', 'id="an-chart"', 'id="an-chart-empty"', 'id="an-shap-title"',
                  'id="an-shap-rows"', 'id="an-shap-foot"', 'id="an-replay"'):
         assert node in left
     right = html.split('<section class="analyst-right" id="analyst-right"')[1].split("</section>")[0]
