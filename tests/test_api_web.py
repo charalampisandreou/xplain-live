@@ -621,7 +621,13 @@ def test_recap_star_text_and_view_switch(client):
     css = client.get("/static/app.css").text.replace("\r\n", "\n")
     # the star: a .thead like Goals and Passing, then one row (shirt number, name, meta, the card's numbers)
     star = html.split('id="rc-starblock"')[1].split('<p class="rc-text"')[0]
-    assert "<h2>Star player</h2>" in star and 'id="rc-star"' in star
+    assert "<h2>Star player<svg " in star and 'id="rc-star"' in star
+    # the same cyan star as Player's title right after the heading's words (decorative: the heading says it)
+    icon = star.split("<h2>Star player")[1].split("</h2>")[0]
+    assert 'class="star-icon rc-star-icon"' in icon and 'aria-hidden="true"' in icon
+    assert "<title>Star player: most passes completed above expected</title>" in icon
+    assert icon.endswith("</svg>")
+    assert ".rc-star-icon { margin-left: 8px; font-size: 20px; vertical-align: -2px; }" in css
     assert "for (const label of ['Passes', 'Completed', 'Expected', 'vs expected'])" in app
     assert "c.goals.filter((g) => g.player_name === s.name)" in app   # the star's goals: the card's minutes
     # the text follows the star; it is not pushed to the card's bottom

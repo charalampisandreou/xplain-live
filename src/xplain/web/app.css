@@ -168,6 +168,8 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
    muted meta line (position, team, the star's goals), and the card's numbers under the Passing column words */
 .rc-starblock { margin-top: 26px; }
 .rc-starblock[hidden] { display: none; }
+/* the cyan star after "Star player", the same icon as Player's title (.star-icon) */
+.rc-star-icon { margin-left: 8px; font-size: 20px; vertical-align: -2px; }
 .st { width: 100%; display: flex; align-items: center; gap: 18px; padding: 14px 12px; border: none; border-radius: 0;
   border-bottom: 1px solid var(--hairline); background: transparent; color: var(--text); font: inherit; text-align: left; }
 .st:hover { background: rgba(255, 255, 255, 0.04); }
