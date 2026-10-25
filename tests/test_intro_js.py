@@ -139,6 +139,17 @@ def test_approved_note_texts():
         assert text in html
 
 
+def test_a_match_that_did_not_load_says_so_on_welcome_and_start_match():
+    # QA 2026-10-25: a bad ?match= showed its error only after the tour closed
+    html = intro_html()
+    welcome = html[html.index('data-screen="welcome"'):html.index('data-screen="1"')]
+    end = html[html.index('data-screen="end"'):html.index('id="in-nav"')]
+    assert '<p class="in-error" hidden></p>' in welcome and '<p class="in-error" hidden></p>' in end
+    js = (WEB / "app.js").read_text(encoding="utf-8")
+    status = js[js.index("function showStatus(text)"):js.index("async function load()")]
+    assert "document.querySelectorAll('.in-error')" in status and "el.hidden = false;" in status
+
+
 def test_loaded_before_paint_and_mounted_by_app():
     head = HTML[:HTML.index("</head>")]
     assert '<script src="/static/intro.js"></script>' in head

@@ -654,6 +654,8 @@ html.intro-on .intro:not([hidden]) { display: block; }
 .in-btns .in-b { height: 56px; padding: 0 34px; font-size: 20px; }
 /* welcome and Start match: the match is synthetic, said quietly under the buttons */
 .in-synth { margin: 22px 0 0; font-size: 15px; color: var(--muted); }
+/* ... and a match that did not load says so there too, else it showed only after the tour (app.js showStatus) */
+.in-error { margin: 18px 0 0; max-width: 780px; font-size: 17px; color: var(--failed-text); text-align: center; }
 /* the app's buttons: the accent fill of a picked .seg button, or outlined like Back to live */
 .in-b {
   height: 42px; padding: 0 20px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.2); background: transparent;

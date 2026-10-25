@@ -101,10 +101,12 @@
     return /^[a-z0-9_]+$/.test(name) ? name : 'seed3001';
   }
 
+  // in the stage, and on the welcome and Start match screens while they cover it
   function showStatus(text) {
-    const el = $('status');
-    el.textContent = text;
-    el.hidden = false;
+    for (const el of [$('status'), ...document.querySelectorAll('.in-error')]) {
+      el.textContent = text;
+      el.hidden = false;
+    }
   }
 
   async function load() {
