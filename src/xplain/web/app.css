@@ -305,6 +305,10 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   font-size: 13px; font-weight: 800; letter-spacing: 1px; color: var(--text-soft);
 }
 .seg.lang button.on { background: var(--accent); color: var(--plate-text); font-weight: 800; }
+/* before the first narrated moment: dimmed, the set language still marked */
+.seg.lang button { transition: opacity 0.4s ease; }
+.seg.lang button:disabled { opacity: 0.45; }
+@media (prefers-reduced-motion: reduce) { .seg.lang button { transition: none; } }
 .xp { text-transform: none; }   /* "xP" keeps its casing inside upper-case labels */
 .lower.waiting .line { color: var(--muted); font-weight: 400; }
 /* before the first surprise: the live dot (the tabs' waiting-title pulse) ahead of the plate's text */

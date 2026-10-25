@@ -916,3 +916,16 @@ def test_the_plate_leads_with_the_live_dot_until_the_first_surprise(client):
     dot = css.split(".lower.waiting.opening .line::before {")[1].split("}")[0]
     assert "animation: live-pulse 1.6s ease-in-out infinite;" in dot and "background: var(--accent);" in dot
     assert "@media (prefers-reduced-motion: reduce) { .lower.waiting.opening .line::before { animation: none; } }" in css
+
+
+def test_the_narration_languages_open_with_the_first_narrated_moment(client):
+    # 2026-10-25: before any line was narrated EN / ES / EL could be picked and nothing changed
+    app = client.get("/static/app.js").text.replace("\r\n", "\n")
+    lock = app.split("function lockLang() {")[1].split("\n  }\n")[0]
+    assert "const locked = idx.narrT.length > 0 && state.now < idx.narrT[0];" in lock
+    assert "b.disabled = locked;" in lock and "seg.title = LANG_LOCKED;" in lock
+    assert "const LANG_LOCKED = 'Narration languages open with the first surprise.';" in app
+    render = app.split("function render() {")[1]
+    assert render.lstrip().startswith("lockLang();")   # every frame, in every mode
+    css = client.get("/static/app.css").text
+    assert ".seg.lang button:disabled { opacity: 0.45; }" in css

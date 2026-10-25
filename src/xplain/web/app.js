@@ -42,6 +42,7 @@
   const FAST_SPEED = 60, FAST_LEAD_S = 60;
   const HINT_TEXT = ['Waiting for the first surprise. Pick ', '60×', ' to get there faster.'];   // the middle is the button's label
   const FAST_TEXT = 'Rating every pass. Watching for surprises.';
+  const LANG_LOCKED = 'Narration languages open with the first surprise.';
   const GOAL_MIN_MS = 4000;          // the goal plate holds at least this long in real time, at any speed
   const PULSE_MS = 830;              // one ring pulse; three of them round the score plate
   const SOFT_PULSE_EVERY = 4000;     // then one softer pulse this often while the goal plate holds
@@ -62,6 +63,7 @@
     speed: 12,
     waitUntil: null,   // opened at kick-off: the match t a minute before the first narrated moment (60x runs until it)
     fastStart: null,   // while 60x from the hint runs: { until: waitUntil, speed: the speed it returns to }
+    langLocked: null,   // EN / ES / EL disabled before the first narrated moment (lockLang)
     plateNote: null,   // the empty plate before the first narrated moment: 'hint' (HINT_TEXT), 'fast' (FAST_TEXT), null
     follow: true,      // live: the selected pass is the newest pass with t <= now
     selected: -1,      // index into marks when not following
@@ -367,6 +369,17 @@
     }
   }
 
+  // EN / ES / EL change nothing until the first narrated moment (the waiting text is English only), so until then
+  // they are disabled; the set language stays marked, and a ?lang link still sets it
+  function lockLang() {
+    const locked = idx.narrT.length > 0 && state.now < idx.narrT[0];
+    if (locked === state.langLocked) return;
+    state.langLocked = locked;
+    const seg = $('lang');
+    for (const b of seg.querySelectorAll('button')) b.disabled = locked;
+    if (locked) seg.title = LANG_LOCKED; else seg.removeAttribute('title');
+  }
+
   function setScope(scope) {
     state.scope = scope;
     for (const b of $('scope').querySelectorAll('button')) {
@@ -603,6 +616,7 @@
   // --- render --------------------------------------------------------------------------------
 
   function render() {
+    lockLang();
     const sel = selectedIndex();
     const live = liveIndex();
     const tick = lastAtOrBefore(idx.tickT, state.now);
