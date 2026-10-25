@@ -1,6 +1,6 @@
 // xPlain Live: Player mode ("Player focus"). One player's match up to the match clock.
 //
-// Browser computation exception (CLAUDE.md): the numbers here are sums, counts and means over
+// Browser computation exception (README, "Run the web page"): the numbers here are sums, counts and means over
 // fields already in the bundle's marks, at the current clock (bundle.players is full time only,
 // so it would give the result away). Each function that yields a number mirrors a Python
 // reference and is checked against it in tests/test_player_js.py:

@@ -1,6 +1,6 @@
 """Parity of the Player mode's browser numbers (src/xplain/web/player.js) with their Python references.
 
-The Browser computation exception (CLAUDE.md) lets player.js compute sums, counts and means over the
+The Browser computation exception (README, "Run the web page") lets player.js compute sums, counts and means over the
 bundle's marks at the match clock; every such function must equal its Python twin. node runs player.js
 on a bundle built from the seed-42 match and the results are compared with pipeline.player_summary
 (as_of_t) and the explicit Python equivalents below, for every player, at several times, in every scope.

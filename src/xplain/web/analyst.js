@@ -2,7 +2,7 @@
 // team's running vs expected), the teams' passing and their passes per difficulty tier, and for a picked surprise
 // the model's reasons (its SHAP drivers, as the bundle stores them).
 //
-// Browser computation exception (CLAUDE.md): the numbers here are counts and sums over fields already in the
+// Browser computation exception (README, "Run the web page"): the numbers here are counts and sums over fields already in the
 // bundle's marks, at the current clock (bundle.recaps holds only half and full time, which would give the result
 // away). Each function that yields a number mirrors a Python reference and is checked against it in
 // tests/test_analyst_js.py:
