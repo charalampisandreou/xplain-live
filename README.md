@@ -453,7 +453,8 @@ it returns the last result with `"cached": true` and its `age_s` (never older th
 `credential` is the class that actually returned the token (null if none did), `endpoint_host` the host only. On
 an error `ok: false` adds `stage`, the exception class, a short message and `causes` (up to three of its
 cause / context chain, each `{error, message}`: the openai client reports any failure while sending as
-"Connection error."), all with anything token- or key-like removed; the same chain is logged as a warning.
+"Connection error."), all with anything token- or key-like removed; the same chain is logged as a warning, and so is a
+network diagnosis (DNS lookups, resolver, proxy names), which never goes in the public answer.
 The template sets `AZURE_CLIENT_ID` from the identity itself (`reference(...).clientId`), `XPLAIN_LIVE=1`, the
 endpoint and the deployment. The Studio page still plays the precomputed bundle and makes no model calls.
 

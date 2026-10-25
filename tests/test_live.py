@@ -1,4 +1,6 @@
 """Live spike (src/xplain/live.py, GET /api/live/health): off by default, one call per 60 s, secrets never shown."""
+import json
+import logging
 import time
 from types import SimpleNamespace
 
@@ -341,28 +343,34 @@ def test_proxy_names_only_never_values():
     assert "secret" not in str(names)
 
 
-def test_the_diagnosis_is_in_the_body_and_cached_with_the_call(fake):
+DIAGNOSIS_KEYS = {"dns", "resolv", "proxy"}
+
+
+def test_a_successful_call_runs_no_diagnosis_and_the_body_has_none(fake):
+    runs = []
+    body = checker(fake, network=lambda: runs.append(1) or dict(FAKE_NETWORK)).run()
+    assert body["ok"] is True and not DIAGNOSIS_KEYS & set(body) and runs == []
+
+
+def test_a_failed_call_logs_the_diagnosis_but_the_body_has_none(caplog):
     runs = []
 
     def network():
         runs.append(1)
-        return {"dns": {"h.example": {"ok": True, "addrs": ["192.0.2.1"], "error": None}},
+        return {"dns": {"h.example": {"ok": False, "addrs": [], "error": "gaierror: [Errno -3] Temporary failure"}},
                 "resolv": ["nameserver 10.0.0.10"], "proxy": []}
     clock = Clock()
-    check = checker(fake, clock, network=network)
-    first = check.run()
-    assert first["dns"]["h.example"]["ok"] is True and first["resolv"] == ["nameserver 10.0.0.10"]
-    assert first["proxy"] == [] and first["ok"] is True
+    check = checker(FakeCompletions(error=ConnectionError("refused")), clock, network=network)
+    with caplog.at_level(logging.WARNING, logger="xplain.live"):
+        body = check.run()
+    assert body["ok"] is False and not DIAGNOSIS_KEYS & set(body)
+    assert "Temporary failure" not in json.dumps(body)
+    assert "live check network" in caplog.text and "Temporary failure" in caplog.text and "h.example" in caplog.text
     clock.t += 30
-    assert check.run()["dns"] == first["dns"] and len(runs) == 1   # same 60 s cache as the call
+    assert not DIAGNOSIS_KEYS & set(check.run()) and len(runs) == 1   # cached with the call: no second diagnosis
     clock.t += 31
     check.run()
     assert len(runs) == 2
-
-
-def test_the_diagnosis_comes_with_a_failed_call_too():
-    body = checker(FakeCompletions(error=ConnectionError("refused"))).run()
-    assert body["ok"] is False and {"dns", "resolv", "proxy"} <= set(body)
 
 
 # --- retry on name resolution (socket.gaierror) only ---

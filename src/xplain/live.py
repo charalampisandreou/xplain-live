@@ -35,7 +35,8 @@ chain, each {"error": class, "message": ...}. Every message is scrubbed of anyth
 The scrubbed chain is also logged (warning, logger xplain.live) for the container logs; never a traceback. The body
 names the endpoint's host only ("endpoint_host").
 
-Network diagnosis, computed with the call (so at most once per MIN_INTERVAL_S, cached alike): "dns" maps each of
+Network diagnosis, only when the call fails (so at most once per MIN_INTERVAL_S), for the container logs: it is logged
+as a warning (logger xplain.live) and never put in the body, which anyone can open. "dns" maps each of
 the endpoint host and DNS_HOSTS to socket.getaddrinfo(host, 443) within DNS_TIMEOUT_S ({"ok", "addrs": the first two
 IPs, "error": "Class: message" or null}, plus "ipv4" and "ipv6": the same three fields for the lookup restricted to
 AF_INET / AF_INET6, to tell an IPv6 failure from an IPv4 one; all lookups run in parallel); "resolv" is the nameserver, search and
@@ -45,6 +46,7 @@ options lines of /etc/resolv.conf (null where there is none, e.g. Windows); "pro
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import re
@@ -323,7 +325,7 @@ def network_report(resolver: Callable[[str, int], list[str]] = lookup, resolv_pa
 
 class LiveCheck:
     """The rate-limited live call. credential_factory, client_factory and network (the dns / resolv / proxy
-    fields) are injectable for tests."""
+    diagnosis logged after a failed call) are injectable for tests."""
 
     def __init__(self, credential_factory: Callable[[], Any] = make_credential,
                  client_factory: Callable[[str], Any] = make_client, clock: Callable[[], float] = time.monotonic,
@@ -346,8 +348,10 @@ class LiveCheck:
             now = self._clock()
             if self._last is not None and self._last_at is not None and 0 <= now - self._last_at < self._interval_s:
                 return {**self._last, "cached": True, "age_s": round(now - self._last_at, 1)}
-            # the diagnosis runs after the call (latency_s is the call's alone) and is cached with it
-            self._last, self._last_at = {**self._call(), **self._network()}, now
+            self._last, self._last_at = self._call(), now
+            if not self._last["ok"]:
+                # after the call (latency_s is the call's alone); the logs only: the body is public
+                log.warning("live check network: %s", json.dumps(self._network()))
             return {**self._last, "cached": False, "age_s": 0.0}
 
     def _call(self) -> dict:
