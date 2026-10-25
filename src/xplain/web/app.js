@@ -506,6 +506,13 @@
 
   function backToLive() { exitReplay(); state.follow = true; state.producerRecap = null; }
 
+  // Back to live and L: the live pass, and play goes on if it was paused (not at full time, where Play restarts the
+  // match, and not over an open recap, which waits for Play)
+  function goLive() {
+    backToLive();
+    if (!state.playing && !state.recap && state.now < state.bundle.clock.last_event_t) setPlaying(true);
+  }
+
   // --- replay: a table row puts its moment on the pitch, the plate and the tab ---
 
   function enterReplay(id) {
@@ -545,7 +552,7 @@
     }
     $('prev').addEventListener('click', () => step(-1));
     $('next').addEventListener('click', () => step(1));
-    $('live').addEventListener('click', backToLive);
+    $('live').addEventListener('click', goLive);
     $('narr-prev').addEventListener('click', () => narrStep(-1));
     for (const b of $('recap-view').querySelectorAll('button')) {
       b.addEventListener('click', () => setRecapView(b.dataset.view));
@@ -593,7 +600,7 @@
       else if (e.key === '[') { narrStep(-1); e.preventDefault(); }
       else if (e.key === ']') { narrStep(1); e.preventDefault(); }
       else if (e.key === ' ') { setPlaying(!state.playing); e.preventDefault(); }
-      else if (e.key === 'l' || e.key === 'L') backToLive();
+      else if (e.key === 'l' || e.key === 'L') goLive();
     });
     // ?t at full time opens paused, not restarted; a plain visit holds at kick-off while the tour is open
     setPlaying(!state.intro && state.now < state.bundle.clock.last_event_t);

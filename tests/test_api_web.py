@@ -597,6 +597,18 @@ def test_half_time_plate_says_the_2nd_half_starts_by_itself(client):
     assert "r.scope === 'half_time' && r.resumeAt !== null ? RECAP_LINE_AUTO : RECAP_LINE[r.scope]" in plate
 
 
+def test_back_to_live_plays_on_from_a_pause(client):
+    # QA 2026-10-25: Back to live after a pause stayed paused
+    app = client.get("/static/app.js").text
+    go = app[app.index("function goLive()"):app.index("// --- replay")]
+    assert "backToLive();" in go
+    assert "if (!state.playing && !state.recap && state.now < state.bundle.clock.last_event_t) setPlaying(true);" in go
+    assert "$('live').addEventListener('click', goLive);" in app
+    assert "else if (e.key === 'l' || e.key === 'L') goLive();" in app
+    # the recap switch and the plate's arrows still only move the view, never the play state
+    assert "function backToLive() { exitReplay(); state.follow = true; state.producerRecap = null; }" in app
+
+
 def test_recap_plate_state_and_drain(client):
     app = client.get("/static/app.js").text
     css = client.get("/static/app.css").text
