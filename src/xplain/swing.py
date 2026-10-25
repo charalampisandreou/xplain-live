@@ -2,7 +2,7 @@
 Analyst mode's numbers: a team's running vs expected through the match, and its passing per difficulty tier.
 Pure functions over the bundle's marks, no I/O.
 
-These are the Python references of src/xplain/web/analyst.js (the browser computation exception, README "Run the web page"):
+These are the Python references of src/xplain/web/analyst.js (the browser computation exception, docs/TECHNICAL.md "Run the web page"):
 the page computes the same values up to the match clock, and tests/test_analyst_js.py checks it against these,
 exactly. Sums run left to right in seq order (analytics.seq_sum), as the page adds, so the floats are equal.
 

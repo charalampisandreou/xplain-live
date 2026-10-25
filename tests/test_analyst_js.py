@@ -1,6 +1,6 @@
 """Parity of the Analyst mode's browser numbers (src/xplain/web/analyst.js) with their Python references.
 
-The Browser computation exception (README, "Run the web page") lets analyst.js compute counts and sums over the bundle's marks at
+The Browser computation exception (docs/TECHNICAL.md, "Run the web page") lets analyst.js compute counts and sums over the bundle's marks at
 the match clock; every such function must equal its Python twin (src/xplain/swing.py). node runs analyst.js on a
 bundle built from the seed-42 match and the results are compared exactly, for both teams, at several times, in
 every scope. On the demo bundle the swing's last value is the recap card's vs expected, and every SHAP panel adds
