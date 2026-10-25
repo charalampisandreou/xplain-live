@@ -762,7 +762,7 @@
     const s = idx.score[i];
     const lower = $('lower');
     stopDrain();
-    lower.classList.remove('completed', 'failed', 'waiting', 'recap-plate', 'hint');
+    lower.classList.remove('completed', 'failed', 'waiting', 'recap-plate', 'hint', 'opening');
     lower.classList.add('goal');
     $('lower-num').textContent = '';
     $('lower-name').textContent = goalTabText(s);
@@ -954,7 +954,7 @@
     if (id === state.plateId) return;
     state.plateId = id;
     const lower = $('lower');
-    lower.classList.remove('completed', 'failed', 'waiting', 'goal', 'hint');
+    lower.classList.remove('completed', 'failed', 'waiting', 'goal', 'hint', 'opening');
     lower.classList.add('recap-plate');
     $('lower-num').textContent = '';
     $('lower-name').textContent = RECAP_TAB[r.scope];
@@ -1207,17 +1207,21 @@
     const note = entry ? null : state.plateNote;   // the opening's plate, in every tab
     $('speed').querySelector('[data-speed="60"]').classList.toggle('hint', note === 'hint');
     if (note) emptyText = note === 'hint' ? HINT_TEXT.join('') : FAST_TEXT;
+    // before the first surprise the empty plate leads with the live dot, as the tabs' waiting titles do
+    const opening = !entry && idx.narrT.length > 0 && state.now < idx.narrT[0];
     const aired = entry ? state.aired.get(entry.bundle.moment.moment_id) : null;
-    const id = entry ? entry.bundle.moment.moment_id + '/' + state.lang + (aired ? '/retake' : '') : '-/' + emptyText;
+    const id = entry ? entry.bundle.moment.moment_id + '/' + state.lang + (aired ? '/retake' : '')
+      : '-/' + emptyText + (opening ? '/opening' : '');
     if (id === state.plateId) return;
     state.plateId = id;
     const lower = $('lower');
     stopDrain();
-    lower.classList.remove('completed', 'failed', 'waiting', 'goal', 'recap-plate', 'hint');
+    lower.classList.remove('completed', 'failed', 'waiting', 'goal', 'recap-plate', 'hint', 'opening');
     const line = $('lower-line');
     fadePlate();
     if (!entry) {   // before the first commentated moment: the body only
       lower.classList.add('waiting');
+      lower.classList.toggle('opening', opening);
       line.textContent = emptyText;
       if (note === 'hint') {   // "60×" in the accent, as on the button it points to
         lower.classList.add('hint');

@@ -902,3 +902,17 @@ def test_the_idle_agents_sit_on_the_log_waiting_grid(client):
     ring = block.split(".pr-step.idle:not(.rating) .pr-mark::before {")[1].split("}")[0]
     assert "box-sizing: border-box" in ring and "width: 8px" in ring and "height: 8px" in ring
     assert ".empty.waiting { padding: 14px 12px 18px; }" in css and ".pr-step-top { display: flex; align-items: baseline; gap: 10px; }" in css
+
+
+def test_the_plate_leads_with_the_live_dot_until_the_first_surprise(client):
+    # 2026-10-25: the tabs' waiting titles pulse before the first surprise; the narration plate does too
+    app = client.get("/static/app.js").text.replace("\r\n", "\n")
+    plate = app.split("function renderPlate(entry, emptyText = 'No commentated moment yet.') {")[1].split("\n  }\n")[0]
+    assert "const opening = !entry && idx.narrT.length > 0 && state.now < idx.narrT[0];" in plate
+    assert "(opening ? '/opening' : '')" in plate   # the plate is redrawn when the first surprise is reached
+    assert "lower.classList.toggle('opening', opening);" in plate
+    assert app.count("'hint', 'opening');") == 3   # every other plate drops it
+    css = client.get("/static/app.css").text
+    dot = css.split(".lower.waiting.opening .line::before {")[1].split("}")[0]
+    assert "animation: live-pulse 1.6s ease-in-out infinite;" in dot and "background: var(--accent);" in dot
+    assert "@media (prefers-reduced-motion: reduce) { .lower.waiting.opening .line::before { animation: none; } }" in css
