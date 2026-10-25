@@ -132,7 +132,7 @@ def test_slides_texts_and_screenshots():
 def test_approved_note_texts():
     html = intro_html()
     for text in ("the chance it had to be completed.", "The reasons behind each surprising pass's",
-                 "Every pass the player has made so far in the match.", "Every line that went on air.</div>",
+                 "Every pass the player has made so far in the match.", "Every surprise, and the line that went on air.</div>",
                  "4 agents working together to write a commentary line for each surprising pass.",
                  "Each team's completed passes against what the model expected.",
                  "Where each team beat or fell short of the model, easy passes to hard."):
