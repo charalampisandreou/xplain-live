@@ -86,7 +86,7 @@ SLIDES = {
     "Studio": ("The match as it happens: every pass rated, the biggest surprises narrated.",
                ["Every pass, live", "The commentary", "Surprises", "PVA"]),
     "Analyst": ("How each team passed against the model, and how it rated each surprise.",
-                ["Passing Swing", "Why the model rated it", "Passing Stats", "By difficulty"]),
+                ["Passing Swing", "How the model rated it", "Passing Stats", "By difficulty"]),
     "Player": ("One player's match: every pass, their numbers and their surprises.",
                ["Their passes", "Change player", "Their numbers", "Their moments"]),
     "Producer": ("The control room: every AI step behind each line, checked before air.",
