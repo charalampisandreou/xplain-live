@@ -75,6 +75,7 @@
   const TEAM_CLASS = ['home', 'away'];
   // the chart's drawing area in the svg's own units (= px: the svg is drawn at 780 x 270)
   const W = 780, H = 270, PAD_L = 44, PAD_R = 92, PAD_T = 22, PAD_B = 28;
+  const HIT_R = 12, DOT_GAP = 10;   // a dot answers the pointer within HIT_R; dots are drawn at least DOT_GAP apart
   const MIN_RANGE = 10;         // the value axis shows at least -10..+10, and ends on a multiple of 10
   const GOAL_LABEL_PX = 76;     // two goal labels closer than this would overlap when centred on their lines
   const AXIS_MINUTES = ['15', '30', '45', '60', '75', '90'];   // clock.ticks labels marked on the time axis
@@ -86,10 +87,14 @@
   function mount(api) {
     view = { api, sig: '', shapSig: '', frameSig: '', goalSig: '', dotSig: '' };
     const chart = $('an-chart');
+    // the pointer picks the dot whose centre is nearest (within HIT_R), so a dot drawn under a neighbour's edge
+    // is still reached at its own centre
     chart.addEventListener('click', (e) => {
-      const dot = e.target.closest && e.target.closest('[data-moment]');
+      const dot = nearDot(e);
       if (dot) api.pick(dot.dataset.moment);
     });
+    chart.addEventListener('pointermove', (e) => markNear(nearDot(e)));
+    chart.addEventListener('pointerleave', () => markNear(null));
     chart.addEventListener('keydown', (e) => {
       const dot = e.target.closest && e.target.closest('[data-moment]');
       if (dot && (e.key === 'Enter' || e.key === ' ')) { api.pick(dot.dataset.moment); e.preventDefault(); e.stopPropagation(); }
@@ -103,6 +108,49 @@
     view.sig = '';
     view.shapSig = '';
     view.frameSig = '';
+  }
+
+  // the dot under the pointer: the nearest centre within HIT_R chart units, else none
+  function nearDot(e) {
+    const svg = $('an-chart');
+    const m = svg.getScreenCTM && svg.getScreenCTM();
+    if (!m) return null;
+    const pt = new DOMPoint(e.clientX, e.clientY).matrixTransform(m.inverse());
+    let best = null, bestD = HIT_R;
+    for (const g of svg.querySelectorAll('.an-dot')) {
+      const d = Math.hypot(Number(g.dataset.cx) - pt.x, Number(g.dataset.cy) - pt.y);
+      if (d <= bestD) { best = g; bestD = d; }
+    }
+    return best;
+  }
+
+  // hover is drawn from the picked dot (class "near"), not :hover, which follows whichever dot is on top
+  function markNear(dot) {
+    const svg = $('an-chart');
+    for (const g of svg.querySelectorAll('.an-dot.near')) if (g !== dot) g.classList.remove('near');
+    if (dot) dot.classList.add('near');
+    svg.classList.toggle('picking', !!dot);
+  }
+
+  // dots closer than gap move right along the time axis, in drawing order, just enough to clear every earlier
+  // dot (left instead when right would pass maxX); an earlier dot never moves. Returns the new x of each point
+  function spreadDots(points, gap, maxX) {
+    const placed = [];
+    for (const p of points) {
+      const clear = (dir) => {
+        let cx = p.x;
+        for (let n = 0; n <= placed.length; n++) {
+          const q = placed.find((o) => Math.hypot(o.x - cx, o.y - p.y) < gap - 1e-9);
+          if (!q) return cx;
+          cx = q.x + dir * Math.sqrt(gap * gap - (q.y - p.y) ** 2);
+        }
+        return cx;
+      };
+      let cx = clear(1);
+      if (cx > maxX) cx = clear(-1);
+      placed.push({ x: cx, y: p.y });
+    }
+    return placed.map((o) => o.x);
   }
 
   function el(name, attrs) {
@@ -271,21 +319,27 @@
       const focused = document.activeElement && dots.contains(document.activeElement)
         ? document.activeElement.getAttribute('data-moment') : null;
       dots.replaceChildren();
+      const shown = [];
       for (const e of found) {
         const m = e.bundle.moment;
         const i = teams.findIndex((t) => t.team_id === m.team_id);
         const p = i < 0 ? null : swings[i].find((q) => q.seq === m.seq);
-        if (!p) continue;
+        if (p) shown.push({ m, x: x(p.t), y: y(p.vsExpectedXp) });
+      }
+      const xs = spreadDots(shown, DOT_GAP, W - PAD_R);
+      shown.forEach(({ m, y: cy }, k) => {
+        const cx = xs[k];
+        const label = KIND_LABEL[m.kind] + ', ' + (m.player_name || 'unknown player') + ', '
+          + ctx.teamCode(m.team_id) + ', ' + m.minute_label + "', PVA " + view.api.pva(m.delta);
         const g = el('g', { 'data-moment': m.moment_id, class: 'an-dot ' + m.kind, tabindex: '0', role: 'button',
-          'aria-pressed': 'false',
-          'aria-label': KIND_LABEL[m.kind] + ', ' + (m.player_name || 'unknown player') + ', '
-            + ctx.teamCode(m.team_id) + ', ' + m.minute_label + "', PVA " + view.api.pva(m.delta) });
-        const cx = x(p.t), cy = y(p.vsExpectedXp);
-        g.append(el('circle', { cx, cy, r: 12, class: 'hit' }), el('circle', { cx, cy, r: 9, class: 'ring' }),
+          'aria-pressed': 'false', 'aria-label': label, 'data-cx': cx, 'data-cy': cy });
+        const title = el('title', {});
+        title.textContent = label;
+        g.append(title, el('circle', { cx, cy, r: HIT_R, class: 'hit' }), el('circle', { cx, cy, r: 9, class: 'ring' }),
           el('circle', { cx, cy, r: 4.5, class: 'dot' }));
         dots.appendChild(g);
         if (m.moment_id === focused) g.focus();
-      }
+      });
     }
 
     const words = ends.map((e) => teams[e.i].name + ' ' + view.api.fixed2(e.v, true)).join(', ');
@@ -422,7 +476,7 @@
       + view.api.fixed2(x.raw_score, false) + ' (model scale, not %) · xP ' + view.api.percent(m.xp) + '%';
   }
 
-  const api = { TIERS, teamPasses, teamSwing, teamTiers, surprises, mount, invalidate, render };
+  const api = { TIERS, teamPasses, teamSwing, teamTiers, surprises, spreadDots, mount, invalidate, render };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.XplainAnalyst = api;
 })(typeof window !== 'undefined' ? window : this);

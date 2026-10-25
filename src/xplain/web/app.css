@@ -570,15 +570,16 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .an-end.home text { fill: var(--home); }
 .an-end.away text { fill: var(--away); }
 /* the surprises: green when completed against the odds, red when an easy pass failed; the shown one ringed */
-.an-dot { cursor: pointer; outline: none; }
-.an-dot .hit { fill: transparent; }
+.an-dot { outline: none; }
+.an-dot .hit { fill: transparent; pointer-events: none; }
+#an-chart.picking { cursor: pointer; }
 .an-dot .dot { stroke: var(--bg); stroke-width: 1.5; }
 .an-dot.surprise_success .dot { fill: var(--completed); }
 .an-dot.surprise_failure .dot { fill: var(--failed); }
 .an-dot .ring { fill: none; stroke: var(--text); stroke-width: 2; visibility: hidden; }
 .an-dot.on .ring { visibility: visible; }
 .an-dot.on .dot { r: 5.5px; }
-.an-dot:hover .dot { stroke: var(--text); }
+.an-dot.near .dot { stroke: var(--text); }
 .an-dot:focus-visible .hit { stroke: var(--accent); stroke-width: 2; }
 /* the model's reasons: one row per driver and one for the rest, a bar each way from the centre of its track */
 .an-shap { margin-top: 14px; display: flex; flex-direction: column; flex: 1; min-height: 0; }

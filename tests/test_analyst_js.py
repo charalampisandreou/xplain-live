@@ -155,3 +155,40 @@ def test_analyst_js_names_its_python_references():
     assert "Browser computation exception" in js and "swing.team_swing" in js and "swing.team_tiers" in js
     assert "fetch(" not in js and "XMLHttpRequest" not in js   # nothing computed here leaves the page
     assert "XP " not in js and "'XP" not in js
+
+
+SPREAD = r"""
+const A = require(process.argv[1]);
+const cases = JSON.parse(process.argv[2]);
+process.stdout.write(JSON.stringify(cases.map((c) => A.spreadDots(c.points, c.gap, c.maxX))));
+"""
+
+
+@needs_node
+def test_spread_dots_keeps_every_dot_clear_and_never_moves_an_earlier_one():
+    """Surprises close on the swing are drawn at least the gap apart: a later dot slides along the time axis,
+    an earlier one stays where it was, and a dot already clear is not touched."""
+    points = [{"x": 100, "y": 50}, {"x": 104, "y": 53}, {"x": 106, "y": 50}, {"x": 300, "y": 80},
+              {"x": 600, "y": 120}, {"x": 601, "y": 121}]
+    cases = [{"points": points, "gap": 10, "maxX": 601},
+             {"points": points[:3], "gap": 10, "maxX": 688}]
+    done = subprocess.run([NODE, "-e", SPREAD, str(ANALYST_JS), json.dumps(cases)], capture_output=True, text=True,
+                          encoding="utf-8", timeout=60)
+    assert done.returncode == 0, done.stderr
+    full, part = json.loads(done.stdout)
+    assert full[0] == 100 and full[3] == 300 and full[4] == 600   # clear of everything before them
+    assert full[:3] == part                                        # adding dots never moves the earlier ones
+    for i, (xi, p) in enumerate(zip(full, points)):
+        for xj, q in zip(full[:i], points):
+            assert ((xi - xj) ** 2 + (p["y"] - q["y"]) ** 2) ** 0.5 >= 10 - 1e-6
+    assert full[5] < 600                                           # right would pass maxX: it goes left
+    assert all(x >= p["x"] for x, p in zip(full[:5], points[:5]))
+
+
+def test_analyst_dots_answer_the_nearest_centre_and_carry_a_label():
+    js = ANALYST_JS.read_text(encoding="utf-8")
+    assert "nearDot(e)" in js and "getScreenCTM" in js and "spreadDots(shown, DOT_GAP" in js
+    assert "el('title'" in js and "'data-cx': cx" in js
+    css = (ANALYST_JS.parent / "app.css").read_text(encoding="utf-8")
+    assert ".an-dot.near .dot" in css and ".an-dot:hover" not in css
+    assert ".an-dot .hit { fill: transparent; pointer-events: none; }" in css
