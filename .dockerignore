@@ -1,27 +1,9 @@
-.git
-.gitignore
-.venv
-venv
-__pycache__
-*.pyc
-.pytest_cache
-.vscode
-.env
-.env.*
-*.env
-CLAUDE.md
-scratch
-tests
-scripts
-reports
-# data/: only the demo bundle
-data/*
-!data/bundle_seed3001.json
-# models: only what the app loads (everything else in models/ stays out)
-models/*
-!models/xpass_v2
-models/xpass_v2/*
+# Only what the Dockerfile copies goes into the build context; everything else in the folder stays out.
+*
+!requirements-runtime.txt
+!src
 !models/xpass_v2/xpass_v2.joblib
 !models/xpass_v2/feature_list.json
-*.csv
-*.jsonl
+!data/bundle_seed3001.json
+**/__pycache__
+**/*.pyc

@@ -22,9 +22,6 @@ data/
 # Old pip freeze kept locally for reference
 requirements-freeze-old.txt
 
-# Local assistant instructions (not published)
-CLAUDE.md
-
 # Local spikes (not published)
 scratch/
 reports/model_compare/*.json
