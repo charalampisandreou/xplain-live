@@ -84,7 +84,7 @@ CSS = (WEB / "app.css").read_text(encoding="utf-8")
 
 SLIDES = {
     "Studio": ("The match as it happens: every pass rated, the biggest surprises narrated.",
-               ["Every pass, live", "The commentary", "Surprises", "PVA"]),
+               ["Every pass, live", "The commentary", "Surprises", "PVA", "Match controls"]),
     "Analyst": ("How each team passed against the model, and how it rated each surprise.",
                 ["Passing Swing", "How the model rated it", "Passing Stats", "By difficulty"]),
     "Player": ("One player's match: every pass, their numbers and their surprises.",
@@ -123,7 +123,7 @@ def test_slides_texts_and_screenshots():
         slide = html[start:html.index("</div>\n    <div class=\"in-screen", start)]
         assert f">{mode}</h2>" in slide and f"<p>{line}</p>" in slide and f"{i} of 4" in slide
         assert [h for h in re.findall(r"<b>([^<]+)</b>", slide)] == heads
-        assert len(re.findall(r'data-at="\d+,\d+"', slide)) == 4
+        assert len(re.findall(r'data-at="\d+,\d+"', slide)) == len(heads)   # one arrow per note
         img = re.search(r'src="/static/intro/(\w+\.png)"', slide).group(1)
         png = WEB / "intro" / img
         assert png.read_bytes()[16:24] == (1440).to_bytes(4, "big") + (900).to_bytes(4, "big")
