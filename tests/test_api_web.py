@@ -48,7 +48,7 @@ def test_the_bubble_leads_every_xplain_live_mark(client):
     html = client.get("/").text
     assert html.count('<symbol id="logo-bubble"') == 1
     bubble = '<svg class="logo-bubble" aria-hidden="true"><use href="#logo-bubble"></use></svg>xPlain <span>Live</span>'
-    assert html.count(bubble) == 4   # the header, the slides' mark, welcome and Start match
+    assert html.count(bubble) == 5   # the header, the slides' mark, welcome, Start match and the phone notice
     # sized in em, so the walkthrough's glide scales it with the words
     css = client.get("/static/app.css").text
     rule = next(line for line in css.splitlines() if line.startswith(".logo-bubble {"))
@@ -70,6 +70,19 @@ def test_a_shared_link_shows_the_share_card(client):
     assert r.status_code == 200 and r.content.startswith(b"\x89PNG")
     width, height = int.from_bytes(r.content[16:20], "big"), int.from_bytes(r.content[20:24], "big")
     assert (width, height) == (1200, 630)
+
+
+def test_a_phone_held_upright_is_asked_to_turn(client):
+    # QA 2026-10-25: in portrait on a phone the 1440 x 900 stage shrank to a 390 px strip with 4 px text
+    html = client.get("/").text
+    notice = html[html.index('<div class="rotate" id="rotate">'):]
+    notice = notice[:notice.index("</div>\n<script")]
+    assert "Turn your phone sideways" in notice
+    assert "Every pass rated. Every surprise explained." in notice
+    css = client.get("/static/app.css").text
+    assert ".rotate { display: none; }" in css   # hidden everywhere else
+    block = css[css.index("@media (orientation: portrait) and (max-width: 600px) and (pointer: coarse) {"):]
+    assert "#viewport { visibility: hidden; }" in block and "display: flex; position: fixed; inset: 0;" in block
 
 
 def test_static_files_are_served(client):

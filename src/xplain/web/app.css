@@ -707,3 +707,22 @@ html.intro-on .intro:not([hidden]) { display: block; }
 .pr-step.idle:not(.rating) .pr-mark::before { content: ''; display: inline-block; box-sizing: border-box; width: 8px; height: 8px;
   border-radius: 50%; border: 1.5px solid var(--muted); opacity: 0.6; }
 .pr-step.idle.rating .pr-info { color: var(--text-soft); font-variant-numeric: tabular-nums; }
+
+/* a phone held upright (a touch screen, so a narrow desktop window keeps the app): the stage would shrink to a strip,
+   so the notice covers it and asks for landscape; the stage stays scaled and running underneath (hidden, so nothing
+   in it takes taps or focus) */
+.rotate { display: none; }
+@media (orientation: portrait) and (max-width: 600px) and (pointer: coarse) {
+  #viewport { visibility: hidden; }
+  .rotate {
+    display: flex; position: fixed; inset: 0; z-index: 100; flex-direction: column; align-items: center;
+    justify-content: center; gap: 14px; text-align: center; background: var(--bg); color: var(--text);
+    padding: max(32px, env(safe-area-inset-top, 0px)) max(28px, env(safe-area-inset-right, 0px))
+      max(32px, env(safe-area-inset-bottom, 0px)) max(28px, env(safe-area-inset-left, 0px));
+  }
+  .rotate-mark { font-size: 34px; }
+  .rotate-tag { margin: 0; font-size: 16px; color: var(--text-soft); }
+  .rotate-icon { margin-top: 28px; color: var(--accent); }
+  .rotate-title { margin: 0; font-size: 24px; font-weight: 800; }
+  .rotate-text { margin: 0; max-width: 30ch; font-size: 16px; line-height: 1.45; color: var(--muted); }
+}
