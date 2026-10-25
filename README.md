@@ -15,13 +15,16 @@
   <img src="https://img.shields.io/badge/licence-MIT-3FD0FF?labelColor=0A1B2E" alt="MIT licence">
 </p>
 
-A broadcast can show that a pass was completed. It cannot say whether that was **remarkable**.
-xPlain Live can. A calibrated model rates every pass as it happens. When a pass beats its odds, or a sure thing goes
-wrong, four agents explain why the model rated it as it did. The result is one checked sentence, in English, Spanish
-or Greek, ready for the on-air graphics.
+A broadcast can show that a pass was completed. It cannot say whether that was **remarkable**. xPlain Live can.
 
-Three of the agents are plain code: they decide every fact and every number. Only one is AI, and a code Verifier
-checks every line it writes before air. Every step is on the record, and a producer always has the last word.
+xPlain Live is a live match-insights engine. A calibrated model rates every pass as it happens, and that one rating
+feeds four views of the same match: checked on-air lines and surprise tables for the **broadcast**, Passing Swing and
+passing by difficulty for **analysts and coaches**, pass maps and passes completed above expected for each **player**,
+and a control room for the **producer**.
+
+When a hard pass comes off, or an easy one fails, four agents explain why the model rated it as it did, in one checked
+sentence in English, Spanish or Greek. A Verifier checks every line before air, and a producer always has the last
+word.
 
 <p align="center">
   <a href="YOUTUBE_LINK"><img src="docs/img/video.png" alt="Watch the 2-minute demo of xPlain Live" width="100%"></a>
