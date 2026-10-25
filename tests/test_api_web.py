@@ -526,25 +526,12 @@ def test_a_recap_crossed_in_producer_or_players_opens_on_switching_to_studio(cli
 
 
 def test_leaving_studio_keeps_the_recap_and_its_switch(client):
-    # bug 2026-10-19: the half-time recap's 10 s auto-resume kept running in Player (the star's row opens it)
-    # and Producer; play resumed unseen, closed the recap, and back in Studio the Recap / Map switch was gone
+    # bug 2026-10-19: leaving Studio closed the recap, taking the Recap / Map switch with it
     app = client.get("/static/app.js").text.replace("\r\n", "\n")
     mode = app.split("function setMode(mode) {")[1].split("\n  }\n")[0]
-    off = "if (mode !== 'studio' && state.recap && state.recap.resumeAt !== null) {"
-    assert off in mode and "closeRecap" not in mode
-    assert mode.index(off) < mode.index("if (mode === 'studio') showUnseenRecap();")
-    # bug 2026-10-23: back in Studio the countdown never came back (paused until Play). Leaving keeps what was
-    # left of it; back on the card while live it goes on from there, and the plate's drain starts from that
-    pause = mode.split(off)[1].split("\n    }\n")[0]
-    assert "state.recap.leftMs = Math.max(0, state.recap.resumeAt - performance.now());" in pause
-    assert "state.recap.resumeAt = null;" in pause
-    back = mode.split("if (mode === 'studio' && state.recap && state.recap.leftMs !== undefined) {")[1].split("\n    }\n")[0]
-    assert "if (state.recap.view === 'recap' && isLive()) state.recap.resumeAt = performance.now() + state.recap.leftMs;" in back
-    assert "delete state.recap.leftMs;" in back
-    assert mode.index(off) < mode.index("state.recap.leftMs !== undefined")
-    # Map (and stepping or a replay, which go through recapToMap) drops a paused countdown for good
-    to_map = app.split("function recapToMap() {")[1].split("\n  }\n")[0]
-    assert "delete state.recap.leftMs;" in to_map
+    assert "closeRecap" not in mode
+    # 2026-10-25: the break runs on in every mode, as in a match (the 23 Oct pause outside Studio is gone)
+    assert "leftMs" not in app and "resumeAt" not in mode
     # the auto-resume is the only timed path to closeRecap: it fires only while resumeAt is set
     frame = app.split("function frame(ts) {")[1].split("\n  }\n")[0]
     assert "if (state.recap && state.recap.resumeAt !== null && ts >= state.recap.resumeAt) setPlaying(true);" in frame
@@ -638,7 +625,10 @@ def test_recap_opens_only_on_live_playback_and_by_link(client):
     # the half-time hold is the card's reading time: 1.5 s + 0.25 s per word it shows, counted as it opens
     assert "const READ_BASE_MS = 1500, READ_WORD_MS = 250;" in app
     hold = app.split("function holdRecap(ts) {")[1].split("function closeRecap()")[0]
-    assert hold.index("renderRecap();") < hold.index("READ_BASE_MS + READ_WORD_MS * shownWords($('recap'));")
+    assert hold.index("renderRecap();") < hold.index("READ_BASE_MS + READ_WORD_MS * shownWords($('recap'))")
+    # and never shorter than 45 s, time to look at another mode at half time (the card alone reads in about 25 s)
+    assert "const HALF_TIME_MIN_MS = 45000;" in app
+    assert "Math.max(HALF_TIME_MIN_MS, READ_BASE_MS + READ_WORD_MS * shownWords($('recap')));" in hold
     assert "state.recap.resumeAt = ts + state.recap.holdMs;" in hold
     # one word per text node (labels and values are spans with no space between), none from a hidden element
     assert "document.createTreeWalker(root, NodeFilter.SHOW_TEXT)" in hold and "closest('[hidden]')" in hold

@@ -23,6 +23,8 @@
   const RECAP_COL = { half_time: 'HT', full_time: 'FT' };
   // the reading-time rule: on-screen text stays at least 1.5 s + 0.25 s per word (the half-time recap's hold)
   const READ_BASE_MS = 1500, READ_WORD_MS = 250;
+  // the half-time break lasts at least this long, time to look at the star in Player or another mode too
+  const HALF_TIME_MIN_MS = 45000;
   const RECAP_TEXT_PX = 19, RECAP_MIN_PX = 16;   // the recap text's size, and the least fitRecapText goes to
   const HALF_LABEL = { 1: '1st half', 2: '2nd half' };
   // the plate's facts under the line, in the narration language: the tier's own words (mark.tier) and the outcome
@@ -378,18 +380,9 @@
   // ?mode and ?player for demo links, the way it drops ?replay on leaving replay.
   function setMode(mode) {
     state.mode = mode;
-    // Player and Producer show no recap, but an open one stays open: back in Studio it is there again. Leaving
-    // Studio pauses the half-time auto-resume (else play resumed unseen and closed the recap, taking the Recap /
-    // Map switch with it); back in Studio on the card it goes on with what was left of it (the drain too).
+    // Player and Producer show no recap, but an open one stays open: back in Studio it is there again. The
+    // half-time break runs on in every mode, as in a match: when it ends the 2nd half plays and the recap closes.
     // From a recap, Player opens on its star until a player is picked.
-    if (mode !== 'studio' && state.recap && state.recap.resumeAt !== null) {
-      state.recap.leftMs = Math.max(0, state.recap.resumeAt - performance.now());
-      state.recap.resumeAt = null;
-    }
-    if (mode === 'studio' && state.recap && state.recap.leftMs !== undefined) {
-      if (state.recap.view === 'recap' && isLive()) state.recap.resumeAt = performance.now() + state.recap.leftMs;
-      delete state.recap.leftMs;
-    }
     if (mode === 'player' && state.recap && !state.playerPicked) {
       const star = state.bundle.recaps[state.recap.scope].card.star;
       if (star) state.player = star.player_id;
@@ -795,10 +788,11 @@
   }
 
   // Half time: play resumes after the reading time of every word the card shows (result, goals, Passing,
-  // star row, text) in the narration language, counted once as it opens; the drain runs over it
+  // star row, text) in the narration language, counted once as it opens, and never before HALF_TIME_MIN_MS;
+  // the drain runs over it
   function holdRecap(ts) {
     renderRecap();
-    state.recap.holdMs = READ_BASE_MS + READ_WORD_MS * shownWords($('recap'));
+    state.recap.holdMs = Math.max(HALF_TIME_MIN_MS, READ_BASE_MS + READ_WORD_MS * shownWords($('recap')));
     state.recap.resumeAt = ts + state.recap.holdMs;
   }
   // The words under root, one per text node (the card's labels and values are separate spans with no space
@@ -943,7 +937,6 @@
     if (!state.recap) return;
     state.recap.view = 'map';
     state.recap.resumeAt = null;
-    delete state.recap.leftMs;   // an auto-resume paused outside Studio does not come back after Map
   }
 
   // The star's row opens the star in Player
