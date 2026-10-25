@@ -79,6 +79,9 @@ def test_a_phone_held_upright_is_asked_to_turn(client):
     notice = notice[:notice.index("</div>\n<script")]
     assert "Turn your phone sideways" in notice
     assert "Every pass rated. Every surprise explained." in notice
+    assert "Turn your phone, or for a better experience, use a laptop." in notice
+    # the arrow's head follows the arc's end (tangent from the control point 32,62 to the tip 52,50)
+    assert '<path d="M12 50 Q 32 62 52 50"></path>' in notice and '<path d="M45 49.5 L52 50 L49.2 56.4"></path>' in notice
     css = client.get("/static/app.css").text
     assert ".rotate { display: none; }" in css   # hidden everywhere else
     block = css[css.index("@media (orientation: portrait) and (max-width: 600px) and (pointer: coarse) {"):]
