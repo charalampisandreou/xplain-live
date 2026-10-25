@@ -587,6 +587,16 @@ def test_title_and_recap_card_are_on_the_page(client):
     assert "border:" not in box and "box-shadow" not in box and "background" not in box   # no box: Studio rules
 
 
+def test_half_time_plate_says_the_2nd_half_starts_by_itself(client):
+    # QA 2026-10-25: "Press Play to continue." while play resumed by itself after the reading time
+    app = client.get("/static/app.js").text
+    assert "const RECAP_LINE_AUTO = 'The 2nd half starts shortly. Press Play to start it now.';" in app
+    plate = app.split("function renderRecapPlate()")[1].split("function stopDrain()")[0]
+    # the plate id already carries resumeAt !== null, so the line changes when the auto-resume stops (Map, ?recap)
+    assert "const id = 'recap/' + r.scope + '/' + (r.resumeAt !== null);" in plate
+    assert "r.scope === 'half_time' && r.resumeAt !== null ? RECAP_LINE_AUTO : RECAP_LINE[r.scope]" in plate
+
+
 def test_recap_plate_state_and_drain(client):
     app = client.get("/static/app.js").text
     css = client.get("/static/app.css").text

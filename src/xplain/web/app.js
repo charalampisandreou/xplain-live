@@ -18,6 +18,8 @@
   const RECAP_KEYS = { ht: 'half_time', ft: 'full_time' };
   const RECAP_TAB = { half_time: 'Half-time recap', full_time: 'Full-time recap' };
   const RECAP_LINE = { half_time: 'Press Play to continue.', full_time: 'Full time.' };
+  // ... and at half time while play resumes by itself after the reading time (the drain runs)
+  const RECAP_LINE_AUTO = 'The 2nd half starts shortly. Press Play to start it now.';
   const RECAP_COL = { half_time: 'HT', full_time: 'FT' };
   // the reading-time rule: on-screen text stays at least 1.5 s + 0.25 s per word (the half-time recap's hold)
   const READ_BASE_MS = 1500, READ_WORD_MS = 250;
@@ -956,7 +958,7 @@
     $('lower-name').textContent = RECAP_TAB[r.scope];
     $('lower-when').textContent = '';
     const line = $('lower-line');
-    line.textContent = RECAP_LINE[r.scope];
+    line.textContent = r.scope === 'half_time' && r.resumeAt !== null ? RECAP_LINE_AUTO : RECAP_LINE[r.scope];
     line.removeAttribute('lang');
     line.style.fontSize = '';
     $('lower-meta').textContent = '';
