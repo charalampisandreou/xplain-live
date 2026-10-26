@@ -5,7 +5,7 @@
 <p align="center">
   <a href="https://xplain-live.whiteocean-b5bbd7fb.germanywestcentral.azurecontainerapps.io/"><b>▶ Try the live app</b></a>
   &nbsp;·&nbsp;
-  <a href="YOUTUBE_LINK"><b>Watch the 2-minute demo</b></a>
+  <a href="https://youtu.be/jKj46Mit1vI"><b>Watch the 2-minute demo</b></a>
   &nbsp;·&nbsp;
   <a href="docs/TECHNICAL.md"><b>Technical reference</b></a>
   <br><br>
@@ -27,7 +27,7 @@ sentence in English, Spanish or Greek. A Verifier checks every line before air, 
 word.
 
 <p align="center">
-  <a href="YOUTUBE_LINK"><img src="docs/img/video.png" alt="Watch the 2-minute demo of xPlain Live" width="100%"></a>
+  <a href="https://youtu.be/jKj46Mit1vI"><img src="docs/img/video.png" alt="Watch the 2-minute demo of xPlain Live" width="100%"></a>
 </p>
 
 ## Try it in 30 seconds
